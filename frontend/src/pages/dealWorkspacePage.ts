@@ -6,6 +6,70 @@ import {
 } from '../services/dealService';
 import { navigateTo } from '../utils/router';
 
+function renderOverviewSection(path: string): string {
+  const id = path.split('/').pop() ?? '';
+  const deal = getDealById(id);
+
+  if (!deal) return '';
+
+  const quickOutcome = getQuickScreenOutcome(deal.quickScore);
+  const decision = deal.decision;
+
+  return `
+    <div class="card">
+      <div class="page-header">
+        <h3>Overview</h3>
+        <p>Current thesis snapshot for this deal.</p>
+      </div>
+
+      <div class="overview-grid">
+        <div class="overview-item">
+          <div class="overview-label">Quick Screen</div>
+          <div class="overview-value">${deal.quickScore} / 10</div>
+          <div class="overview-subtext">${quickOutcome}</div>
+        </div>
+
+        <div class="overview-item">
+          <div class="overview-label">Decision</div>
+          <div class="overview-value">${decision?.status ?? deal.status}</div>
+        </div>
+
+        <div class="overview-item">
+          <div class="overview-label">Valuation</div>
+          <div class="overview-value">${deal.valuation ? `$${deal.valuation.toLocaleString()}` : '-'}</div>
+        </div>
+
+        <div class="overview-item">
+          <div class="overview-label">Minimum Investment</div>
+          <div class="overview-value">${deal.minimumInvestment ? `$${deal.minimumInvestment}` : '-'}</div>
+        </div>
+      </div>
+
+      <div class="summary-grid">
+        <div class="summary-block">
+          <h4>Rationale</h4>
+          <p>${decision?.rationale ?? 'No decision rationale saved yet.'}</p>
+        </div>
+
+        <div class="summary-block">
+          <h4>Next Milestone Needed</h4>
+          <p>${decision?.nextMilestoneNeeded ?? 'No next milestone defined yet.'}</p>
+        </div>
+
+        <div class="summary-block">
+          <h4>What Would Change My Mind</h4>
+          <p>${decision?.whatWouldChangeMyMind ?? 'No change-of-mind note saved yet.'}</p>
+        </div>
+
+        <div class="summary-block">
+          <h4>Best Proof Point</h4>
+          <p>${deal.quickScreen?.bestProofPoint ?? 'No proof point captured yet.'}</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 export function renderDealWorkspacePage(path: string): string {
   const id = path.split('/').pop() ?? '';
   const deal = getDealById(id);
@@ -40,6 +104,8 @@ export function renderDealWorkspacePage(path: string): string {
         <h3>Description</h3>
         <p>${deal.shortDescription}</p>
       </div>
+
+      ${renderOverviewSection(path)}
 
       <div class="card-grid">
         <div class="card">

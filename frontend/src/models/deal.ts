@@ -1,5 +1,19 @@
 export type DealStatus = 'new' | 'watch' | 'pass' | 'invest-small';
 
+export interface QuickScreenData {
+  businessClarity: number;
+  tractionEvidence: number;
+  edge: number;
+  priceSanity: number;
+  trustTransparency: number;
+  total: number;
+  whatIsIt: string;
+  whyMightItWin: string;
+  bestProofPoint: string;
+  biggestDoubt: string;
+  whySpendingTime: string;
+}
+
 export interface Deal {
   id: string;
   companyName: string;
@@ -13,4 +27,5 @@ export interface Deal {
   minimumInvestment?: number;
   valuation?: number;
   createdAt: string;
+  quickScreen?: QuickScreenData;
 }

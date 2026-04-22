@@ -1,4 +1,4 @@
-import { getDeals } from '../services/dealService';
+import { getDeals, getQuickScreenOutcome } from '../services/dealService';
 
 export function renderDealsPage(): string {
   const deals = getDeals();
@@ -14,7 +14,10 @@ export function renderDealsPage(): string {
           <td>${deal.sector}</td>
           <td>${deal.platform}</td>
           <td>${deal.roundType}</td>
-          <td>${deal.quickScore}</td>
+          <td>
+            <div>${deal.quickScore}</div>
+            <div class="table-subtext">${getQuickScreenOutcome(deal.quickScore)}</div>
+          </td>
           <td>${deal.deepScore ?? '-'}</td>
           <td><span class="status-chip status-chip--${deal.status}">${deal.status}</span></td>
         </tr>

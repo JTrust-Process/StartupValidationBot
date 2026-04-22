@@ -2,7 +2,10 @@ import { getCurrentRoute, navigateTo, onRouteChange } from '../utils/router';
 import { renderDashboardPage } from '../pages/dashboardPage';
 import { renderDealsPage } from '../pages/dealsPage';
 import { bindNewDealPageEvents, renderNewDealPage } from '../pages/newDealPage';
-import { renderDealWorkspacePage } from '../pages/dealWorkspacePage';
+import {
+  bindDealWorkspacePageEvents,
+  renderDealWorkspacePage
+} from '../pages/dealWorkspacePage';
 
 function getPageHtml(path: string): string {
   if (path === '/dashboard') return renderDashboardPage();
@@ -46,6 +49,11 @@ function bindPageEvents(root: HTMLDivElement, path: string): void {
 
   if (path === '/deals/new') {
     bindNewDealPageEvents(pageContent);
+    return;
+  }
+
+  if (path.startsWith('/deals/')) {
+    bindDealWorkspacePageEvents(pageContent, path);
   }
 }
 

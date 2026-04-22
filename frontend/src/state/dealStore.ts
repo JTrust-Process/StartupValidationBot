@@ -1,4 +1,4 @@
-import type { Deal } from '../models/deal';
+import type { Deal, QuickScreenData } from '../models/deal';
 
 const initialDeals: Deal[] = [
   {
@@ -13,7 +13,20 @@ const initialDeals: Deal[] = [
     status: 'watch',
     minimumInvestment: 100,
     valuation: 12000000,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    quickScreen: {
+      businessClarity: 2,
+      tractionEvidence: 1,
+      edge: 2,
+      priceSanity: 1,
+      trustTransparency: 2,
+      total: 8,
+      whatIsIt: 'Autonomous logistics systems for military and contested environments.',
+      whyMightItWin: 'Strong defense use case with clear operational need.',
+      bestProofPoint: 'Pilot engagement with defense-adjacent logistics operators.',
+      biggestDoubt: 'Need stronger proof of repeatable deployment.',
+      whySpendingTime: 'Fits dual-use / defense interest area.'
+    }
   },
   {
     id: '2',
@@ -66,4 +79,25 @@ export function addDealState(
 
   deals = [newDeal, ...deals];
   return newDeal;
+}
+
+export function updateDealQuickScreenState(
+  dealId: string,
+  quickScreen: QuickScreenData
+): Deal | undefined {
+  let updatedDeal: Deal | undefined;
+
+  deals = deals.map((deal) => {
+    if (deal.id !== dealId) return deal;
+
+    updatedDeal = {
+      ...deal,
+      quickScore: quickScreen.total,
+      quickScreen
+    };
+
+    return updatedDeal;
+  });
+
+  return updatedDeal;
 }

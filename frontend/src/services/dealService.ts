@@ -1,5 +1,10 @@
-import type { Deal } from '../models/deal';
-import { addDealState, getDealsState, getDealStateById } from '../state/dealStore';
+import type { Deal, QuickScreenData } from '../models/deal';
+import {
+  addDealState,
+  getDealsState,
+  getDealStateById,
+  updateDealQuickScreenState
+} from '../state/dealStore';
 
 export interface CreateDealInput {
   companyName: string;
@@ -9,6 +14,20 @@ export interface CreateDealInput {
   shortDescription: string;
   valuation?: number;
   minimumInvestment?: number;
+}
+
+export interface SaveQuickScreenInput {
+  dealId: string;
+  businessClarity: number;
+  tractionEvidence: number;
+  edge: number;
+  priceSanity: number;
+  trustTransparency: number;
+  whatIsIt: string;
+  whyMightItWin: string;
+  bestProofPoint: string;
+  biggestDoubt: string;
+  whySpendingTime: string;
 }
 
 export function getDeals(): Deal[] {
@@ -32,4 +51,36 @@ export function createDeal(input: CreateDealInput): Deal {
     deepScore: undefined,
     status: 'new'
   });
+}
+
+export function getQuickScreenOutcome(total: number): string {
+  if (total <= 3) return 'Pass';
+  if (total <= 6) return 'Reps Only';
+  if (total <= 8) return 'Dig Deeper';
+  return 'High Interest';
+}
+
+export function saveQuickScreen(input: SaveQuickScreenInput): Deal | undefined {
+  const total =
+    input.businessClarity +
+    input.tractionEvidence +
+    input.edge +
+    input.priceSanity +
+    input.trustTransparency;
+
+  const quickScreen: QuickScreenData = {
+    businessClarity: input.businessClarity,
+    tractionEvidence: input.tractionEvidence,
+    edge: input.edge,
+    priceSanity: input.priceSanity,
+    trustTransparency: input.trustTransparency,
+    total,
+    whatIsIt: input.whatIsIt,
+    whyMightItWin: input.whyMightItWin,
+    bestProofPoint: input.bestProofPoint,
+    biggestDoubt: input.biggestDoubt,
+    whySpendingTime: input.whySpendingTime
+  };
+
+  return updateDealQuickScreenState(input.dealId, quickScreen);
 }

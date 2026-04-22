@@ -6,9 +6,11 @@ export interface Deal {
   sector: string;
   platform: string;
   roundType: string;
+  shortDescription: string;
   quickScore: number;
   deepScore?: number;
   status: DealStatus;
   minimumInvestment?: number;
   valuation?: number;
+  createdAt: string;
 }

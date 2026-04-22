@@ -26,6 +26,11 @@ export function renderDealWorkspacePage(path: string): string {
         <span class="status-chip status-chip--${deal.status}">${deal.status}</span>
       </div>
 
+      <div class="card">
+        <h3>Description</h3>
+        <p>${deal.shortDescription}</p>
+      </div>
+
       <div class="card-grid">
         <div class="card">
           <h3>Quick Score</h3>

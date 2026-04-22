@@ -7,7 +7,10 @@ export function renderDealsPage(): string {
     .map(
       (deal) => `
         <tr>
-          <td><a href="#/deals/${deal.id}">${deal.companyName}</a></td>
+          <td>
+            <a class="table-link" href="#/deals/${deal.id}">${deal.companyName}</a>
+            <div class="table-subtext">${deal.shortDescription}</div>
+          </td>
           <td>${deal.sector}</td>
           <td>${deal.platform}</td>
           <td>${deal.roundType}</td>

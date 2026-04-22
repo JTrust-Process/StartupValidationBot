@@ -256,3 +256,13 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+.table-link {
+  font-weight: 600;
+}
+
+.table-subtext {
+  margin-top: 4px;
+  color: #9aa7bd;
+  font-size: 0.9rem;
+}

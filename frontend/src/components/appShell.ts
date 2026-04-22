@@ -1,7 +1,7 @@
 import { getCurrentRoute, navigateTo, onRouteChange } from '../utils/router';
 import { renderDashboardPage } from '../pages/dashboardPage';
 import { renderDealsPage } from '../pages/dealsPage';
-import { renderNewDealPage } from '../pages/newDealPage';
+import { bindNewDealPageEvents, renderNewDealPage } from '../pages/newDealPage';
 import { renderDealWorkspacePage } from '../pages/dealWorkspacePage';
 
 function getPageHtml(path: string): string {
@@ -40,6 +40,15 @@ function updateActiveNav(root: HTMLDivElement, path: string): void {
   });
 }
 
+function bindPageEvents(root: HTMLDivElement, path: string): void {
+  const pageContent = root.querySelector<HTMLElement>('#page-content');
+  if (!pageContent) return;
+
+  if (path === '/deals/new') {
+    bindNewDealPageEvents(pageContent);
+  }
+}
+
 function renderLayout(root: HTMLDivElement): void {
   const currentRoute = getCurrentRoute();
 
@@ -72,6 +81,7 @@ function renderLayout(root: HTMLDivElement): void {
 
   bindNavEvents(root);
   updateActiveNav(root, currentRoute.path);
+  bindPageEvents(root, currentRoute.path);
 }
 
 export function renderApp(root: HTMLDivElement): void {

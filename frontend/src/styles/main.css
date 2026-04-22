@@ -348,3 +348,11 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+.summary-block,
+.overview-item {
+  min-height: 100%;
+}
+.page-header + .card-grid {
+  margin-top: -4px;
+}

@@ -1,7 +1,9 @@
 import {
   getDealById,
+  getDeepDiligenceOutcome,
   getQuickScreenOutcome,
   saveDecision,
+  saveDeepDiligence,
   saveQuickScreen
 } from '../services/dealService';
 import { navigateTo } from '../utils/router';
@@ -13,6 +15,7 @@ function renderOverviewSection(path: string): string {
   if (!deal) return '';
 
   const quickOutcome = getQuickScreenOutcome(deal.quickScore);
+  const deepOutcome = deal.deepScore ? getDeepDiligenceOutcome(deal.deepScore) : 'Not scored';
   const decision = deal.decision;
 
   return `
@@ -30,13 +33,14 @@ function renderOverviewSection(path: string): string {
         </div>
 
         <div class="overview-item">
-          <div class="overview-label">Decision</div>
-          <div class="overview-value">${decision?.status ?? deal.status}</div>
+          <div class="overview-label">Deep Diligence</div>
+          <div class="overview-value">${deal.deepScore ?? '-'}</div>
+          <div class="overview-subtext">${deepOutcome}</div>
         </div>
 
         <div class="overview-item">
-          <div class="overview-label">Valuation</div>
-          <div class="overview-value">${deal.valuation ? `$${deal.valuation.toLocaleString()}` : '-'}</div>
+          <div class="overview-label">Decision</div>
+          <div class="overview-value">${decision?.status ?? deal.status}</div>
         </div>
 
         <div class="overview-item">
@@ -87,7 +91,9 @@ export function renderDealWorkspacePage(path: string): string {
 
   const quickScreen = deal.quickScreen;
   const decision = deal.decision;
+  const deepDiligence = deal.deepDiligence;
   const quickOutcome = getQuickScreenOutcome(deal.quickScore);
+  const deepOutcome = deal.deepScore ? getDeepDiligenceOutcome(deal.deepScore) : 'Not scored';
 
   return `
     <div class="page">
@@ -117,6 +123,7 @@ export function renderDealWorkspacePage(path: string): string {
         <div class="card">
           <h3>Deep Score</h3>
           <p class="metric">${deal.deepScore ?? '-'}</p>
+          <p class="metric-subtext">${deepOutcome}</p>
         </div>
 
         <div class="card">
@@ -229,6 +236,69 @@ export function renderDealWorkspacePage(path: string): string {
           </div>
         </form>
       </div>
+
+      <div class="card">
+        <div class="page-header">
+          <h3>Deep Diligence</h3>
+          <p>Score the deal from 1 to 5 across the core diligence categories.</p>
+        </div>
+
+        <form class="form-grid" id="deep-diligence-form" data-deal-id="${deal.id}">
+          <div class="form-field">
+            <label for="businessModelScore">Business Model</label>
+            <input id="businessModelScore" name="businessModelScore" type="number" min="1" max="5" step="1" value="${deepDiligence?.businessModelScore ?? 3}" required />
+          </div>
+
+          <div class="form-field">
+            <label for="marketCustomerScore">Market / Customer</label>
+            <input id="marketCustomerScore" name="marketCustomerScore" type="number" min="1" max="5" step="1" value="${deepDiligence?.marketCustomerScore ?? 3}" required />
+          </div>
+
+          <div class="form-field">
+            <label for="tractionQualityScore">Traction Quality</label>
+            <input id="tractionQualityScore" name="tractionQualityScore" type="number" min="1" max="5" step="1" value="${deepDiligence?.tractionQualityScore ?? 3}" required />
+          </div>
+
+          <div class="form-field">
+            <label for="competitiveEdgeScore">Competitive Edge</label>
+            <input id="competitiveEdgeScore" name="competitiveEdgeScore" type="number" min="1" max="5" step="1" value="${deepDiligence?.competitiveEdgeScore ?? 3}" required />
+          </div>
+
+          <div class="form-field">
+            <label for="riskScore">Risk</label>
+            <input id="riskScore" name="riskScore" type="number" min="1" max="5" step="1" value="${deepDiligence?.riskScore ?? 3}" required />
+          </div>
+
+          <div class="form-field form-field--full">
+            <label for="businessModelNote">Business Model Note</label>
+            <textarea id="businessModelNote" name="businessModelNote" rows="3" required>${deepDiligence?.businessModelNote ?? ''}</textarea>
+          </div>
+
+          <div class="form-field form-field--full">
+            <label for="marketCustomerNote">Market / Customer Note</label>
+            <textarea id="marketCustomerNote" name="marketCustomerNote" rows="3" required>${deepDiligence?.marketCustomerNote ?? ''}</textarea>
+          </div>
+
+          <div class="form-field form-field--full">
+            <label for="tractionQualityNote">Traction Quality Note</label>
+            <textarea id="tractionQualityNote" name="tractionQualityNote" rows="3" required>${deepDiligence?.tractionQualityNote ?? ''}</textarea>
+          </div>
+
+          <div class="form-field form-field--full">
+            <label for="competitiveEdgeNote">Competitive Edge Note</label>
+            <textarea id="competitiveEdgeNote" name="competitiveEdgeNote" rows="3" required>${deepDiligence?.competitiveEdgeNote ?? ''}</textarea>
+          </div>
+
+          <div class="form-field form-field--full">
+            <label for="riskNote">Risk Note</label>
+            <textarea id="riskNote" name="riskNote" rows="3" required>${deepDiligence?.riskNote ?? ''}</textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="button button--primary">Save Deep Diligence</button>
+          </div>
+        </form>
+      </div>
     </div>
   `;
 }
@@ -237,6 +307,7 @@ export function bindDealWorkspacePageEvents(root: HTMLElement, path: string): vo
   const dealId = path.split('/').pop() ?? '';
   const quickScreenForm = root.querySelector<HTMLFormElement>('#quick-screen-form');
   const decisionForm = root.querySelector<HTMLFormElement>('#decision-form');
+  const deepDiligenceForm = root.querySelector<HTMLFormElement>('#deep-diligence-form');
 
   if (quickScreenForm && dealId) {
     quickScreenForm.addEventListener('submit', (event) => {
@@ -318,6 +389,70 @@ export function bindDealWorkspacePageEvents(root: HTMLElement, path: string): vo
         rationale,
         whatWouldChangeMyMind,
         nextMilestoneNeeded
+      });
+
+      navigateTo(`/deals/${dealId}`);
+    });
+  }
+
+  if (deepDiligenceForm && dealId) {
+    deepDiligenceForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+
+      const formData = new FormData(deepDiligenceForm);
+
+      const businessModelScore = Number(formData.get('businessModelScore'));
+      const marketCustomerScore = Number(formData.get('marketCustomerScore'));
+      const tractionQualityScore = Number(formData.get('tractionQualityScore'));
+      const competitiveEdgeScore = Number(formData.get('competitiveEdgeScore'));
+      const riskScore = Number(formData.get('riskScore'));
+
+      const businessModelNote = String(formData.get('businessModelNote') ?? '').trim();
+      const marketCustomerNote = String(formData.get('marketCustomerNote') ?? '').trim();
+      const tractionQualityNote = String(formData.get('tractionQualityNote') ?? '').trim();
+      const competitiveEdgeNote = String(formData.get('competitiveEdgeNote') ?? '').trim();
+      const riskNote = String(formData.get('riskNote') ?? '').trim();
+
+      const numericScores = [
+        businessModelScore,
+        marketCustomerScore,
+        tractionQualityScore,
+        competitiveEdgeScore,
+        riskScore
+      ];
+
+      const scoresAreValid = numericScores.every(
+        (score) => Number.isInteger(score) && score >= 1 && score <= 5
+      );
+
+      if (!scoresAreValid) {
+        window.alert('Each deep-diligence score must be a whole number from 1 to 5.');
+        return;
+      }
+
+      if (
+        !businessModelNote ||
+        !marketCustomerNote ||
+        !tractionQualityNote ||
+        !competitiveEdgeNote ||
+        !riskNote
+      ) {
+        window.alert('Please complete all deep-diligence note fields.');
+        return;
+      }
+
+      saveDeepDiligence({
+        dealId,
+        businessModelScore,
+        businessModelNote,
+        marketCustomerScore,
+        marketCustomerNote,
+        tractionQualityScore,
+        tractionQualityNote,
+        competitiveEdgeScore,
+        competitiveEdgeNote,
+        riskScore,
+        riskNote
       });
 
       navigateTo(`/deals/${dealId}`);

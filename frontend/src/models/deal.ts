@@ -21,6 +21,20 @@ export interface DecisionData {
   nextMilestoneNeeded: string;
 }
 
+export interface DeepDiligenceData {
+  businessModelScore: number;
+  businessModelNote: string;
+  marketCustomerScore: number;
+  marketCustomerNote: string;
+  tractionQualityScore: number;
+  tractionQualityNote: string;
+  competitiveEdgeScore: number;
+  competitiveEdgeNote: string;
+  riskScore: number;
+  riskNote: string;
+  total: number;
+}
+
 export interface Deal {
   id: string;
   companyName: string;
@@ -36,4 +50,5 @@ export interface Deal {
   createdAt: string;
   quickScreen?: QuickScreenData;
   decision?: DecisionData;
+  deepDiligence?: DeepDiligenceData;
 }

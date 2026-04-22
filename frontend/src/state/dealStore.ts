@@ -1,4 +1,9 @@
-import type { Deal, DecisionData, QuickScreenData } from '../models/deal';
+import type {
+  Deal,
+  DecisionData,
+  DeepDiligenceData,
+  QuickScreenData
+} from '../models/deal';
 
 const initialDeals: Deal[] = [
   {
@@ -9,7 +14,7 @@ const initialDeals: Deal[] = [
     roundType: 'SAFE',
     shortDescription: 'Autonomous mobility systems for contested logistics.',
     quickScore: 8,
-    deepScore: 34,
+    deepScore: 18,
     status: 'watch',
     minimumInvestment: 100,
     valuation: 12000000,
@@ -32,6 +37,19 @@ const initialDeals: Deal[] = [
       rationale: 'Interesting defense-aligned opportunity, but needs more execution proof.',
       whatWouldChangeMyMind: 'Clear pilot conversion and evidence of repeat deployments.',
       nextMilestoneNeeded: 'Signed production or repeat pilot contract.'
+    },
+    deepDiligence: {
+      businessModelScore: 4,
+      businessModelNote: 'Clear defense logistics use case and monetization path.',
+      marketCustomerScore: 3,
+      marketCustomerNote: 'Customer is understandable, but procurement path still needs proof.',
+      tractionQualityScore: 3,
+      tractionQualityNote: 'Some pilot evidence, but still early.',
+      competitiveEdgeScore: 4,
+      competitiveEdgeNote: 'Strong positioning in a valuable defense workflow.',
+      riskScore: 4,
+      riskNote: 'Execution risk remains high despite clear need.',
+      total: 18
     }
   },
   {
@@ -42,11 +60,24 @@ const initialDeals: Deal[] = [
     roundType: 'Equity',
     shortDescription: 'Grid resilience software for industrial energy operators.',
     quickScore: 6,
-    deepScore: 24,
+    deepScore: 14,
     status: 'pass',
     minimumInvestment: 50,
     valuation: 8000000,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    deepDiligence: {
+      businessModelScore: 3,
+      businessModelNote: 'Business model is understandable.',
+      marketCustomerScore: 3,
+      marketCustomerNote: 'Customer is identifiable but buyer urgency is mixed.',
+      tractionQualityScore: 2,
+      tractionQualityNote: 'Limited evidence of strong traction.',
+      competitiveEdgeScore: 3,
+      competitiveEdgeNote: 'Some positioning, but no clear moat.',
+      riskScore: 3,
+      riskNote: 'Moderate risk, but not enough upside to offset.',
+      total: 14
+    }
   },
   {
     id: '3',
@@ -56,11 +87,24 @@ const initialDeals: Deal[] = [
     roundType: 'SAFE',
     shortDescription: 'Manufacturing intelligence platform for defense suppliers.',
     quickScore: 9,
-    deepScore: 39,
+    deepScore: 21,
     status: 'invest-small',
     minimumInvestment: 250,
     valuation: 15000000,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    deepDiligence: {
+      businessModelScore: 4,
+      businessModelNote: 'Clear software workflow tied to industrial operations.',
+      marketCustomerScore: 4,
+      marketCustomerNote: 'Customer segment is attractive and understandable.',
+      tractionQualityScore: 4,
+      tractionQualityNote: 'Better traction profile than most early deals.',
+      competitiveEdgeScore: 5,
+      competitiveEdgeNote: 'Strong niche positioning in a valuable dual-use area.',
+      riskScore: 4,
+      riskNote: 'Still early-stage, but risk/reward looks attractive.',
+      total: 21
+    }
   }
 ];
 
@@ -121,6 +165,27 @@ export function updateDealDecisionState(
       ...deal,
       status: decision.status,
       decision
+    };
+
+    return updatedDeal;
+  });
+
+  return updatedDeal;
+}
+
+export function updateDealDeepDiligenceState(
+  dealId: string,
+  deepDiligence: DeepDiligenceData
+): Deal | undefined {
+  let updatedDeal: Deal | undefined;
+
+  deals = deals.map((deal) => {
+    if (deal.id !== dealId) return deal;
+
+    updatedDeal = {
+      ...deal,
+      deepScore: deepDiligence.total,
+      deepDiligence
     };
 
     return updatedDeal;

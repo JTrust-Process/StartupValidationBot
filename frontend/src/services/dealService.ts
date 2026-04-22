@@ -1,9 +1,15 @@
-import type { Deal, DecisionData, QuickScreenData } from '../models/deal';
+import type {
+  Deal,
+  DecisionData,
+  DeepDiligenceData,
+  QuickScreenData
+} from '../models/deal';
 import {
   addDealState,
   getDealsState,
   getDealStateById,
   updateDealDecisionState,
+  updateDealDeepDiligenceState,
   updateDealQuickScreenState
 } from '../state/dealStore';
 
@@ -39,6 +45,20 @@ export interface SaveDecisionInput {
   nextMilestoneNeeded: string;
 }
 
+export interface SaveDeepDiligenceInput {
+  dealId: string;
+  businessModelScore: number;
+  businessModelNote: string;
+  marketCustomerScore: number;
+  marketCustomerNote: string;
+  tractionQualityScore: number;
+  tractionQualityNote: string;
+  competitiveEdgeScore: number;
+  competitiveEdgeNote: string;
+  riskScore: number;
+  riskNote: string;
+}
+
 export function getDeals(): Deal[] {
   return getDealsState();
 }
@@ -67,6 +87,13 @@ export function getQuickScreenOutcome(total: number): string {
   if (total <= 6) return 'Reps Only';
   if (total <= 8) return 'Dig Deeper';
   return 'High Interest';
+}
+
+export function getDeepDiligenceOutcome(total: number): string {
+  if (total <= 9) return 'Weak';
+  if (total <= 15) return 'Mixed';
+  if (total <= 20) return 'Interesting';
+  return 'Strong';
 }
 
 export function saveQuickScreen(input: SaveQuickScreenInput): Deal | undefined {
@@ -103,4 +130,31 @@ export function saveDecision(input: SaveDecisionInput): Deal | undefined {
   };
 
   return updateDealDecisionState(input.dealId, decision);
+}
+
+export function saveDeepDiligence(
+  input: SaveDeepDiligenceInput
+): Deal | undefined {
+  const total =
+    input.businessModelScore +
+    input.marketCustomerScore +
+    input.tractionQualityScore +
+    input.competitiveEdgeScore +
+    input.riskScore;
+
+  const deepDiligence: DeepDiligenceData = {
+    businessModelScore: input.businessModelScore,
+    businessModelNote: input.businessModelNote,
+    marketCustomerScore: input.marketCustomerScore,
+    marketCustomerNote: input.marketCustomerNote,
+    tractionQualityScore: input.tractionQualityScore,
+    tractionQualityNote: input.tractionQualityNote,
+    competitiveEdgeScore: input.competitiveEdgeScore,
+    competitiveEdgeNote: input.competitiveEdgeNote,
+    riskScore: input.riskScore,
+    riskNote: input.riskNote,
+    total
+  };
+
+  return updateDealDeepDiligenceState(input.dealId, deepDiligence);
 }

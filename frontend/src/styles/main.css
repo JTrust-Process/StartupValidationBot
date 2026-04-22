@@ -272,3 +272,11 @@ textarea {
   color: #9aa7bd;
   font-size: 0.95rem;
 }
+.form-field select {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid #2a3657;
+  background: #0d1426;
+  color: #e8ecf1;
+  padding: 12px;
+}

@@ -1,4 +1,4 @@
-import type { Deal, QuickScreenData } from '../models/deal';
+import type { Deal, DecisionData, QuickScreenData } from '../models/deal';
 
 const initialDeals: Deal[] = [
   {
@@ -26,6 +26,12 @@ const initialDeals: Deal[] = [
       bestProofPoint: 'Pilot engagement with defense-adjacent logistics operators.',
       biggestDoubt: 'Need stronger proof of repeatable deployment.',
       whySpendingTime: 'Fits dual-use / defense interest area.'
+    },
+    decision: {
+      status: 'watch',
+      rationale: 'Interesting defense-aligned opportunity, but needs more execution proof.',
+      whatWouldChangeMyMind: 'Clear pilot conversion and evidence of repeat deployments.',
+      nextMilestoneNeeded: 'Signed production or repeat pilot contract.'
     }
   },
   {
@@ -94,6 +100,27 @@ export function updateDealQuickScreenState(
       ...deal,
       quickScore: quickScreen.total,
       quickScreen
+    };
+
+    return updatedDeal;
+  });
+
+  return updatedDeal;
+}
+
+export function updateDealDecisionState(
+  dealId: string,
+  decision: DecisionData
+): Deal | undefined {
+  let updatedDeal: Deal | undefined;
+
+  deals = deals.map((deal) => {
+    if (deal.id !== dealId) return deal;
+
+    updatedDeal = {
+      ...deal,
+      status: decision.status,
+      decision
     };
 
     return updatedDeal;

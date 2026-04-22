@@ -14,6 +14,13 @@ export interface QuickScreenData {
   whySpendingTime: string;
 }
 
+export interface DecisionData {
+  status: Exclude<DealStatus, 'new'>;
+  rationale: string;
+  whatWouldChangeMyMind: string;
+  nextMilestoneNeeded: string;
+}
+
 export interface Deal {
   id: string;
   companyName: string;
@@ -28,4 +35,5 @@ export interface Deal {
   valuation?: number;
   createdAt: string;
   quickScreen?: QuickScreenData;
+  decision?: DecisionData;
 }

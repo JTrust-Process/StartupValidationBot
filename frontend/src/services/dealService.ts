@@ -1,8 +1,9 @@
-import type { Deal, QuickScreenData } from '../models/deal';
+import type { Deal, DecisionData, QuickScreenData } from '../models/deal';
 import {
   addDealState,
   getDealsState,
   getDealStateById,
+  updateDealDecisionState,
   updateDealQuickScreenState
 } from '../state/dealStore';
 
@@ -28,6 +29,14 @@ export interface SaveQuickScreenInput {
   bestProofPoint: string;
   biggestDoubt: string;
   whySpendingTime: string;
+}
+
+export interface SaveDecisionInput {
+  dealId: string;
+  status: Exclude<Deal['status'], 'new'>;
+  rationale: string;
+  whatWouldChangeMyMind: string;
+  nextMilestoneNeeded: string;
 }
 
 export function getDeals(): Deal[] {
@@ -83,4 +92,15 @@ export function saveQuickScreen(input: SaveQuickScreenInput): Deal | undefined {
   };
 
   return updateDealQuickScreenState(input.dealId, quickScreen);
+}
+
+export function saveDecision(input: SaveDecisionInput): Deal | undefined {
+  const decision: DecisionData = {
+    status: input.status,
+    rationale: input.rationale,
+    whatWouldChangeMyMind: input.whatWouldChangeMyMind,
+    nextMilestoneNeeded: input.nextMilestoneNeeded
+  };
+
+  return updateDealDecisionState(input.dealId, decision);
 }

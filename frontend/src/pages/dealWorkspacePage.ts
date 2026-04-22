@@ -1,4 +1,9 @@
-import { getDealById, getQuickScreenOutcome, saveQuickScreen } from '../services/dealService';
+import {
+  getDealById,
+  getQuickScreenOutcome,
+  saveDecision,
+  saveQuickScreen
+} from '../services/dealService';
 import { navigateTo } from '../utils/router';
 
 export function renderDealWorkspacePage(path: string): string {
@@ -17,6 +22,7 @@ export function renderDealWorkspacePage(path: string): string {
   }
 
   const quickScreen = deal.quickScreen;
+  const decision = deal.decision;
   const quickOutcome = getQuickScreenOutcome(deal.quickScore);
 
   return `
@@ -67,126 +73,93 @@ export function renderDealWorkspacePage(path: string): string {
         <form class="form-grid" id="quick-screen-form" data-deal-id="${deal.id}">
           <div class="form-field">
             <label for="businessClarity">Business Clarity</label>
-            <input
-              id="businessClarity"
-              name="businessClarity"
-              type="number"
-              min="0"
-              max="2"
-              step="1"
-              value="${quickScreen?.businessClarity ?? 0}"
-              required
-            />
+            <input id="businessClarity" name="businessClarity" type="number" min="0" max="2" step="1" value="${quickScreen?.businessClarity ?? 0}" required />
           </div>
 
           <div class="form-field">
             <label for="tractionEvidence">Traction Evidence</label>
-            <input
-              id="tractionEvidence"
-              name="tractionEvidence"
-              type="number"
-              min="0"
-              max="2"
-              step="1"
-              value="${quickScreen?.tractionEvidence ?? 0}"
-              required
-            />
+            <input id="tractionEvidence" name="tractionEvidence" type="number" min="0" max="2" step="1" value="${quickScreen?.tractionEvidence ?? 0}" required />
           </div>
 
           <div class="form-field">
             <label for="edge">Edge</label>
-            <input
-              id="edge"
-              name="edge"
-              type="number"
-              min="0"
-              max="2"
-              step="1"
-              value="${quickScreen?.edge ?? 0}"
-              required
-            />
+            <input id="edge" name="edge" type="number" min="0" max="2" step="1" value="${quickScreen?.edge ?? 0}" required />
           </div>
 
           <div class="form-field">
             <label for="priceSanity">Price / Valuation Sanity</label>
-            <input
-              id="priceSanity"
-              name="priceSanity"
-              type="number"
-              min="0"
-              max="2"
-              step="1"
-              value="${quickScreen?.priceSanity ?? 0}"
-              required
-            />
+            <input id="priceSanity" name="priceSanity" type="number" min="0" max="2" step="1" value="${quickScreen?.priceSanity ?? 0}" required />
           </div>
 
           <div class="form-field">
             <label for="trustTransparency">Trust / Transparency</label>
-            <input
-              id="trustTransparency"
-              name="trustTransparency"
-              type="number"
-              min="0"
-              max="2"
-              step="1"
-              value="${quickScreen?.trustTransparency ?? 0}"
-              required
-            />
+            <input id="trustTransparency" name="trustTransparency" type="number" min="0" max="2" step="1" value="${quickScreen?.trustTransparency ?? 0}" required />
           </div>
 
           <div class="form-field form-field--full">
             <label for="whatIsIt">What is it?</label>
-            <textarea
-              id="whatIsIt"
-              name="whatIsIt"
-              rows="3"
-              required
-            >${quickScreen?.whatIsIt ?? ''}</textarea>
+            <textarea id="whatIsIt" name="whatIsIt" rows="3" required>${quickScreen?.whatIsIt ?? ''}</textarea>
           </div>
 
           <div class="form-field form-field--full">
             <label for="whyMightItWin">Why might it win?</label>
-            <textarea
-              id="whyMightItWin"
-              name="whyMightItWin"
-              rows="3"
-              required
-            >${quickScreen?.whyMightItWin ?? ''}</textarea>
+            <textarea id="whyMightItWin" name="whyMightItWin" rows="3" required>${quickScreen?.whyMightItWin ?? ''}</textarea>
           </div>
 
           <div class="form-field form-field--full">
             <label for="bestProofPoint">Best proof point</label>
-            <textarea
-              id="bestProofPoint"
-              name="bestProofPoint"
-              rows="3"
-              required
-            >${quickScreen?.bestProofPoint ?? ''}</textarea>
+            <textarea id="bestProofPoint" name="bestProofPoint" rows="3" required>${quickScreen?.bestProofPoint ?? ''}</textarea>
           </div>
 
           <div class="form-field form-field--full">
             <label for="biggestDoubt">Biggest doubt</label>
-            <textarea
-              id="biggestDoubt"
-              name="biggestDoubt"
-              rows="3"
-              required
-            >${quickScreen?.biggestDoubt ?? ''}</textarea>
+            <textarea id="biggestDoubt" name="biggestDoubt" rows="3" required>${quickScreen?.biggestDoubt ?? ''}</textarea>
           </div>
 
           <div class="form-field form-field--full">
             <label for="whySpendingTime">Why spend time on this?</label>
-            <textarea
-              id="whySpendingTime"
-              name="whySpendingTime"
-              rows="3"
-              required
-            >${quickScreen?.whySpendingTime ?? ''}</textarea>
+            <textarea id="whySpendingTime" name="whySpendingTime" rows="3" required>${quickScreen?.whySpendingTime ?? ''}</textarea>
           </div>
 
           <div class="form-actions">
             <button type="submit" class="button button--primary">Save Quick Screen</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="page-header">
+          <h3>Decision</h3>
+          <p>Force a deliberate pass, watch, or invest-small decision.</p>
+        </div>
+
+        <form class="form-grid" id="decision-form" data-deal-id="${deal.id}">
+          <div class="form-field">
+            <label for="decisionStatus">Decision</label>
+            <select id="decisionStatus" name="decisionStatus" required>
+              <option value="watch" ${decision?.status === 'watch' ? 'selected' : ''}>Watch</option>
+              <option value="pass" ${decision?.status === 'pass' ? 'selected' : ''}>Pass</option>
+              <option value="invest-small" ${decision?.status === 'invest-small' ? 'selected' : ''}>Invest Small</option>
+            </select>
+          </div>
+
+          <div class="form-field form-field--full">
+            <label for="rationale">Rationale</label>
+            <textarea id="rationale" name="rationale" rows="4" required>${decision?.rationale ?? ''}</textarea>
+          </div>
+
+          <div class="form-field form-field--full">
+            <label for="whatWouldChangeMyMind">What would change your mind?</label>
+            <textarea id="whatWouldChangeMyMind" name="whatWouldChangeMyMind" rows="4" required>${decision?.whatWouldChangeMyMind ?? ''}</textarea>
+          </div>
+
+          <div class="form-field form-field--full">
+            <label for="nextMilestoneNeeded">Next milestone needed</label>
+            <textarea id="nextMilestoneNeeded" name="nextMilestoneNeeded" rows="4" required>${decision?.nextMilestoneNeeded ?? ''}</textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="button button--primary">Save Decision</button>
           </div>
         </form>
       </div>
@@ -196,69 +169,92 @@ export function renderDealWorkspacePage(path: string): string {
 
 export function bindDealWorkspacePageEvents(root: HTMLElement, path: string): void {
   const dealId = path.split('/').pop() ?? '';
-  const form = root.querySelector<HTMLFormElement>('#quick-screen-form');
+  const quickScreenForm = root.querySelector<HTMLFormElement>('#quick-screen-form');
+  const decisionForm = root.querySelector<HTMLFormElement>('#decision-form');
 
-  if (!form || !dealId) return;
+  if (quickScreenForm && dealId) {
+    quickScreenForm.addEventListener('submit', (event) => {
+      event.preventDefault();
 
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
+      const formData = new FormData(quickScreenForm);
 
-    const formData = new FormData(form);
+      const businessClarity = Number(formData.get('businessClarity'));
+      const tractionEvidence = Number(formData.get('tractionEvidence'));
+      const edge = Number(formData.get('edge'));
+      const priceSanity = Number(formData.get('priceSanity'));
+      const trustTransparency = Number(formData.get('trustTransparency'));
 
-    const businessClarity = Number(formData.get('businessClarity'));
-    const tractionEvidence = Number(formData.get('tractionEvidence'));
-    const edge = Number(formData.get('edge'));
-    const priceSanity = Number(formData.get('priceSanity'));
-    const trustTransparency = Number(formData.get('trustTransparency'));
+      const whatIsIt = String(formData.get('whatIsIt') ?? '').trim();
+      const whyMightItWin = String(formData.get('whyMightItWin') ?? '').trim();
+      const bestProofPoint = String(formData.get('bestProofPoint') ?? '').trim();
+      const biggestDoubt = String(formData.get('biggestDoubt') ?? '').trim();
+      const whySpendingTime = String(formData.get('whySpendingTime') ?? '').trim();
 
-    const whatIsIt = String(formData.get('whatIsIt') ?? '').trim();
-    const whyMightItWin = String(formData.get('whyMightItWin') ?? '').trim();
-    const bestProofPoint = String(formData.get('bestProofPoint') ?? '').trim();
-    const biggestDoubt = String(formData.get('biggestDoubt') ?? '').trim();
-    const whySpendingTime = String(formData.get('whySpendingTime') ?? '').trim();
+      const numericScores = [
+        businessClarity,
+        tractionEvidence,
+        edge,
+        priceSanity,
+        trustTransparency
+      ];
 
-    const numericScores = [
-      businessClarity,
-      tractionEvidence,
-      edge,
-      priceSanity,
-      trustTransparency
-    ];
+      const scoresAreValid = numericScores.every(
+        (score) => Number.isInteger(score) && score >= 0 && score <= 2
+      );
 
-    const scoresAreValid = numericScores.every(
-      (score) => Number.isInteger(score) && score >= 0 && score <= 2
-    );
+      if (!scoresAreValid) {
+        window.alert('Each quick-screen score must be a whole number from 0 to 2.');
+        return;
+      }
 
-    if (!scoresAreValid) {
-      window.alert('Each quick-screen score must be a whole number from 0 to 2.');
-      return;
-    }
+      if (!whatIsIt || !whyMightItWin || !bestProofPoint || !biggestDoubt || !whySpendingTime) {
+        window.alert('Please complete all quick-screen note fields.');
+        return;
+      }
 
-    if (
-      !whatIsIt ||
-      !whyMightItWin ||
-      !bestProofPoint ||
-      !biggestDoubt ||
-      !whySpendingTime
-    ) {
-      window.alert('Please complete all quick-screen note fields.');
-      return;
-    }
+      saveQuickScreen({
+        dealId,
+        businessClarity,
+        tractionEvidence,
+        edge,
+        priceSanity,
+        trustTransparency,
+        whatIsIt,
+        whyMightItWin,
+        bestProofPoint,
+        biggestDoubt,
+        whySpendingTime
+      });
 
-    saveQuickScreen({
-      dealId,
-      businessClarity,
-      tractionEvidence,
-      edge,
-      priceSanity,
-      trustTransparency,
-      whatIsIt,
-      whyMightItWin,
-      bestProofPoint,
-      biggestDoubt,
-      whySpendingTime
+      navigateTo(`/deals/${dealId}`);
     });
+  }
 
-    navigateTo(`/deals/${dealId}`);
-  });
+  if (decisionForm && dealId) {
+    decisionForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+
+      const formData = new FormData(decisionForm);
+
+      const status = String(formData.get('decisionStatus') ?? '').trim() as 'watch' | 'pass' | 'invest-small';
+      const rationale = String(formData.get('rationale') ?? '').trim();
+      const whatWouldChangeMyMind = String(formData.get('whatWouldChangeMyMind') ?? '').trim();
+      const nextMilestoneNeeded = String(formData.get('nextMilestoneNeeded') ?? '').trim();
+
+      if (!status || !rationale || !whatWouldChangeMyMind || !nextMilestoneNeeded) {
+        window.alert('Please complete all decision fields.');
+        return;
+      }
+
+      saveDecision({
+        dealId,
+        status,
+        rationale,
+        whatWouldChangeMyMind,
+        nextMilestoneNeeded
+      });
+
+      navigateTo(`/deals/${dealId}`);
+    });
+  }
 }

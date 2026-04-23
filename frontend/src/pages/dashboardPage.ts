@@ -24,6 +24,7 @@ export function renderDashboardPage(): string {
   const averageDeepScore = getAverage(deepScores);
 
   const recentDeals = deals.slice(0, 5);
+  const reviewCount = deals.filter((deal) => deal.review?.nextReviewDate).length;
 
   const recentDealsHtml = recentDeals.length
     ? recentDeals
@@ -99,9 +100,9 @@ export function renderDashboardPage(): string {
         </div>
 
         <div class="card">
-          <h3>New Status</h3>
-          <p class="metric">${deals.filter((deal) => deal.status === 'new').length}</p>
-          <p class="metric-subtext">Deals still awaiting a decision</p>
+          <h3>Scheduled Reviews</h3>
+          <p class="metric">${reviewCount}</p>
+          <p class="metric-subtext">Deals with a next review date</p>
         </div>
       </div>
 

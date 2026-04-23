@@ -2,7 +2,8 @@ import type {
   Deal,
   DecisionData,
   DeepDiligenceData,
-  QuickScreenData
+  QuickScreenData,
+  ReviewData
 } from '../models/deal';
 
 const STORAGE_KEY = 'startup-validation-bot.deals';
@@ -52,6 +53,11 @@ const initialDeals: Deal[] = [
       riskScore: 4,
       riskNote: 'Execution risk remains high despite clear need.',
       total: 18
+    },
+    review: {
+      nextReviewDate: '2026-05-15',
+      reviewNote: 'Check for pilot conversion or production contract progress.',
+      thesisDirection: 'unchanged'
     }
   },
   {
@@ -129,9 +135,10 @@ function loadDealsFromStorage(): Deal[] | null {
   }
 }
 
-let deals: Deal[] = loadDealsFromStorage() ?? [...initialDeals];
+const storedDeals = loadDealsFromStorage();
+let deals: Deal[] = storedDeals ?? [...initialDeals];
 
-if (!loadDealsFromStorage()) {
+if (!storedDeals) {
   saveDealsToStorage(deals);
 }
 
@@ -218,6 +225,27 @@ export function updateDealDeepDiligenceState(
       ...deal,
       deepScore: deepDiligence.total,
       deepDiligence
+    };
+
+    return updatedDeal;
+  });
+
+  updateDeals(nextDeals);
+  return updatedDeal;
+}
+
+export function updateDealReviewState(
+  dealId: string,
+  review: ReviewData
+): Deal | undefined {
+  let updatedDeal: Deal | undefined;
+
+  const nextDeals = deals.map((deal) => {
+    if (deal.id !== dealId) return deal;
+
+    updatedDeal = {
+      ...deal,
+      review
     };
 
     return updatedDeal;

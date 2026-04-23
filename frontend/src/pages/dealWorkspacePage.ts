@@ -4,7 +4,8 @@ import {
   getQuickScreenOutcome,
   saveDecision,
   saveDeepDiligence,
-  saveQuickScreen
+  saveQuickScreen,
+  saveReview
 } from '../services/dealService';
 import { navigateTo } from '../utils/router';
 
@@ -68,6 +69,15 @@ function renderOverviewSection(path: string): string {
         <div class="summary-block">
           <h4>Best Proof Point</h4>
           <p>${deal.quickScreen?.bestProofPoint ?? 'No proof point captured yet.'}</p>
+        </div>
+
+        <div class="summary-block">
+          <h4>Review Status</h4>
+          <p>${
+            deal.review
+              ? `Next review: ${deal.review.nextReviewDate}<br />Thesis: ${deal.review.thesisDirection}<br /><br />${deal.review.reviewNote}`
+              : 'No review scheduled yet.'
+          }</p>
         </div>
       </div>
     </div>
@@ -299,6 +309,49 @@ export function renderDealWorkspacePage(path: string): string {
           </div>
         </form>
       </div>
+
+      <div class="card">
+        <div class="page-header">
+          <h3>Review Tracking</h3>
+          <p>Track when to revisit the deal and whether the thesis is improving or weakening.</p>
+        </div>
+
+        <form class="form-grid" id="review-form" data-deal-id="${deal.id}">
+          <div class="form-field">
+            <label for="nextReviewDate">Next Review Date</label>
+            <input
+              id="nextReviewDate"
+              name="nextReviewDate"
+              type="date"
+              value="${deal.review?.nextReviewDate ?? ''}"
+              required
+            />
+          </div>
+
+          <div class="form-field">
+            <label for="thesisDirection">Thesis Direction</label>
+            <select id="thesisDirection" name="thesisDirection" required>
+              <option value="stronger" ${deal.review?.thesisDirection === 'stronger' ? 'selected' : ''}>Stronger</option>
+              <option value="unchanged" ${deal.review?.thesisDirection === 'unchanged' ? 'selected' : ''}>Unchanged</option>
+              <option value="weaker" ${deal.review?.thesisDirection === 'weaker' ? 'selected' : ''}>Weaker</option>
+            </select>
+          </div>
+
+          <div class="form-field form-field--full">
+            <label for="reviewNote">Review Note</label>
+            <textarea
+              id="reviewNote"
+              name="reviewNote"
+              rows="4"
+              required
+            >${deal.review?.reviewNote ?? ''}</textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="button button--primary">Save Review</button>
+          </div>
+        </form>
+      </div>
     </div>
   `;
 }
@@ -308,6 +361,7 @@ export function bindDealWorkspacePageEvents(root: HTMLElement, path: string): vo
   const quickScreenForm = root.querySelector<HTMLFormElement>('#quick-screen-form');
   const decisionForm = root.querySelector<HTMLFormElement>('#decision-form');
   const deepDiligenceForm = root.querySelector<HTMLFormElement>('#deep-diligence-form');
+  const reviewForm = root.querySelector<HTMLFormElement>('#review-form');
 
   if (quickScreenForm && dealId) {
     quickScreenForm.addEventListener('submit', (event) => {
@@ -453,6 +507,35 @@ export function bindDealWorkspacePageEvents(root: HTMLElement, path: string): vo
         competitiveEdgeNote,
         riskScore,
         riskNote
+      });
+
+      navigateTo(`/deals/${dealId}`);
+    });
+  }
+
+  if (reviewForm && dealId) {
+    reviewForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+
+      const formData = new FormData(reviewForm);
+
+      const nextReviewDate = String(formData.get('nextReviewDate') ?? '').trim();
+      const thesisDirection = String(formData.get('thesisDirection') ?? '').trim() as
+        | 'stronger'
+        | 'weaker'
+        | 'unchanged';
+      const reviewNote = String(formData.get('reviewNote') ?? '').trim();
+
+      if (!nextReviewDate || !thesisDirection || !reviewNote) {
+        window.alert('Please complete all review fields.');
+        return;
+      }
+
+      saveReview({
+        dealId,
+        nextReviewDate,
+        thesisDirection,
+        reviewNote
       });
 
       navigateTo(`/deals/${dealId}`);

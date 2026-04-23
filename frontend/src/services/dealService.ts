@@ -2,7 +2,9 @@ import type {
   Deal,
   DecisionData,
   DeepDiligenceData,
-  QuickScreenData
+  QuickScreenData,
+  ReviewData,
+  ThesisDirection
 } from '../models/deal';
 import {
   addDealState,
@@ -11,7 +13,8 @@ import {
   resetDealsState,
   updateDealDecisionState,
   updateDealDeepDiligenceState,
-  updateDealQuickScreenState
+  updateDealQuickScreenState,
+  updateDealReviewState
 } from '../state/dealStore';
 
 export interface CreateDealInput {
@@ -58,6 +61,13 @@ export interface SaveDeepDiligenceInput {
   competitiveEdgeNote: string;
   riskScore: number;
   riskNote: string;
+}
+
+export interface SaveReviewInput {
+  dealId: string;
+  nextReviewDate: string;
+  reviewNote: string;
+  thesisDirection: ThesisDirection;
 }
 
 export function getDeals(): Deal[] {
@@ -158,6 +168,16 @@ export function saveDeepDiligence(
   };
 
   return updateDealDeepDiligenceState(input.dealId, deepDiligence);
+}
+
+export function saveReview(input: SaveReviewInput): Deal | undefined {
+  const review: ReviewData = {
+    nextReviewDate: input.nextReviewDate,
+    reviewNote: input.reviewNote,
+    thesisDirection: input.thesisDirection
+  };
+
+  return updateDealReviewState(input.dealId, review);
 }
 
 export function resetDeals(): void {

@@ -1,4 +1,5 @@
 export type DealStatus = 'new' | 'watch' | 'pass' | 'invest-small';
+export type ThesisDirection = 'stronger' | 'weaker' | 'unchanged';
 
 export interface QuickScreenData {
   businessClarity: number;
@@ -35,6 +36,12 @@ export interface DeepDiligenceData {
   total: number;
 }
 
+export interface ReviewData {
+  nextReviewDate: string;
+  reviewNote: string;
+  thesisDirection: ThesisDirection;
+}
+
 export interface Deal {
   id: string;
   companyName: string;
@@ -51,4 +58,5 @@ export interface Deal {
   quickScreen?: QuickScreenData;
   decision?: DecisionData;
   deepDiligence?: DeepDiligenceData;
+  review?: ReviewData;
 }

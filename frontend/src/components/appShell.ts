@@ -81,7 +81,9 @@ function renderLayout(root: HTMLDivElement): void {
         <header class="topbar">
           <div>
             <h1 class="topbar__title">Deal Diligence Workstation</h1>
-            <p class="topbar__subtitle">Structured startup investing research</p>
+            <p class="topbar__subtitle">
+              Structured startup diligence, scoring, and thesis tracking for real investing decisions.
+            </p>
           </div>
         </header>
 

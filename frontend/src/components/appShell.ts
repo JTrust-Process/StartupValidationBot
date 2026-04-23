@@ -6,6 +6,7 @@ import {
   bindDealWorkspacePageEvents,
   renderDealWorkspacePage
 } from '../pages/dealWorkspacePage';
+import { getDealById, loadDealById } from '../services/dealService';
 
 function getPageHtml(path: string): string {
   if (path === '/dashboard') return renderDashboardPage();
@@ -62,8 +63,23 @@ function bindPageEvents(root: HTMLDivElement, path: string): void {
   }
 }
 
-function renderLayout(root: HTMLDivElement): void {
+async function ensureWorkspaceDealLoaded(path: string): Promise<void> {
+  if (!path.startsWith('/deals/')) return;
+  if (path === '/deals/new') return;
+
+  const id = Number(path.split('/').pop() ?? '');
+  if (!id) return;
+
+  const existingDeal = getDealById(id);
+  if (existingDeal) return;
+
+  await loadDealById(id);
+}
+
+async function renderLayout(root: HTMLDivElement): Promise<void> {
   const currentRoute = getCurrentRoute();
+
+  await ensureWorkspaceDealLoaded(currentRoute.path);
 
   root.innerHTML = `
     <div class="app-shell">
@@ -100,14 +116,27 @@ function renderLayout(root: HTMLDivElement): void {
 }
 
 export function renderApp(root: HTMLDivElement): void {
-  const rerender = () => renderLayout(root);
+  const rerender = async () => {
+    try {
+      await renderLayout(root);
+    } catch (error) {
+      console.error('Failed to render app layout:', error);
+      root.innerHTML = `
+        <div style="padding: 24px; color: white;">
+          <h2>Failed to render page</h2>
+          <p>Please make sure the backend is running and try again.</p>
+        </div>
+      `;
+    }
+  };
 
-  onRouteChange(rerender);
+  onRouteChange(() => {
+    void rerender();
+  });
 
   if (!window.location.hash) {
-        window.location.hash = '/dashboard';
+    window.location.hash = '/dashboard';
   }
-  renderLayout(root);
 
-  renderLayout(root);
+  void rerender();
 }

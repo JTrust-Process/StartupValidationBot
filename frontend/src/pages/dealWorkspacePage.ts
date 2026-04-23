@@ -2,21 +2,32 @@ import {
   getDealById,
   getDeepDiligenceOutcome,
   getQuickScreenOutcome,
+  loadDealById,
   saveDecision,
   saveDeepDiligence,
   saveQuickScreen,
   saveReview
 } from '../services/dealService';
+import { formatDealStatus, formatThesisDirection } from '../utils/formatters';
 import { navigateTo } from '../utils/router';
 
+async function refreshWorkspaceDeal(dealId: number): Promise<void> {
+  await loadDealById(dealId);
+  window.dispatchEvent(new HashChangeEvent('hashchange'));
+}
+
 function renderOverviewSection(path: string): string {
-  const id = path.split('/').pop() ?? '';
+  const id = Number(path.split('/').pop() ?? '');
   const deal = getDealById(id);
 
   if (!deal) return '';
 
   const quickOutcome = getQuickScreenOutcome(deal.quickScore);
-  const deepOutcome = deal.deepScore ? getDeepDiligenceOutcome(deal.deepScore) : 'Not scored';
+  const deepOutcome =
+    typeof deal.deepScore === 'number'
+      ? getDeepDiligenceOutcome(deal.deepScore)
+      : 'Not scored';
+
   const decision = deal.decision;
 
   return `
@@ -41,7 +52,7 @@ function renderOverviewSection(path: string): string {
 
         <div class="overview-item">
           <div class="overview-label">Decision</div>
-          <div class="overview-value">${decision?.status ?? deal.status}</div>
+          <div class="overview-value">${formatDealStatus(decision?.status ?? deal.status)}</div>
         </div>
 
         <div class="overview-item">
@@ -75,7 +86,7 @@ function renderOverviewSection(path: string): string {
           <h4>Review Status</h4>
           <p>${
             deal.review
-              ? `Next review: ${deal.review.nextReviewDate}<br />Thesis: ${deal.review.thesisDirection}<br /><br />${deal.review.reviewNote}`
+              ? `Next review: ${deal.review.nextReviewDate}<br />Thesis: ${formatThesisDirection(deal.review.thesisDirection)}<br /><br />${deal.review.reviewNote}`
               : 'No review scheduled yet.'
           }</p>
         </div>
@@ -85,7 +96,7 @@ function renderOverviewSection(path: string): string {
 }
 
 export function renderDealWorkspacePage(path: string): string {
-  const id = path.split('/').pop() ?? '';
+  const id = Number(path.split('/').pop() ?? '');
   const deal = getDealById(id);
 
   if (!deal) {
@@ -103,7 +114,10 @@ export function renderDealWorkspacePage(path: string): string {
   const decision = deal.decision;
   const deepDiligence = deal.deepDiligence;
   const quickOutcome = getQuickScreenOutcome(deal.quickScore);
-  const deepOutcome = deal.deepScore ? getDeepDiligenceOutcome(deal.deepScore) : 'Not scored';
+  const deepOutcome =
+    typeof deal.deepScore === 'number'
+      ? getDeepDiligenceOutcome(deal.deepScore)
+      : 'Not scored';
 
   return `
     <div class="page">
@@ -113,7 +127,9 @@ export function renderDealWorkspacePage(path: string): string {
           <p>${deal.sector} • ${deal.platform} • ${deal.roundType}</p>
         </div>
 
-        <span class="status-chip status-chip--${deal.status}">${deal.status}</span>
+        <span class="status-chip status-chip--${deal.status.toLowerCase().replace('_', '-')}">
+          ${formatDealStatus(deal.status)}
+        </span>
       </div>
 
       <div class="card">
@@ -220,9 +236,9 @@ export function renderDealWorkspacePage(path: string): string {
           <div class="form-field">
             <label for="decisionStatus">Decision</label>
             <select id="decisionStatus" name="decisionStatus" required>
-              <option value="watch" ${decision?.status === 'watch' ? 'selected' : ''}>Watch</option>
-              <option value="pass" ${decision?.status === 'pass' ? 'selected' : ''}>Pass</option>
-              <option value="invest-small" ${decision?.status === 'invest-small' ? 'selected' : ''}>Invest Small</option>
+              <option value="WATCH" ${decision?.status === 'WATCH' ? 'selected' : ''}>Watch</option>
+              <option value="PASS" ${decision?.status === 'PASS' ? 'selected' : ''}>Pass</option>
+              <option value="INVEST_SMALL" ${decision?.status === 'INVEST_SMALL' ? 'selected' : ''}>Invest Small</option>
             </select>
           </div>
 
@@ -331,9 +347,9 @@ export function renderDealWorkspacePage(path: string): string {
           <div class="form-field">
             <label for="thesisDirection">Thesis Direction</label>
             <select id="thesisDirection" name="thesisDirection" required>
-              <option value="stronger" ${deal.review?.thesisDirection === 'stronger' ? 'selected' : ''}>Stronger</option>
-              <option value="unchanged" ${deal.review?.thesisDirection === 'unchanged' ? 'selected' : ''}>Unchanged</option>
-              <option value="weaker" ${deal.review?.thesisDirection === 'weaker' ? 'selected' : ''}>Weaker</option>
+              <option value="STRONGER" ${deal.review?.thesisDirection === 'STRONGER' ? 'selected' : ''}>Stronger</option>
+              <option value="UNCHANGED" ${deal.review?.thesisDirection === 'UNCHANGED' ? 'selected' : ''}>Unchanged</option>
+              <option value="WEAKER" ${deal.review?.thesisDirection === 'WEAKER' ? 'selected' : ''}>Weaker</option>
             </select>
           </div>
 
@@ -357,14 +373,14 @@ export function renderDealWorkspacePage(path: string): string {
 }
 
 export function bindDealWorkspacePageEvents(root: HTMLElement, path: string): void {
-  const dealId = path.split('/').pop() ?? '';
+  const dealId = Number(path.split('/').pop() ?? '');
   const quickScreenForm = root.querySelector<HTMLFormElement>('#quick-screen-form');
   const decisionForm = root.querySelector<HTMLFormElement>('#decision-form');
   const deepDiligenceForm = root.querySelector<HTMLFormElement>('#deep-diligence-form');
   const reviewForm = root.querySelector<HTMLFormElement>('#review-form');
 
   if (quickScreenForm && dealId) {
-    quickScreenForm.addEventListener('submit', (event) => {
+    quickScreenForm.addEventListener('submit', async (event) => {
       event.preventDefault();
 
       const formData = new FormData(quickScreenForm);
@@ -403,31 +419,35 @@ export function bindDealWorkspacePageEvents(root: HTMLElement, path: string): vo
         return;
       }
 
-      saveQuickScreen({
-        dealId,
-        businessClarity,
-        tractionEvidence,
-        edge,
-        priceSanity,
-        trustTransparency,
-        whatIsIt,
-        whyMightItWin,
-        bestProofPoint,
-        biggestDoubt,
-        whySpendingTime
-      });
+      try {
+        await saveQuickScreen(dealId, {
+          businessClarity,
+          tractionEvidence,
+          edge,
+          priceSanity,
+          trustTransparency,
+          whatIsIt,
+          whyMightItWin,
+          bestProofPoint,
+          biggestDoubt,
+          whySpendingTime
+        });
 
-      navigateTo(`/deals/${dealId}`);
+        await refreshWorkspaceDeal(dealId);
+      } catch (error) {
+        console.error('Failed to save quick screen:', error);
+        window.alert('Failed to save quick screen.');
+      }
     });
   }
 
   if (decisionForm && dealId) {
-    decisionForm.addEventListener('submit', (event) => {
+    decisionForm.addEventListener('submit', async (event) => {
       event.preventDefault();
 
       const formData = new FormData(decisionForm);
 
-      const status = String(formData.get('decisionStatus') ?? '').trim() as 'watch' | 'pass' | 'invest-small';
+      const status = String(formData.get('decisionStatus') ?? '').trim() as 'WATCH' | 'PASS' | 'INVEST_SMALL';
       const rationale = String(formData.get('rationale') ?? '').trim();
       const whatWouldChangeMyMind = String(formData.get('whatWouldChangeMyMind') ?? '').trim();
       const nextMilestoneNeeded = String(formData.get('nextMilestoneNeeded') ?? '').trim();
@@ -437,20 +457,24 @@ export function bindDealWorkspacePageEvents(root: HTMLElement, path: string): vo
         return;
       }
 
-      saveDecision({
-        dealId,
-        status,
-        rationale,
-        whatWouldChangeMyMind,
-        nextMilestoneNeeded
-      });
+      try {
+        await saveDecision(dealId, {
+          status,
+          rationale,
+          whatWouldChangeMyMind,
+          nextMilestoneNeeded
+        });
 
-      navigateTo(`/deals/${dealId}`);
+        await refreshWorkspaceDeal(dealId);
+      } catch (error) {
+        console.error('Failed to save decision:', error);
+        window.alert('Failed to save decision.');
+      }
     });
   }
 
   if (deepDiligenceForm && dealId) {
-    deepDiligenceForm.addEventListener('submit', (event) => {
+    deepDiligenceForm.addEventListener('submit', async (event) => {
       event.preventDefault();
 
       const formData = new FormData(deepDiligenceForm);
@@ -495,35 +519,39 @@ export function bindDealWorkspacePageEvents(root: HTMLElement, path: string): vo
         return;
       }
 
-      saveDeepDiligence({
-        dealId,
-        businessModelScore,
-        businessModelNote,
-        marketCustomerScore,
-        marketCustomerNote,
-        tractionQualityScore,
-        tractionQualityNote,
-        competitiveEdgeScore,
-        competitiveEdgeNote,
-        riskScore,
-        riskNote
-      });
+      try {
+        await saveDeepDiligence(dealId, {
+          businessModelScore,
+          businessModelNote,
+          marketCustomerScore,
+          marketCustomerNote,
+          tractionQualityScore,
+          tractionQualityNote,
+          competitiveEdgeScore,
+          competitiveEdgeNote,
+          riskScore,
+          riskNote
+        });
 
-      navigateTo(`/deals/${dealId}`);
+        await refreshWorkspaceDeal(dealId);
+      } catch (error) {
+        console.error('Failed to save deep diligence:', error);
+        window.alert('Failed to save deep diligence.');
+      }
     });
   }
 
   if (reviewForm && dealId) {
-    reviewForm.addEventListener('submit', (event) => {
+    reviewForm.addEventListener('submit', async (event) => {
       event.preventDefault();
 
       const formData = new FormData(reviewForm);
 
       const nextReviewDate = String(formData.get('nextReviewDate') ?? '').trim();
       const thesisDirection = String(formData.get('thesisDirection') ?? '').trim() as
-        | 'stronger'
-        | 'weaker'
-        | 'unchanged';
+        | 'STRONGER'
+        | 'WEAKER'
+        | 'UNCHANGED';
       const reviewNote = String(formData.get('reviewNote') ?? '').trim();
 
       if (!nextReviewDate || !thesisDirection || !reviewNote) {
@@ -531,14 +559,18 @@ export function bindDealWorkspacePageEvents(root: HTMLElement, path: string): vo
         return;
       }
 
-      saveReview({
-        dealId,
-        nextReviewDate,
-        thesisDirection,
-        reviewNote
-      });
+      try {
+        await saveReview(dealId, {
+          nextReviewDate,
+          thesisDirection,
+          reviewNote
+        });
 
-      navigateTo(`/deals/${dealId}`);
+        await refreshWorkspaceDeal(dealId);
+      } catch (error) {
+        console.error('Failed to save review:', error);
+        window.alert('Failed to save review.');
+      }
     });
   }
 }

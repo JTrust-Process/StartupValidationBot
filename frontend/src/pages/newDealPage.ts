@@ -66,7 +66,7 @@ export function bindNewDealPageEvents(root: HTMLElement): void {
 
   if (!form) return;
 
-  form.addEventListener('submit', (event) => {
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
 
     const formData = new FormData(form);
@@ -85,16 +85,21 @@ export function bindNewDealPageEvents(root: HTMLElement): void {
       return;
     }
 
-    const newDeal = createDeal({
-      companyName,
-      sector,
-      platform,
-      roundType,
-      shortDescription,
-      valuation: valuationRaw ? Number(valuationRaw) : undefined,
-      minimumInvestment: minimumInvestmentRaw ? Number(minimumInvestmentRaw) : undefined
-    });
+    try {
+      const newDeal = await createDeal({
+        companyName,
+        sector,
+        platform,
+        roundType,
+        shortDescription,
+        valuation: valuationRaw ? Number(valuationRaw) : undefined,
+        minimumInvestment: minimumInvestmentRaw ? Number(minimumInvestmentRaw) : undefined
+      });
 
-    navigateTo(`/deals/${newDeal.id}`);
+      navigateTo(`/deals/${newDeal.id}`);
+    } catch (error) {
+      console.error('Failed to create deal:', error);
+      window.alert('Failed to create deal. Make sure the backend is running.');
+    }
   });
 }

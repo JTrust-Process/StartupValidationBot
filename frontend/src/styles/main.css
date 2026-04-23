@@ -356,3 +356,8 @@ textarea {
 .page-header + .card-grid {
   margin-top: -4px;
 }
+.button--secondary {
+  background: transparent;
+  color: #d5def0;
+  border: 1px solid #2a3657;
+}

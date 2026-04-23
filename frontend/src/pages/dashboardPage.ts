@@ -1,4 +1,4 @@
-import { getDeals } from '../services/dealService';
+import { getDeals, resetDeals } from '../services/dealService';
 
 function getAverage(values: number[]): string {
   if (values.length === 0) return '-';
@@ -46,9 +46,15 @@ export function renderDashboardPage(): string {
 
   return `
     <div class="page">
-      <div class="page-header">
-        <h2>Dashboard</h2>
-        <p>Overview of your diligence pipeline.</p>
+      <div class="page-header page-header--row">
+        <div>
+          <h2>Dashboard</h2>
+          <p>Overview of your diligence pipeline.</p>
+        </div>
+
+        <button class="button button--secondary" id="reset-deals-button" type="button">
+          Reset Demo Data
+        </button>
       </div>
 
       <div class="card-grid">
@@ -121,4 +127,21 @@ export function renderDashboardPage(): string {
       </div>
     </div>
   `;
+}
+
+export function bindDashboardPageEvents(): void {
+  const resetButton = document.querySelector<HTMLButtonElement>('#reset-deals-button');
+
+  if (!resetButton) return;
+
+  resetButton.addEventListener('click', () => {
+    const confirmed = window.confirm(
+      'Reset all current deals and restore the demo dataset?'
+    );
+
+    if (!confirmed) return;
+
+    resetDeals();
+    window.location.hash = '/dashboard';
+  });
 }

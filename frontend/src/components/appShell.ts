@@ -1,5 +1,5 @@
 import { getCurrentRoute, navigateTo, onRouteChange } from '../utils/router';
-import { renderDashboardPage } from '../pages/dashboardPage';
+import { bindDashboardPageEvents, renderDashboardPage } from '../pages/dashboardPage';
 import { renderDealsPage } from '../pages/dealsPage';
 import { bindNewDealPageEvents, renderNewDealPage } from '../pages/newDealPage';
 import {
@@ -46,6 +46,11 @@ function updateActiveNav(root: HTMLDivElement, path: string): void {
 function bindPageEvents(root: HTMLDivElement, path: string): void {
   const pageContent = root.querySelector<HTMLElement>('#page-content');
   if (!pageContent) return;
+
+  if (path === '/dashboard') {
+    bindDashboardPageEvents();
+    return;
+  }
 
   if (path === '/deals/new') {
     bindNewDealPageEvents(pageContent);

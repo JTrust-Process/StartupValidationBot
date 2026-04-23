@@ -8,6 +8,7 @@ import {
   addDealState,
   getDealsState,
   getDealStateById,
+  resetDealsState,
   updateDealDecisionState,
   updateDealDeepDiligenceState,
   updateDealQuickScreenState
@@ -157,4 +158,8 @@ export function saveDeepDiligence(
   };
 
   return updateDealDeepDiligenceState(input.dealId, deepDiligence);
+}
+
+export function resetDeals(): void {
+  resetDealsState();
 }

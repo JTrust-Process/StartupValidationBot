@@ -5,6 +5,8 @@ import type {
   QuickScreenData
 } from '../models/deal';
 
+const STORAGE_KEY = 'startup-validation-bot.deals';
+
 const initialDeals: Deal[] = [
   {
     id: '1',
@@ -108,7 +110,35 @@ const initialDeals: Deal[] = [
   }
 ];
 
-let deals: Deal[] = [...initialDeals];
+function saveDealsToStorage(deals: Deal[]): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(deals));
+}
+
+function loadDealsFromStorage(): Deal[] | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as Deal[];
+    if (!Array.isArray(parsed)) return null;
+
+    return parsed;
+  } catch (error) {
+    console.error('Failed to load deals from localStorage:', error);
+    return null;
+  }
+}
+
+let deals: Deal[] = loadDealsFromStorage() ?? [...initialDeals];
+
+if (!loadDealsFromStorage()) {
+  saveDealsToStorage(deals);
+}
+
+function updateDeals(nextDeals: Deal[]): void {
+  deals = nextDeals;
+  saveDealsToStorage(deals);
+}
 
 export function getDealsState(): Deal[] {
   return deals;
@@ -127,7 +157,7 @@ export function addDealState(
     createdAt: new Date().toISOString()
   };
 
-  deals = [newDeal, ...deals];
+  updateDeals([newDeal, ...deals]);
   return newDeal;
 }
 
@@ -137,7 +167,7 @@ export function updateDealQuickScreenState(
 ): Deal | undefined {
   let updatedDeal: Deal | undefined;
 
-  deals = deals.map((deal) => {
+  const nextDeals = deals.map((deal) => {
     if (deal.id !== dealId) return deal;
 
     updatedDeal = {
@@ -149,6 +179,7 @@ export function updateDealQuickScreenState(
     return updatedDeal;
   });
 
+  updateDeals(nextDeals);
   return updatedDeal;
 }
 
@@ -158,7 +189,7 @@ export function updateDealDecisionState(
 ): Deal | undefined {
   let updatedDeal: Deal | undefined;
 
-  deals = deals.map((deal) => {
+  const nextDeals = deals.map((deal) => {
     if (deal.id !== dealId) return deal;
 
     updatedDeal = {
@@ -170,6 +201,7 @@ export function updateDealDecisionState(
     return updatedDeal;
   });
 
+  updateDeals(nextDeals);
   return updatedDeal;
 }
 
@@ -179,7 +211,7 @@ export function updateDealDeepDiligenceState(
 ): Deal | undefined {
   let updatedDeal: Deal | undefined;
 
-  deals = deals.map((deal) => {
+  const nextDeals = deals.map((deal) => {
     if (deal.id !== dealId) return deal;
 
     updatedDeal = {
@@ -191,5 +223,10 @@ export function updateDealDeepDiligenceState(
     return updatedDeal;
   });
 
+  updateDeals(nextDeals);
   return updatedDeal;
+}
+
+export function resetDealsState(): void {
+  updateDeals([...initialDeals]);
 }

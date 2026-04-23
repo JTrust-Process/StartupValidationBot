@@ -102,11 +102,12 @@ function renderLayout(root: HTMLDivElement): void {
 export function renderApp(root: HTMLDivElement): void {
   const rerender = () => renderLayout(root);
 
+  onRouteChange(rerender);
+
   if (!window.location.hash) {
-    navigateTo('/dashboard');
-    return;
+        window.location.hash = '/dashboard';
   }
+  renderLayout(root);
 
   renderLayout(root);
-  onRouteChange(rerender);
 }

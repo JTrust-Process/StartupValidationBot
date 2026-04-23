@@ -3,6 +3,7 @@ import {
   getDeepDiligenceOutcome,
   getQuickScreenOutcome
 } from '../services/dealService';
+import { formatDealStatus } from '../utils/formatters';
 
 export function renderDealsPage(): string {
   const deals = getDeals();
@@ -26,7 +27,7 @@ export function renderDealsPage(): string {
             <div>${deal.deepScore ?? '-'}</div>
             <div class="table-subtext">${deal.deepScore ? getDeepDiligenceOutcome(deal.deepScore) : 'Not scored'}</div>
           </td>
-          <td><span class="status-chip status-chip--${deal.status}">${deal.status}</span></td>
+          <td><span class="status-chip status-chip--${deal.status.toLowerCase().replace('_', '-')}">${formatDealStatus(deal.status)}</span></td>
         </tr>
       `
     )

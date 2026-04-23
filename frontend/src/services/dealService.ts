@@ -1,96 +1,87 @@
 import type {
-  Deal,
-  DecisionData,
-  DeepDiligenceData,
-  QuickScreenData,
-  ReviewData,
-  ThesisDirection
-} from '../models/deal';
+  CreateDealRequest,
+  DealResponse,
+  DecisionRequest,
+  DeepDiligenceRequest,
+  QuickScreenRequest,
+  ReviewRequest
+} from '../models/api';
 import {
-  addDealState,
-  getDealsState,
-  getDealStateById,
-  resetDealsState,
-  updateDealDecisionState,
-  updateDealDeepDiligenceState,
-  updateDealQuickScreenState,
-  updateDealReviewState
-} from '../state/dealStore';
+  createDeal as createDealApi,
+  getDealById as getDealByIdApi,
+  getDeals as getDealsApi,
+  saveDecision as saveDecisionApi,
+  saveDeepDiligence as saveDeepDiligenceApi,
+  saveQuickScreen as saveQuickScreenApi,
+  saveReview as saveReviewApi
+} from './api';
+import {
+  getDealFromCache,
+  getDealsCache,
+  setDealsCache,
+  upsertDealInCache
+} from '../state/apiDealStore';
 
-export interface CreateDealInput {
-  companyName: string;
-  sector: string;
-  platform: string;
-  roundType: string;
-  shortDescription: string;
-  valuation?: number;
-  minimumInvestment?: number;
+export async function loadDeals(): Promise<DealResponse[]> {
+  const deals = await getDealsApi();
+  setDealsCache(deals);
+  return deals;
 }
 
-export interface SaveQuickScreenInput {
-  dealId: string;
-  businessClarity: number;
-  tractionEvidence: number;
-  edge: number;
-  priceSanity: number;
-  trustTransparency: number;
-  whatIsIt: string;
-  whyMightItWin: string;
-  bestProofPoint: string;
-  biggestDoubt: string;
-  whySpendingTime: string;
+export async function loadDealById(id: number): Promise<DealResponse> {
+  const deal = await getDealByIdApi(id);
+  upsertDealInCache(deal);
+  return deal;
 }
 
-export interface SaveDecisionInput {
-  dealId: string;
-  status: Exclude<Deal['status'], 'new'>;
-  rationale: string;
-  whatWouldChangeMyMind: string;
-  nextMilestoneNeeded: string;
+export function getDeals(): DealResponse[] {
+  return getDealsCache();
 }
 
-export interface SaveDeepDiligenceInput {
-  dealId: string;
-  businessModelScore: number;
-  businessModelNote: string;
-  marketCustomerScore: number;
-  marketCustomerNote: string;
-  tractionQualityScore: number;
-  tractionQualityNote: string;
-  competitiveEdgeScore: number;
-  competitiveEdgeNote: string;
-  riskScore: number;
-  riskNote: string;
+export function getDealById(id: number): DealResponse | undefined {
+  return getDealFromCache(id);
 }
 
-export interface SaveReviewInput {
-  dealId: string;
-  nextReviewDate: string;
-  reviewNote: string;
-  thesisDirection: ThesisDirection;
+export async function createDeal(input: CreateDealRequest): Promise<DealResponse> {
+  const deal = await createDealApi(input);
+  upsertDealInCache(deal);
+  return deal;
 }
 
-export function getDeals(): Deal[] {
-  return getDealsState();
+export async function saveQuickScreen(
+  dealId: number,
+  input: QuickScreenRequest
+): Promise<DealResponse> {
+  const deal = await saveQuickScreenApi(dealId, input);
+  upsertDealInCache(deal);
+  return deal;
 }
 
-export function getDealById(id: string): Deal | undefined {
-  return getDealStateById(id);
+export async function saveDecision(
+  dealId: number,
+  input: DecisionRequest
+): Promise<DealResponse> {
+  const deal = await saveDecisionApi(dealId, input);
+  upsertDealInCache(deal);
+  return deal;
 }
 
-export function createDeal(input: CreateDealInput): Deal {
-  return addDealState({
-    companyName: input.companyName,
-    sector: input.sector,
-    platform: input.platform,
-    roundType: input.roundType,
-    shortDescription: input.shortDescription,
-    valuation: input.valuation,
-    minimumInvestment: input.minimumInvestment,
-    quickScore: 0,
-    deepScore: undefined,
-    status: 'new'
-  });
+export async function saveDeepDiligence(
+  dealId: number,
+  input: DeepDiligenceRequest
+): Promise<DealResponse> {
+  const deal = await saveDeepDiligenceApi(dealId, input);
+  upsertDealInCache(deal);
+  return deal;
+}
+
+export async function saveReview(
+  dealId: number,
+  input: ReviewRequest
+): Promise<DealResponse> {
+  const deal = await saveReviewApi(dealId, input);
+  upsertDealInCache(deal);
+  return deal;
 }
 
 export function getQuickScreenOutcome(total: number): string {
@@ -105,81 +96,4 @@ export function getDeepDiligenceOutcome(total: number): string {
   if (total <= 15) return 'Mixed';
   if (total <= 20) return 'Interesting';
   return 'Strong';
-}
-
-export function saveQuickScreen(input: SaveQuickScreenInput): Deal | undefined {
-  const total =
-    input.businessClarity +
-    input.tractionEvidence +
-    input.edge +
-    input.priceSanity +
-    input.trustTransparency;
-
-  const quickScreen: QuickScreenData = {
-    businessClarity: input.businessClarity,
-    tractionEvidence: input.tractionEvidence,
-    edge: input.edge,
-    priceSanity: input.priceSanity,
-    trustTransparency: input.trustTransparency,
-    total,
-    whatIsIt: input.whatIsIt,
-    whyMightItWin: input.whyMightItWin,
-    bestProofPoint: input.bestProofPoint,
-    biggestDoubt: input.biggestDoubt,
-    whySpendingTime: input.whySpendingTime
-  };
-
-  return updateDealQuickScreenState(input.dealId, quickScreen);
-}
-
-export function saveDecision(input: SaveDecisionInput): Deal | undefined {
-  const decision: DecisionData = {
-    status: input.status,
-    rationale: input.rationale,
-    whatWouldChangeMyMind: input.whatWouldChangeMyMind,
-    nextMilestoneNeeded: input.nextMilestoneNeeded
-  };
-
-  return updateDealDecisionState(input.dealId, decision);
-}
-
-export function saveDeepDiligence(
-  input: SaveDeepDiligenceInput
-): Deal | undefined {
-  const total =
-    input.businessModelScore +
-    input.marketCustomerScore +
-    input.tractionQualityScore +
-    input.competitiveEdgeScore +
-    input.riskScore;
-
-  const deepDiligence: DeepDiligenceData = {
-    businessModelScore: input.businessModelScore,
-    businessModelNote: input.businessModelNote,
-    marketCustomerScore: input.marketCustomerScore,
-    marketCustomerNote: input.marketCustomerNote,
-    tractionQualityScore: input.tractionQualityScore,
-    tractionQualityNote: input.tractionQualityNote,
-    competitiveEdgeScore: input.competitiveEdgeScore,
-    competitiveEdgeNote: input.competitiveEdgeNote,
-    riskScore: input.riskScore,
-    riskNote: input.riskNote,
-    total
-  };
-
-  return updateDealDeepDiligenceState(input.dealId, deepDiligence);
-}
-
-export function saveReview(input: SaveReviewInput): Deal | undefined {
-  const review: ReviewData = {
-    nextReviewDate: input.nextReviewDate,
-    reviewNote: input.reviewNote,
-    thesisDirection: input.thesisDirection
-  };
-
-  return updateDealReviewState(input.dealId, review);
-}
-
-export function resetDeals(): void {
-  resetDealsState();
 }

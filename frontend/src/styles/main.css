@@ -996,3 +996,29 @@ body::after {
 .form-field textarea {
   border-color: rgba(103, 137, 255, 0.24);
 }
+
+.page--centered {
+  min-height: 50vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card--status {
+  width: min(520px, 100%);
+  text-align: left;
+}
+
+.card--status h2 {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.card--status p {
+  margin-bottom: 18px;
+  color: var(--text-soft);
+}
+
+.form-actions--start {
+  justify-content: flex-start;
+}

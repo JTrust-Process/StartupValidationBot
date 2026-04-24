@@ -76,6 +76,56 @@ async function ensureWorkspaceDealLoaded(path: string): Promise<void> {
   await loadDealById(id);
 }
 
+function renderPageError(root: HTMLDivElement, message: string): void {
+  root.innerHTML = `
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar__brand">Startup Validation Bot</div>
+
+        <nav class="sidebar__nav">
+          <a href="#/dashboard" class="nav-link active" data-route="/dashboard">Dashboard</a>
+          <a href="#/deals" class="nav-link" data-route="/deals">Deals</a>
+          <a href="#/deals/new" class="nav-link" data-route="/deals/new">New Deal</a>
+        </nav>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div>
+            <h1 class="topbar__title">Deal Diligence Workstation</h1>
+            <p class="topbar__subtitle">
+              Structured startup diligence, scoring, and thesis tracking for real investing decisions.
+            </p>
+          </div>
+        </header>
+
+        <section class="page-content" id="page-content">
+          <div class="page page--centered">
+            <div class="card card--status">
+              <h2>Page failed to load</h2>
+              <p>${message}</p>
+              <div class="form-actions form-actions--start">
+                <button id="retry-page-button" class="button button--primary" type="button">
+                  Retry
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  `;
+
+  bindNavEvents(root);
+
+  const retryButton = root.querySelector<HTMLButtonElement>('#retry-page-button');
+  if (!retryButton) return;
+
+  retryButton.addEventListener('click', () => {
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  });
+}
+
 async function renderLayout(root: HTMLDivElement): Promise<void> {
   const currentRoute = getCurrentRoute();
 
@@ -121,12 +171,7 @@ export function renderApp(root: HTMLDivElement): void {
       await renderLayout(root);
     } catch (error) {
       console.error('Failed to render app layout:', error);
-      root.innerHTML = `
-        <div style="padding: 24px; color: white;">
-          <h2>Failed to render page</h2>
-          <p>Please make sure the backend is running and try again.</p>
-        </div>
-      `;
+      renderPageError(root, 'Please make sure the backend is running and the selected deal still exists.');
     }
   };
 

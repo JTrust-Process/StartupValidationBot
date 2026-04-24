@@ -126,5 +126,5 @@ export function renderDashboardPage(): string {
 }
 
 export function bindDashboardPageEvents(): void {
-
+  // no-op for now
 }

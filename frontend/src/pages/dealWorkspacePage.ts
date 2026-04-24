@@ -9,7 +9,6 @@ import {
   saveReview
 } from '../services/dealService';
 import { formatDealStatus, formatThesisDirection } from '../utils/formatters';
-import { navigateTo } from '../utils/router';
 
 async function refreshWorkspaceDeal(dealId: number): Promise<void> {
   await loadDealById(dealId);

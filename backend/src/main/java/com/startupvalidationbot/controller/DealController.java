@@ -1,26 +1,12 @@
 package com.startupvalidationbot.controller;
 
-import java.util.List;
-
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
-import com.startupvalidationbot.dto.DealCreateRequest;
-import com.startupvalidationbot.dto.DealResponse;
-import com.startupvalidationbot.dto.DecisionRequest;
-import com.startupvalidationbot.dto.DeepDiligenceRequest;
-import com.startupvalidationbot.dto.QuickScreenRequest;
-import com.startupvalidationbot.dto.ReviewRequest;
+import com.startupvalidationbot.dto.*;
 import com.startupvalidationbot.service.DealService;
-
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/deals")
@@ -43,6 +29,19 @@ public class DealController {
     @PostMapping
     public DealResponse createDeal(@Valid @RequestBody DealCreateRequest request) {
         return dealService.createDeal(request);
+    }
+
+    @PutMapping("/{dealId}")
+    public DealResponse updateDeal(
+            @PathVariable Long dealId,
+            @Valid @RequestBody DealUpdateRequest request
+    ) {
+        return dealService.updateDeal(dealId, request);
+    }
+
+    @DeleteMapping("/{dealId}")
+    public void deleteDeal(@PathVariable Long dealId) {
+        dealService.deleteDeal(dealId);
     }
 
     @PutMapping("/{dealId}/quick-screen")

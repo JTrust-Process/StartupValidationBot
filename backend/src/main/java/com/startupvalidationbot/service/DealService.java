@@ -53,6 +53,26 @@ public class DealService {
         return mapDealToResponse(savedDeal);
     }
 
+    public DealResponse updateDeal(Long dealId, DealUpdateRequest request) {
+        Deal deal = findDealOrThrow(dealId);
+
+        deal.setCompanyName(request.getCompanyName());
+        deal.setSector(request.getSector());
+        deal.setPlatform(request.getPlatform());
+        deal.setRoundType(request.getRoundType());
+        deal.setShortDescription(request.getShortDescription());
+        deal.setValuation(request.getValuation());
+        deal.setMinimumInvestment(request.getMinimumInvestment());
+
+        Deal savedDeal = dealRepository.save(deal);
+        return mapDealToResponse(savedDeal);
+    }
+
+    public void deleteDeal(Long dealId) {
+        Deal deal = findDealOrThrow(dealId);
+        dealRepository.delete(deal);
+    }
+
     public DealResponse saveQuickScreen(Long dealId, QuickScreenRequest request) {
         Deal deal = findDealOrThrow(dealId);
 

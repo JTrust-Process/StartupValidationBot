@@ -1022,3 +1022,27 @@ body::after {
 .form-actions--start {
   justify-content: flex-start;
 }
+
+.workspace-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.button--danger {
+  background: linear-gradient(135deg, rgba(255, 95, 109, 0.22), rgba(255, 95, 109, 0.12));
+  color: #ffe2e6;
+  border: 1px solid rgba(255, 95, 109, 0.24);
+}
+
+.button--danger:hover {
+  background: linear-gradient(135deg, rgba(255, 95, 109, 0.3), rgba(255, 95, 109, 0.16));
+}
+
+@media (max-width: 640px) {
+  .workspace-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

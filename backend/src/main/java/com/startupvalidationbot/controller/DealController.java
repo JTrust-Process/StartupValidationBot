@@ -40,6 +40,7 @@ public class DealController {
     }
 
     @DeleteMapping("/{dealId}")
+    @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
     public void deleteDeal(@PathVariable Long dealId) {
         dealService.deleteDeal(dealId);
     }

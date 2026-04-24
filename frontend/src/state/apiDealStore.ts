@@ -26,3 +26,11 @@ export function upsertDealInCache(updatedDeal: DealResponse): void {
     deal.id === updatedDeal.id ? updatedDeal : deal
   );
 }
+
+export function removeDealFromCache(dealId: number): void {
+  dealsCache = dealsCache.filter((deal) => deal.id !== dealId);
+}
+
+export function clearDealsCache(): void {
+  dealsCache = [];
+}

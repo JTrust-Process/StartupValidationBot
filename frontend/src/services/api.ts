@@ -23,7 +23,17 @@ async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
     throw new Error(message || `Request failed with status ${response.status}`);
   }
 
-  return response.json() as Promise<T>;
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const text = await response.text();
+
+  if (!text) {
+    return undefined as T;
+  }
+
+  return JSON.parse(text) as T;
 }
 
 export async function getDeals(): Promise<DealResponse[]> {
@@ -38,6 +48,22 @@ export async function createDeal(payload: CreateDealRequest): Promise<DealRespon
   return request<DealResponse>(`${API_BASE_URL}/deals`, {
     method: 'POST',
     body: JSON.stringify(payload)
+  });
+}
+
+export async function updateDeal(
+  dealId: number,
+  payload: CreateDealRequest
+): Promise<DealResponse> {
+  return request<DealResponse>(`${API_BASE_URL}/deals/${dealId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteDeal(dealId: number): Promise<void> {
+  return request<void>(`${API_BASE_URL}/deals/${dealId}`, {
+    method: 'DELETE'
   });
 }
 

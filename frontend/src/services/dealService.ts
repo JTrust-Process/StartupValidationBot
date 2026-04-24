@@ -8,16 +8,19 @@ import type {
 } from '../models/api';
 import {
   createDeal as createDealApi,
+  deleteDeal as deleteDealApi,
   getDealById as getDealByIdApi,
   getDeals as getDealsApi,
   saveDecision as saveDecisionApi,
   saveDeepDiligence as saveDeepDiligenceApi,
   saveQuickScreen as saveQuickScreenApi,
-  saveReview as saveReviewApi
+  saveReview as saveReviewApi,
+  updateDeal as updateDealApi
 } from './api';
 import {
   getDealFromCache,
   getDealsCache,
+  removeDealFromCache,
   setDealsCache,
   upsertDealInCache
 } from '../state/apiDealStore';
@@ -46,6 +49,20 @@ export async function createDeal(input: CreateDealRequest): Promise<DealResponse
   const deal = await createDealApi(input);
   upsertDealInCache(deal);
   return deal;
+}
+
+export async function updateDeal(
+  dealId: number,
+  input: CreateDealRequest
+): Promise<DealResponse> {
+  const deal = await updateDealApi(dealId, input);
+  upsertDealInCache(deal);
+  return deal;
+}
+
+export async function deleteDeal(dealId: number): Promise<void> {
+  await deleteDealApi(dealId);
+  removeDealFromCache(dealId);
 }
 
 export async function saveQuickScreen(

@@ -1,4 +1,5 @@
 import {
+  deleteDeal,
   getDealById,
   getDeepDiligenceOutcome,
   getQuickScreenOutcome,
@@ -6,9 +7,11 @@ import {
   saveDecision,
   saveDeepDiligence,
   saveQuickScreen,
-  saveReview
+  saveReview,
+  updateDeal
 } from '../services/dealService';
 import { formatDealStatus, formatThesisDirection } from '../utils/formatters';
+import { navigateTo } from '../utils/router';
 
 async function refreshWorkspaceDeal(dealId: number): Promise<void> {
   await loadDealById(dealId);
@@ -126,14 +129,67 @@ export function renderDealWorkspacePage(path: string): string {
           <p>${deal.sector} • ${deal.platform} • ${deal.roundType}</p>
         </div>
 
-        <span class="status-chip status-chip--${deal.status.toLowerCase().replace('_', '-')}">
-          ${formatDealStatus(deal.status)}
-        </span>
+        <div class="workspace-actions">
+          <span class="status-chip status-chip--${deal.status.toLowerCase().replace('_', '-')}">
+            ${formatDealStatus(deal.status)}
+          </span>
+          <button type="button" class="button button--danger" id="delete-deal-button">
+            Delete Deal
+          </button>
+        </div>
       </div>
 
       <div class="card">
         <h3>Description</h3>
         <p>${deal.shortDescription}</p>
+      </div>
+
+      <div class="card">
+        <div class="page-header">
+          <h3>Edit Deal Details</h3>
+          <p>Update the core metadata for this opportunity.</p>
+        </div>
+
+        <form class="form-grid" id="edit-deal-form" data-deal-id="${deal.id}">
+          <div class="form-field">
+            <label for="companyName">Company Name</label>
+            <input id="companyName" name="companyName" type="text" value="${deal.companyName}" required />
+          </div>
+
+          <div class="form-field">
+            <label for="sector">Sector</label>
+            <input id="sector" name="sector" type="text" value="${deal.sector}" required />
+          </div>
+
+          <div class="form-field">
+            <label for="platform">Platform</label>
+            <input id="platform" name="platform" type="text" value="${deal.platform}" required />
+          </div>
+
+          <div class="form-field">
+            <label for="roundType">Round Type</label>
+            <input id="roundType" name="roundType" type="text" value="${deal.roundType}" required />
+          </div>
+
+          <div class="form-field">
+            <label for="valuation">Valuation</label>
+            <input id="valuation" name="valuation" type="number" min="0" step="1" value="${deal.valuation ?? ''}" />
+          </div>
+
+          <div class="form-field">
+            <label for="minimumInvestment">Minimum Investment</label>
+            <input id="minimumInvestment" name="minimumInvestment" type="number" min="0" step="1" value="${deal.minimumInvestment ?? ''}" />
+          </div>
+
+          <div class="form-field form-field--full">
+            <label for="shortDescription">Short Description</label>
+            <textarea id="shortDescription" name="shortDescription" rows="4" required>${deal.shortDescription}</textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="button button--primary">Save Deal Details</button>
+          </div>
+        </form>
       </div>
 
       ${renderOverviewSection(path)}
@@ -373,10 +429,69 @@ export function renderDealWorkspacePage(path: string): string {
 
 export function bindDealWorkspacePageEvents(root: HTMLElement, path: string): void {
   const dealId = Number(path.split('/').pop() ?? '');
+  const editDealForm = root.querySelector<HTMLFormElement>('#edit-deal-form');
+  const deleteDealButton = root.querySelector<HTMLButtonElement>('#delete-deal-button');
   const quickScreenForm = root.querySelector<HTMLFormElement>('#quick-screen-form');
   const decisionForm = root.querySelector<HTMLFormElement>('#decision-form');
   const deepDiligenceForm = root.querySelector<HTMLFormElement>('#deep-diligence-form');
   const reviewForm = root.querySelector<HTMLFormElement>('#review-form');
+
+  if (editDealForm && dealId) {
+    editDealForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const formData = new FormData(editDealForm);
+
+      const companyName = String(formData.get('companyName') ?? '').trim();
+      const sector = String(formData.get('sector') ?? '').trim();
+      const platform = String(formData.get('platform') ?? '').trim();
+      const roundType = String(formData.get('roundType') ?? '').trim();
+      const shortDescription = String(formData.get('shortDescription') ?? '').trim();
+
+      const valuationRaw = String(formData.get('valuation') ?? '').trim();
+      const minimumInvestmentRaw = String(formData.get('minimumInvestment') ?? '').trim();
+
+      if (!companyName || !sector || !platform || !roundType || !shortDescription) {
+        window.alert('Please complete all required deal fields.');
+        return;
+      }
+
+      try {
+        await updateDeal(dealId, {
+          companyName,
+          sector,
+          platform,
+          roundType,
+          shortDescription,
+          valuation: valuationRaw ? Number(valuationRaw) : undefined,
+          minimumInvestment: minimumInvestmentRaw ? Number(minimumInvestmentRaw) : undefined
+        });
+
+        await refreshWorkspaceDeal(dealId);
+      } catch (error) {
+        console.error('Failed to update deal:', error);
+        window.alert('Failed to update deal details.');
+      }
+    });
+  }
+
+  if (deleteDealButton && dealId) {
+    deleteDealButton.addEventListener('click', async () => {
+      const confirmed = window.confirm(
+        'Delete this deal and all associated diligence data? This cannot be undone.'
+      );
+
+      if (!confirmed) return;
+
+      try {
+        await deleteDeal(dealId);
+        navigateTo('/deals');
+      } catch (error) {
+        console.error('Failed to delete deal:', error);
+        window.alert('Failed to delete deal.');
+      }
+    });
+  }
 
   if (quickScreenForm && dealId) {
     quickScreenForm.addEventListener('submit', async (event) => {

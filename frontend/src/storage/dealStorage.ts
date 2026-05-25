@@ -1,5 +1,6 @@
 import type {
   Deal,
+  DealDocument,
   DealExportPayload,
   DealInput,
   EvidenceClaim,
@@ -108,8 +109,31 @@ function asEvidenceSourceType(value: unknown): EvidenceClaim['sourceType'] {
   if (
     value === 'CAMPAIGN_PAGE' ||
     value === 'FORM_C' ||
+    value === 'FORM_CA' ||
     value === 'OFFERING_CIRCULAR' ||
+    value === 'SAFE_AGREEMENT' ||
+    value === 'SUBSCRIPTION_AGREEMENT' ||
+    value === 'INVESTOR_DECK' ||
     value === 'FOUNDER_STATEMENT' ||
+    value === 'PRESS' ||
+    value === 'USER_NOTE' ||
+    value === 'OTHER'
+  ) {
+    return value;
+  }
+
+  return 'USER_NOTE';
+}
+
+function asDealDocumentType(value: unknown): DealDocument['documentType'] {
+  if (
+    value === 'CAMPAIGN_PAGE' ||
+    value === 'FORM_C' ||
+    value === 'FORM_CA' ||
+    value === 'OFFERING_CIRCULAR' ||
+    value === 'SAFE_AGREEMENT' ||
+    value === 'SUBSCRIPTION_AGREEMENT' ||
+    value === 'INVESTOR_DECK' ||
     value === 'PRESS' ||
     value === 'USER_NOTE' ||
     value === 'OTHER'
@@ -182,6 +206,32 @@ function normalizeEvidenceClaims(value: unknown): EvidenceClaim[] {
     .filter((claim): claim is EvidenceClaim => Boolean(claim));
 }
 
+function normalizeDocuments(value: unknown): DealDocument[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((documentValue, index) => {
+      if (!isRecord(documentValue)) return null;
+
+      const now = new Date().toISOString();
+      return {
+        id: Math.trunc(asNumber(documentValue.id) ?? index + 1),
+        title: asString(documentValue.title, `Document ${index + 1}`),
+        documentType: asDealDocumentType(documentValue.documentType),
+        sourceUrl: asString(documentValue.sourceUrl),
+        pastedText: asString(documentValue.pastedText),
+        createdAt: asString(documentValue.createdAt, now),
+        updatedAt: asString(documentValue.updatedAt, now)
+      };
+    })
+    .filter((document): document is DealDocument => Boolean(document));
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
 function normalizeDeal(value: unknown, fallbackId: number): Deal | null {
   if (!isRecord(value)) return null;
 
@@ -220,6 +270,15 @@ function normalizeDeal(value: unknown, fallbackId: number): Deal | null {
     redFlags: normalizeRedFlags(value.redFlags),
     ignoredSuggestedRedFlags: normalizeIgnoredRedFlags(value.ignoredSuggestedRedFlags),
     evidenceClaims: normalizeEvidenceClaims(value.evidenceClaims),
+    documents: normalizeDocuments(value.documents),
+    ignoredDocumentRiskIds: normalizeStringArray(value.ignoredDocumentRiskIds),
+    dealMemo: isRecord(value.dealMemo)
+      ? {
+          content: asString(value.dealMemo.content),
+          generatedAt: asString(value.dealMemo.generatedAt, now),
+          updatedAt: asString(value.dealMemo.updatedAt, now)
+        }
+      : null,
     createdAt: asString(value.createdAt, now),
     updatedAt: asString(value.updatedAt, now),
     quickScreen: isRecord(value.quickScreen)
@@ -311,7 +370,7 @@ export function loadStoredDeals(): Deal[] {
 
 export function saveStoredDeals(deals: Deal[]): void {
   const payload: DealExportPayload = {
-    version: 3,
+    version: 4,
     exportedAt: new Date().toISOString(),
     deals
   };
@@ -332,6 +391,9 @@ export function createStoredDeal(input: DealInput): Deal {
     redFlags: createEmptyRedFlags(),
     ignoredSuggestedRedFlags: [],
     evidenceClaims: [],
+    documents: [],
+    ignoredDocumentRiskIds: [],
+    dealMemo: null,
     createdAt: now,
     updatedAt: now,
     quickScreen: null,
@@ -379,7 +441,7 @@ export function deleteStoredDeal(dealId: number): void {
 
 export function exportStoredDeals(): DealExportPayload {
   return {
-    version: 3,
+    version: 4,
     exportedAt: new Date().toISOString(),
     deals: loadStoredDeals()
   };

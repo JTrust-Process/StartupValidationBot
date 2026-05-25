@@ -1,4 +1,5 @@
 import type {
+  DealDocumentType,
   DealDecision,
   EvidenceSourceType,
   EvidenceStrength,
@@ -64,8 +65,25 @@ const THESIS_DIRECTION_LABELS: Record<ThesisDirection, string> = {
 const EVIDENCE_SOURCE_TYPE_LABELS: Record<EvidenceSourceType, string> = {
   CAMPAIGN_PAGE: 'Campaign Page',
   FORM_C: 'Form C',
+  FORM_CA: 'Form C-A',
   OFFERING_CIRCULAR: 'Offering Circular',
+  SAFE_AGREEMENT: 'SAFE Agreement',
+  SUBSCRIPTION_AGREEMENT: 'Subscription Agreement',
+  INVESTOR_DECK: 'Investor Deck',
   FOUNDER_STATEMENT: 'Founder Statement',
+  PRESS: 'Press',
+  USER_NOTE: 'User Note',
+  OTHER: 'Other'
+};
+
+const DEAL_DOCUMENT_TYPE_LABELS: Record<DealDocumentType, string> = {
+  CAMPAIGN_PAGE: 'Campaign Page',
+  FORM_C: 'Form C',
+  FORM_CA: 'Form C-A',
+  OFFERING_CIRCULAR: 'Offering Circular',
+  SAFE_AGREEMENT: 'SAFE Agreement',
+  SUBSCRIPTION_AGREEMENT: 'Subscription Agreement',
+  INVESTOR_DECK: 'Investor Deck',
   PRESS: 'Press',
   USER_NOTE: 'User Note',
   OTHER: 'Other'
@@ -112,6 +130,10 @@ export function formatEvidenceSourceType(value: EvidenceSourceType | string): st
 
 export function formatEvidenceStrength(value: EvidenceStrength | string): string {
   return EVIDENCE_STRENGTH_LABELS[value as EvidenceStrength] ?? formatEnumLike(value);
+}
+
+export function formatDealDocumentType(value: DealDocumentType | string): string {
+  return DEAL_DOCUMENT_TYPE_LABELS[value as DealDocumentType] ?? formatEnumLike(value);
 }
 
 export function formatCurrency(value: number | null | undefined): string {

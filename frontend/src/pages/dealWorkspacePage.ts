@@ -1,5 +1,6 @@
 import type {
   Deal,
+  DealDocumentInput,
   DealDecision,
   DealInput,
   DeepDiligenceInput,
@@ -12,6 +13,7 @@ import type {
 import { RED_FLAG_DEFINITIONS } from '../models/deal';
 import {
   deleteDeal,
+  deleteDealDocument,
   deleteEvidenceClaim,
   acceptSuggestedRedFlags,
   getDealById,
@@ -29,8 +31,22 @@ import {
   saveRedFlags,
   saveReview,
   ignoreSuggestedRedFlags,
+  acceptDocumentExtractions,
+  appendDocumentRisksToMainRisk,
+  convertDocumentRisksToEvidence,
+  convertDocumentRisksToRedFlags,
+  generateAndSaveDealMemo,
+  ignoreDocumentRisks,
+  saveDealDocument,
+  saveDealMemo,
+  saveExtractionEvidenceClaims,
   updateDeal
 } from '../services/dealService';
+import {
+  generateFollowUpQuestions,
+  getAllDocumentExtractions,
+  getAllDocumentRisks
+} from '../services/documentIntelligence';
 import {
   getDataConfidenceLabel,
   getDataConfidenceScore,
@@ -41,6 +57,7 @@ import {
 import {
   formatCurrency,
   formatDate,
+  formatDealDocumentType,
   formatDealStatus,
   formatEvidenceSourceType,
   formatEvidenceStrength,
@@ -646,6 +663,209 @@ function renderEvidenceSection(deal: Deal): string {
   `;
 }
 
+function renderDocumentLibrarySection(deal: Deal): string {
+  const extractionItems = getAllDocumentExtractions(deal);
+  const documentRisks = getAllDocumentRisks(deal);
+  const documentRows = deal.documents.length
+    ? deal.documents
+        .map(
+          (document) => `
+            <tr>
+              <td>
+                <strong>${escapeHtml(document.title)}</strong>
+                <div class="table-subtext">${escapeHtml(document.sourceUrl || 'No source URL')}</div>
+              </td>
+              <td>${formatDealDocumentType(document.documentType)}</td>
+              <td>${formatDate(document.updatedAt)}</td>
+              <td>${document.pastedText.length.toLocaleString()} chars</td>
+              <td>
+                <button
+                  class="button button--danger button--small"
+                  type="button"
+                  data-delete-document-id="${document.id}"
+                >
+                  Delete
+                </button>
+              </td>
+            </tr>
+          `
+        )
+        .join('')
+    : `
+      <tr>
+        <td colspan="5">No documents yet. Paste text from a campaign page, Form C, offering circular, agreement, deck, press, or your notes.</td>
+      </tr>
+    `;
+
+  const extractionRows = extractionItems.length
+    ? extractionItems
+        .map(
+          (item) => `
+            <label class="suggestion-item">
+              <input type="checkbox" name="documentExtraction" value="${escapeAttribute(item.id)}" checked />
+              <span>
+                <strong>${escapeHtml(item.label)}: ${escapeHtml(item.value)}</strong>
+                <small>${item.targetField ? `Can update deal field: ${escapeHtml(item.targetField)}` : 'Can be saved as evidence'}</small>
+                <em>${escapeHtml(item.sourceText)}</em>
+              </span>
+            </label>
+          `
+        )
+        .join('')
+    : '<p class="empty-copy">No extracted document fields yet.</p>';
+
+  const riskRows = documentRisks.length
+    ? documentRisks
+        .map(
+          (risk) => `
+            <label class="suggestion-item">
+              <input type="checkbox" name="documentRisk" value="${escapeAttribute(risk.id)}" checked />
+              <span>
+                <strong>${escapeHtml(risk.label)}</strong>
+                <small>${risk.redFlagKey ? `Can map to red flag: ${escapeHtml(risk.redFlagKey)}` : 'Can be saved as evidence or notes'}</small>
+                <em>${escapeHtml(risk.matchedText)}</em>
+              </span>
+            </label>
+          `
+        )
+        .join('')
+    : '<p class="empty-copy">No unreviewed document risks detected.</p>';
+
+  return `
+    <div class="card">
+      <div class="page-header">
+        <h3>Document Library</h3>
+        <p>Paste text from downloaded filings, agreements, decks, screenshots you transcribed, or notes.</p>
+      </div>
+
+      <form class="form-grid" id="document-form" data-deal-id="${deal.id}">
+        <div class="form-field">
+          <label for="documentTitle">Document Title</label>
+          <input id="documentTitle" name="documentTitle" type="text" placeholder="Form C, campaign page, investor deck..." required />
+        </div>
+
+        <div class="form-field">
+          <label for="documentType">Document Type</label>
+          <select id="documentType" name="documentType">
+            <option value="CAMPAIGN_PAGE">Campaign Page</option>
+            <option value="FORM_C">Form C</option>
+            <option value="FORM_CA">Form C-A</option>
+            <option value="OFFERING_CIRCULAR">Offering Circular</option>
+            <option value="SAFE_AGREEMENT">SAFE Agreement</option>
+            <option value="SUBSCRIPTION_AGREEMENT">Subscription Agreement</option>
+            <option value="INVESTOR_DECK">Investor Deck</option>
+            <option value="PRESS">Press</option>
+            <option value="USER_NOTE">User Note</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
+
+        <div class="form-field form-field--full">
+          <label for="documentSourceUrl">Source URL</label>
+          <input id="documentSourceUrl" name="documentSourceUrl" type="url" placeholder="https://..." />
+        </div>
+
+        <div class="form-field form-field--full">
+          <label for="documentTextFile">Load Text File</label>
+          <input id="documentTextFile" name="documentTextFile" type="file" accept=".txt,.md,text/plain,text/markdown" />
+        </div>
+
+        <div class="form-field form-field--full">
+          <label for="documentText">Pasted Document Text</label>
+          <textarea id="documentText" name="documentText" rows="8" placeholder="Paste document text here. For screenshots, use OCR/transcription first and paste the text." required></textarea>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="button button--primary">Add Document</button>
+        </div>
+      </form>
+
+      <div class="evidence-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Document</th>
+              <th>Type</th>
+              <th>Updated</th>
+              <th>Size</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>${documentRows}</tbody>
+        </table>
+      </div>
+
+      <div class="split-grid section-gap">
+        <form id="document-extractions-form" class="stacked-form" data-deal-id="${deal.id}">
+          <div class="page-header">
+            <h3>Extracted Field Suggestions</h3>
+            <p>Accept selected items into the deal profile or evidence tracker.</p>
+          </div>
+          <div class="suggestion-list">${extractionRows}</div>
+          <div class="form-actions form-actions--split">
+            <button type="submit" class="button button--primary" data-action="profile">Accept to Profile</button>
+            <button type="submit" class="button button--secondary" data-action="evidence">Save as Evidence</button>
+          </div>
+        </form>
+
+        <form id="document-risks-form" class="stacked-form" data-deal-id="${deal.id}">
+          <div class="page-header">
+            <h3>Risk Factor Extractor</h3>
+            <p>Convert detected document risks into red flags, evidence, or notes.</p>
+          </div>
+          <div class="suggestion-list">${riskRows}</div>
+          <div class="form-actions form-actions--split">
+            <button type="submit" class="button button--primary" data-action="red-flags">Red Flags</button>
+            <button type="submit" class="button button--secondary" data-action="evidence">Evidence</button>
+            <button type="submit" class="button button--secondary" data-action="notes">Notes</button>
+            <button type="submit" class="button button--secondary" data-action="ignore">Ignore</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
+function renderDealMemoSection(deal: Deal): string {
+  const questions = generateFollowUpQuestions(deal);
+
+  return `
+    <div class="card">
+      <div class="page-header">
+        <h3>Deal Memo</h3>
+        <p>Generate an editable memo from the profile, documents, evidence, scores, and risks.</p>
+      </div>
+
+      <div class="workspace-actions workspace-actions--wrap">
+        <button type="button" class="button button--primary" id="generate-memo-button">
+          Generate Memo
+        </button>
+        <button type="button" class="button button--secondary" id="save-memo-button">
+          Save Memo
+        </button>
+      </div>
+
+      <div class="form-field section-gap">
+        <label for="dealMemo">Saved Memo</label>
+        <textarea id="dealMemo" name="dealMemo" rows="16" placeholder="Generate or write a deal memo...">${escapeHtml(deal.dealMemo?.content ?? '')}</textarea>
+      </div>
+
+      <div class="section-gap">
+        <div class="page-header">
+          <h3>Follow-Up Questions</h3>
+          <p>Generated from missing fields, weak evidence, red flags, and document risks.</p>
+        </div>
+
+        ${
+          questions.length
+            ? `<div class="mini-list">${questions.map((question) => `<div class="mini-list__item mini-list__item--stacked"><span>${escapeHtml(question)}</span></div>`).join('')}</div>`
+            : '<p class="empty-copy">No follow-up questions generated right now.</p>'
+        }
+      </div>
+    </div>
+  `;
+}
+
 function renderQuickScreenSection(deal: Deal): string {
   const quickScreen = deal.quickScreen;
 
@@ -915,6 +1135,8 @@ export function renderDealWorkspacePage(path: string): string {
       ${renderRedFlagsSection(deal)}
       ${renderSuggestedRedFlagsSection(deal)}
       ${renderEvidenceSection(deal)}
+      ${renderDocumentLibrarySection(deal)}
+      ${renderDealMemoSection(deal)}
       ${renderDetailForm(deal)}
       ${renderQuickScreenSection(deal)}
       ${renderDecisionSection(deal)}
@@ -931,6 +1153,15 @@ export function bindDealWorkspacePageEvents(root: HTMLElement, path: string): vo
   const redFlagsForm = root.querySelector<HTMLFormElement>('#red-flags-form');
   const suggestedRedFlagsForm = root.querySelector<HTMLFormElement>('#suggested-red-flags-form');
   const evidenceForm = root.querySelector<HTMLFormElement>('#evidence-form');
+  const documentForm = root.querySelector<HTMLFormElement>('#document-form');
+  const documentExtractionsForm = root.querySelector<HTMLFormElement>('#document-extractions-form');
+  const documentRisksForm = root.querySelector<HTMLFormElement>('#document-risks-form');
+  const documentTextFileInput = root.querySelector<HTMLInputElement>('#documentTextFile');
+  const documentTextArea = root.querySelector<HTMLTextAreaElement>('#documentText');
+  const documentTitleInput = root.querySelector<HTMLInputElement>('#documentTitle');
+  const generateMemoButton = root.querySelector<HTMLButtonElement>('#generate-memo-button');
+  const saveMemoButton = root.querySelector<HTMLButtonElement>('#save-memo-button');
+  const memoTextarea = root.querySelector<HTMLTextAreaElement>('#dealMemo');
   const quickScreenForm = root.querySelector<HTMLFormElement>('#quick-screen-form');
   const decisionForm = root.querySelector<HTMLFormElement>('#decision-form');
   const deepDiligenceForm = root.querySelector<HTMLFormElement>('#deep-diligence-form');
@@ -1074,6 +1305,174 @@ export function bindDealWorkspacePageEvents(root: HTMLElement, path: string): vo
       }
     });
   });
+
+  if (documentForm && dealId) {
+    documentForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const formData = new FormData(documentForm);
+      const input: DealDocumentInput = {
+        title: String(formData.get('documentTitle') ?? '').trim(),
+        documentType: String(
+          formData.get('documentType') ?? 'USER_NOTE'
+        ) as DealDocumentInput['documentType'],
+        sourceUrl: String(formData.get('documentSourceUrl') ?? '').trim(),
+        pastedText: String(formData.get('documentText') ?? '').trim()
+      };
+
+      if (!input.title || !input.pastedText) {
+        window.alert('Please enter a document title and pasted text.');
+        return;
+      }
+
+      try {
+        await saveDealDocument(dealId, input);
+        await refreshWorkspaceDeal(dealId);
+      } catch (error) {
+        console.error('Failed to save document:', error);
+        window.alert('Failed to save document.');
+      }
+    });
+  }
+
+  if (documentTextFileInput && documentTextArea) {
+    documentTextFileInput.addEventListener('change', async () => {
+      const file = documentTextFileInput.files?.[0];
+      if (!file) return;
+
+      if (!/(\.txt|\.md)$/i.test(file.name) && !file.type.startsWith('text/')) {
+        window.alert('Only text or markdown files can be loaded without OCR/PDF parsing.');
+        documentTextFileInput.value = '';
+        return;
+      }
+
+      documentTextArea.value = await file.text();
+      if (documentTitleInput && !documentTitleInput.value.trim()) {
+        documentTitleInput.value = file.name.replace(/\.(txt|md)$/i, '');
+      }
+    });
+  }
+
+  root.querySelectorAll<HTMLButtonElement>('[data-delete-document-id]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const documentId = Number(button.dataset.deleteDocumentId);
+      if (!dealId || !documentId) return;
+
+      const confirmed = window.confirm('Delete this document record?');
+      if (!confirmed) return;
+
+      try {
+        await deleteDealDocument(dealId, documentId);
+        await refreshWorkspaceDeal(dealId);
+      } catch (error) {
+        console.error('Failed to delete document:', error);
+        window.alert('Failed to delete document.');
+      }
+    });
+  });
+
+  if (documentExtractionsForm && dealId) {
+    documentExtractionsForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const deal = getDealById(dealId);
+      if (!deal) return;
+
+      const submitter = event.submitter as HTMLButtonElement | null;
+      const action = submitter?.dataset.action ?? 'profile';
+      const selectedIds = new Set(
+        new FormData(documentExtractionsForm).getAll('documentExtraction').map(String)
+      );
+      const selectedItems = getAllDocumentExtractions(deal).filter((item) =>
+        selectedIds.has(item.id)
+      );
+
+      if (!selectedItems.length) {
+        window.alert('Select at least one extracted item.');
+        return;
+      }
+
+      try {
+        if (action === 'evidence') {
+          await saveExtractionEvidenceClaims(dealId, selectedItems);
+        } else {
+          await acceptDocumentExtractions(dealId, selectedItems);
+        }
+
+        await refreshWorkspaceDeal(dealId);
+      } catch (error) {
+        console.error('Failed to apply document extractions:', error);
+        window.alert('Failed to apply document extractions.');
+      }
+    });
+  }
+
+  if (documentRisksForm && dealId) {
+    documentRisksForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const deal = getDealById(dealId);
+      if (!deal) return;
+
+      const submitter = event.submitter as HTMLButtonElement | null;
+      const action = submitter?.dataset.action ?? 'red-flags';
+      const selectedIds = new Set(
+        new FormData(documentRisksForm).getAll('documentRisk').map(String)
+      );
+      const selectedRisks = getAllDocumentRisks(deal).filter((risk) =>
+        selectedIds.has(risk.id)
+      );
+
+      if (!selectedRisks.length) {
+        window.alert('Select at least one document risk.');
+        return;
+      }
+
+      try {
+        if (action === 'evidence') {
+          await convertDocumentRisksToEvidence(dealId, selectedRisks);
+        } else if (action === 'notes') {
+          await appendDocumentRisksToMainRisk(dealId, selectedRisks);
+        } else if (action === 'ignore') {
+          await ignoreDocumentRisks(
+            dealId,
+            selectedRisks.map((risk) => risk.id)
+          );
+        } else {
+          await convertDocumentRisksToRedFlags(dealId, selectedRisks);
+        }
+
+        await refreshWorkspaceDeal(dealId);
+      } catch (error) {
+        console.error('Failed to convert document risks:', error);
+        window.alert('Failed to convert document risks.');
+      }
+    });
+  }
+
+  if (generateMemoButton && dealId) {
+    generateMemoButton.addEventListener('click', async () => {
+      try {
+        await generateAndSaveDealMemo(dealId);
+        await refreshWorkspaceDeal(dealId);
+      } catch (error) {
+        console.error('Failed to generate memo:', error);
+        window.alert('Failed to generate memo.');
+      }
+    });
+  }
+
+  if (saveMemoButton && memoTextarea && dealId) {
+    saveMemoButton.addEventListener('click', async () => {
+      try {
+        await saveDealMemo(dealId, memoTextarea.value);
+        await refreshWorkspaceDeal(dealId);
+      } catch (error) {
+        console.error('Failed to save memo:', error);
+        window.alert('Failed to save memo.');
+      }
+    });
+  }
 
   if (quickScreenForm && dealId) {
     quickScreenForm.addEventListener('submit', async (event) => {

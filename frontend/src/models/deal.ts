@@ -39,8 +39,24 @@ export type RevenueStatus =
 export type EvidenceSourceType =
   | 'CAMPAIGN_PAGE'
   | 'FORM_C'
+  | 'FORM_CA'
   | 'OFFERING_CIRCULAR'
+  | 'SAFE_AGREEMENT'
+  | 'SUBSCRIPTION_AGREEMENT'
+  | 'INVESTOR_DECK'
   | 'FOUNDER_STATEMENT'
+  | 'PRESS'
+  | 'USER_NOTE'
+  | 'OTHER';
+
+export type DealDocumentType =
+  | 'CAMPAIGN_PAGE'
+  | 'FORM_C'
+  | 'FORM_CA'
+  | 'OFFERING_CIRCULAR'
+  | 'SAFE_AGREEMENT'
+  | 'SUBSCRIPTION_AGREEMENT'
+  | 'INVESTOR_DECK'
   | 'PRESS'
   | 'USER_NOTE'
   | 'OTHER';
@@ -139,6 +155,29 @@ export interface EvidenceClaimInput {
   notes: string;
 }
 
+export interface DealDocument {
+  id: number;
+  title: string;
+  documentType: DealDocumentType;
+  sourceUrl: string;
+  pastedText: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DealDocumentInput {
+  title: string;
+  documentType: DealDocumentType;
+  sourceUrl: string;
+  pastedText: string;
+}
+
+export interface DealMemo {
+  content: string;
+  generatedAt: string;
+  updatedAt: string;
+}
+
 export interface QuickScreenData {
   businessClarity: number;
   tractionEvidence: number;
@@ -207,6 +246,9 @@ export interface Deal {
   redFlags: RedFlagMap;
   ignoredSuggestedRedFlags: RedFlagKey[];
   evidenceClaims: EvidenceClaim[];
+  documents: DealDocument[];
+  ignoredDocumentRiskIds: string[];
+  dealMemo?: DealMemo | null;
   createdAt: string;
   updatedAt: string;
   quickScreen?: QuickScreenData | null;
@@ -269,7 +311,7 @@ export interface DeepDiligenceInput {
 }
 
 export interface DealExportPayload {
-  version: 3;
+  version: 4;
   exportedAt: string;
   deals: Deal[];
 }

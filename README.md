@@ -11,11 +11,11 @@ This is a research organization tool. It is not financial, legal, or tax advice.
 - Non-accredited startup/private-market investor
 - Manually reviews crowdfunding, Reg CF, Reg A, fund, SPV, and pre-IPO-style offerings
 - Wants a consistent process before sharing sensitive information or sending funds
-- Needs local persistence, evidence tracking, and JSON backup before adding accounts, scraping, or AI
+- Needs local persistence, evidence tracking, document analysis, and JSON backup before adding accounts, scraping, or AI
 
 ## Current Features
 
-- Local-first V3 frontend powered by browser `localStorage`
+- Local-first V4 frontend powered by browser `localStorage`
 - Manual deal intake with expanded private-market metadata
 - Paste-text import for campaign pages, Form C excerpts, offering circular text, founder notes, and user notes
 - Transparent regex/string parser that suggests fields for user approval
@@ -25,6 +25,11 @@ This is a research organization tool. It is not financial, legal, or tax advice.
 - Suggested red flags from risk-heavy language, with manual accept/ignore controls
 - Risk language warning when major risk text exists but no red flags are checked
 - Evidence / claim tracker with source type, source text, strength, verification, and notes
+- Per-deal document library for pasted campaign pages, Form C, Form C-A, offering circulars, SAFE agreements, subscription agreements, investor decks, press, notes, and local `.txt` / `.md` text files
+- Transparent document extraction suggestions for offering terms, financial snippets, fees, use of proceeds, transfer restrictions, control terms, and seniority language
+- Risk factor extraction for going concern language, losses, limited operating history, dilution, senior securities, founder control, related-party issues, regulatory risk, illiquidity, no public market, platform fees, and conflicts
+- Editable deal memo generator with company overview, offering terms, thesis, failure case, evidence summary, red flags, valuation notes, access, liquidity, unanswered questions, recommendation, check size, and next review trigger
+- Follow-up question generator based on missing fields, weak evidence, red flags, and document risks
 - Data Confidence score from 0-100 separate from investment attractiveness
 - Quick Screen scoring
 - Deep Diligence scoring
@@ -38,7 +43,7 @@ This is a research organization tool. It is not financial, legal, or tax advice.
   - Watch: $0
   - Small check only: $100-$250
   - High conviction: $250-$500 max
-- Dashboard with total deals, decision counts, platform counts, sector counts, highest scoring deals, eligibility risks, watchlist follow-up, and an evidence follow-up queue
+- Dashboard with total deals, decision counts, platform counts, sector counts, highest scoring deals, eligibility risks, watchlist follow-up, evidence follow-up queue, document gaps, unsaved document risks, generated memos, and review-ready deals
 - Search and filters by company name, platform, sector, decision, investor eligibility, and offering exemption
 - JSON export/import for backups and moving local research between browsers
 
@@ -86,12 +91,24 @@ npm run build
 - Added Data Confidence scoring separate from Final Score
 - Added dashboard follow-up queue for unclear eligibility, unknown exemption, missing offering docs, unclear revenue, unclear fees, low confidence, next milestones, and due reviews
 
-## Future V4 Ideas
+## V4 Roadmap Completed
 
+- Added a per-deal document library for pasted text records
+- Added document extraction using transparent regex/string matching
+- Added accept-to-profile and save-as-evidence flows for extracted document items
+- Added risk factor extraction from documents
+- Added conversion of document risks into red flags, evidence claims, or main-risk notes
+- Added editable deal memo generation and saving
+- Added follow-up question generation
+- Added dashboard cards for missing documents, unsaved document risks, low data confidence, generated memos, and ready-for-review deals
+
+## Future V5 Ideas
+
+- OCR/import from screenshots and downloaded PDFs
 - More robust SEC filing parsing for Reg CF / Reg A documents
 - Platform page import helpers for Wefunder, StartEngine, Republic, Fundrise, and similar pages
 - Supabase persistence and cross-device sync
-- AI summary of offering documents and founder updates
+- Optional local or user-approved AI summary of offering documents and founder updates
 - Deal alerts and follow-up reminders
 - Evidence templates by deal type and exemption
 - Portfolio-level exposure limits and allocation rules
@@ -105,4 +122,4 @@ StartupValidationBot/
   backend/    Existing Spring Boot backend kept for possible future API work
 ```
 
-V3 intentionally avoids overbuilding authentication, scraping, AI, or backend infrastructure. The goal is an evidence-based manual diligence workstation first.
+V4 intentionally avoids overbuilding authentication, scraping, AI, or backend infrastructure. The goal is an evidence-based manual diligence workstation first.

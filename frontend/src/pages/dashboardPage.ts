@@ -10,6 +10,7 @@ import {
   getDataConfidenceLabel,
   getDataConfidenceScore
 } from '../services/riskAnalysis';
+import { getAllDocumentRisks as getDocumentRiskItems } from '../services/documentIntelligence';
 import {
   formatDate,
   formatDealStatus,
@@ -104,10 +105,13 @@ function getFollowUpReasons(deal: Deal, today: string): string[] {
 
   if (deal.investorEligibility === 'UNCLEAR') reasons.push('Eligibility unclear');
   if (deal.offeringExemption === 'UNKNOWN') reasons.push('Exemption unknown');
+  if (deal.documents.length === 0) reasons.push('Documents missing');
+  if (getDocumentRiskItems(deal).length > 0) reasons.push('Document risks unreviewed');
   if (deal.redFlags.missingOfferingDocuments) reasons.push('Offering docs missing');
   if (deal.revenueStatus === 'UNCLEAR') reasons.push('Revenue unclear');
   if (!deal.platformFees || /unknown|unclear/i.test(deal.platformFees)) reasons.push('Fees unclear');
   if (dataConfidence < 50) reasons.push('Low data confidence');
+  if (!deal.dealMemo?.content) reasons.push('Memo missing');
   if (deal.nextMilestone) reasons.push('Next milestone');
   if (deal.review?.nextReviewDate && deal.review.nextReviewDate <= today) reasons.push('Review due');
 
@@ -143,6 +147,18 @@ export function renderDashboardPage(): string {
         getDataConfidenceScore(a.deal) - getDataConfidenceScore(b.deal)
     );
   const lowConfidenceCount = deals.filter((deal) => getDataConfidenceScore(deal) < 50).length;
+  const missingDocumentsCount = deals.filter((deal) => deal.documents.length === 0).length;
+  const unsavedDocumentRisksCount = deals.filter(
+    (deal) => getDocumentRiskItems(deal).length > 0
+  ).length;
+  const generatedMemosCount = deals.filter((deal) => Boolean(deal.dealMemo?.content)).length;
+  const readyForReviewCount = deals.filter(
+    (deal) =>
+      deal.documents.length > 0 &&
+      Boolean(deal.dealMemo?.content) &&
+      getDataConfidenceScore(deal) >= 50 &&
+      getDocumentRiskItems(deal).length === 0
+  ).length;
 
   const platformCounts = countBy(deals.map((deal) => deal.platform || 'Unknown'));
   const sectorCounts = countBy(deals.map((deal) => deal.sector || 'Unknown'));
@@ -210,6 +226,32 @@ export function renderDashboardPage(): string {
           <h3>Follow-Up Queue</h3>
           <p class="metric">${followUpQueue.length}</p>
           <p class="metric-subtext">Deals needing review</p>
+        </div>
+      </div>
+
+      <div class="card-grid">
+        <div class="card">
+          <h3>Missing Documents</h3>
+          <p class="metric">${missingDocumentsCount}</p>
+          <p class="metric-subtext">No pasted document records</p>
+        </div>
+
+        <div class="card">
+          <h3>Unsaved Doc Risks</h3>
+          <p class="metric">${unsavedDocumentRisksCount}</p>
+          <p class="metric-subtext">Detected risks need review</p>
+        </div>
+
+        <div class="card">
+          <h3>Generated Memos</h3>
+          <p class="metric">${generatedMemosCount}</p>
+          <p class="metric-subtext">Deals with saved memos</p>
+        </div>
+
+        <div class="card">
+          <h3>Ready for Review</h3>
+          <p class="metric">${readyForReviewCount}</p>
+          <p class="metric-subtext">Documents, memo, and confidence ready</p>
         </div>
       </div>
 

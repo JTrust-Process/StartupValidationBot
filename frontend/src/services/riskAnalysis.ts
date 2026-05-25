@@ -82,6 +82,9 @@ function getDealRiskText(deal: Deal): string {
   const evidenceText = deal.evidenceClaims
     .map((claim) => [claim.claim, claim.sourceText, claim.notes].join(' '))
     .join(' ');
+  const documentText = deal.documents
+    .map((document) => [document.title, document.pastedText].join(' '))
+    .join(' ');
 
   return [
     deal.rawDealText,
@@ -101,7 +104,8 @@ function getDealRiskText(deal: Deal): string {
     deal.deepDiligence?.competitiveEdgeNote,
     deal.deepDiligence?.riskNote,
     deal.review?.reviewNote,
-    evidenceText
+    evidenceText,
+    documentText
   ]
     .filter(Boolean)
     .join(' ');
@@ -202,6 +206,7 @@ export function hasUnscoredRiskLanguage(deal: Deal): boolean {
 
 export function getDataConfidenceScore(deal: Deal): number {
   let score = deal.evidenceClaims.length ? 45 : 20;
+  if (deal.documents.length) score += Math.min(20, deal.documents.length * 8);
 
   deal.evidenceClaims.forEach((claim) => {
     if (claim.evidenceStrength === 'STRONG') score += 16;

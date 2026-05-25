@@ -1029,6 +1029,10 @@ body::after {
   gap: 12px;
 }
 
+.workspace-actions--wrap {
+  flex-wrap: wrap;
+}
+
 .button--danger {
   background: linear-gradient(135deg, rgba(255, 95, 109, 0.22), rgba(255, 95, 109, 0.12));
   color: #ffe2e6;
@@ -1084,6 +1088,10 @@ body::after {
 .notice--compact {
   margin-top: 18px;
   font-size: 0.92rem;
+}
+
+.section-gap {
+  margin-top: 20px;
 }
 
 .notice__subtext {

@@ -1,5 +1,6 @@
 import type {
   Deal,
+  DealDocumentInput,
   DealDecision,
   DealInput,
   DecisionInput,
@@ -10,6 +11,8 @@ import type {
   RedFlagMap,
   ReviewData
 } from '../models/deal';
+import type { DocumentExtractionItem, DocumentRiskItem } from './documentIntelligence';
+import { generateDealMemoContent } from './documentIntelligence';
 import {
   createStoredDeal,
   deleteStoredDeal,
@@ -264,6 +267,241 @@ export async function deleteEvidenceClaim(
     ...deal,
     evidenceClaims: deal.evidenceClaims.filter((claim) => claim.id !== claimId),
     updatedAt: new Date().toISOString()
+  };
+
+  replaceStoredDeal(updatedDeal);
+  upsertDealInCache(updatedDeal);
+  return updatedDeal;
+}
+
+export async function saveDealDocument(
+  dealId: number,
+  input: DealDocumentInput
+): Promise<Deal> {
+  const deal = getRequiredDeal(dealId);
+  const now = new Date().toISOString();
+  const nextId = deal.documents.reduce((maxId, document) => Math.max(maxId, document.id), 0) + 1;
+  const updatedDeal: Deal = {
+    ...deal,
+    documents: [
+      {
+        id: nextId,
+        ...input,
+        createdAt: now,
+        updatedAt: now
+      },
+      ...deal.documents
+    ],
+    updatedAt: now
+  };
+
+  replaceStoredDeal(updatedDeal);
+  upsertDealInCache(updatedDeal);
+  return updatedDeal;
+}
+
+export async function deleteDealDocument(
+  dealId: number,
+  documentId: number
+): Promise<Deal> {
+  const deal = getRequiredDeal(dealId);
+  const documentPrefix = `${documentId}-`;
+  const updatedDeal: Deal = {
+    ...deal,
+    documents: deal.documents.filter((document) => document.id !== documentId),
+    ignoredDocumentRiskIds: deal.ignoredDocumentRiskIds.filter(
+      (riskId) => !riskId.startsWith(documentPrefix)
+    ),
+    updatedAt: new Date().toISOString()
+  };
+
+  replaceStoredDeal(updatedDeal);
+  upsertDealInCache(updatedDeal);
+  return updatedDeal;
+}
+
+export async function acceptDocumentExtractions(
+  dealId: number,
+  items: DocumentExtractionItem[]
+): Promise<Deal> {
+  const deal = getRequiredDeal(dealId);
+  const dealPatch = items.reduce<Partial<Deal>>((patch, item) => {
+    if (!item.targetField) return patch;
+
+    if (item.targetField === 'minimumInvestment' || item.targetField === 'amountRaised') {
+      const parsed = Number(item.value);
+      if (Number.isFinite(parsed)) {
+        return {
+          ...patch,
+          [item.targetField]: parsed
+        };
+      }
+      return patch;
+    }
+
+    return {
+      ...patch,
+      [item.targetField]: item.value
+    };
+  }, {});
+
+  const now = new Date().toISOString();
+  const updatedDeal: Deal = {
+    ...deal,
+    ...dealPatch,
+    status: (dealPatch.decision as Deal['status'] | undefined) ?? deal.status,
+    updatedAt: now
+  };
+
+  replaceStoredDeal(updatedDeal);
+  upsertDealInCache(updatedDeal);
+  return updatedDeal;
+}
+
+export async function saveExtractionEvidenceClaims(
+  dealId: number,
+  items: DocumentExtractionItem[]
+): Promise<Deal> {
+  const evidenceInputs = items
+    .map((item) => item.evidenceClaim)
+    .filter((claim): claim is EvidenceClaimInput => Boolean(claim));
+
+  return saveEvidenceClaims(dealId, evidenceInputs);
+}
+
+export async function convertDocumentRisksToRedFlags(
+  dealId: number,
+  risks: DocumentRiskItem[]
+): Promise<Deal> {
+  const deal = getRequiredDeal(dealId);
+  const now = new Date().toISOString();
+  const updatedDeal: Deal = {
+    ...deal,
+    redFlags: risks.reduce(
+      (flags, risk) =>
+        risk.redFlagKey
+          ? {
+              ...flags,
+              [risk.redFlagKey]: true
+            }
+          : flags,
+      deal.redFlags
+    ),
+    ignoredDocumentRiskIds: Array.from(
+      new Set([...deal.ignoredDocumentRiskIds, ...risks.map((risk) => risk.id)])
+    ),
+    updatedAt: now
+  };
+
+  replaceStoredDeal(updatedDeal);
+  upsertDealInCache(updatedDeal);
+  return updatedDeal;
+}
+
+export async function convertDocumentRisksToEvidence(
+  dealId: number,
+  risks: DocumentRiskItem[]
+): Promise<Deal> {
+  return saveEvidenceClaims(
+    dealId,
+    risks.map((risk) => risk.evidenceClaim),
+    risks.map((risk) => risk.id)
+  );
+}
+
+export async function appendDocumentRisksToMainRisk(
+  dealId: number,
+  risks: DocumentRiskItem[]
+): Promise<Deal> {
+  const deal = getRequiredDeal(dealId);
+  const riskNotes = risks.map((risk) => `${risk.label}: ${risk.matchedText}`).join('\n');
+  const updatedDeal: Deal = {
+    ...deal,
+    mainRisk: [deal.mainRisk, riskNotes].filter(Boolean).join('\n\n'),
+    ignoredDocumentRiskIds: Array.from(
+      new Set([...deal.ignoredDocumentRiskIds, ...risks.map((risk) => risk.id)])
+    ),
+    updatedAt: new Date().toISOString()
+  };
+
+  replaceStoredDeal(updatedDeal);
+  upsertDealInCache(updatedDeal);
+  return updatedDeal;
+}
+
+export async function ignoreDocumentRisks(
+  dealId: number,
+  riskIds: string[]
+): Promise<Deal> {
+  const deal = getRequiredDeal(dealId);
+  const updatedDeal: Deal = {
+    ...deal,
+    ignoredDocumentRiskIds: Array.from(new Set([...deal.ignoredDocumentRiskIds, ...riskIds])),
+    updatedAt: new Date().toISOString()
+  };
+
+  replaceStoredDeal(updatedDeal);
+  upsertDealInCache(updatedDeal);
+  return updatedDeal;
+}
+
+export async function generateAndSaveDealMemo(dealId: number): Promise<Deal> {
+  const deal = getRequiredDeal(dealId);
+  const now = new Date().toISOString();
+  const updatedDeal: Deal = {
+    ...deal,
+    dealMemo: {
+      content: generateDealMemoContent(deal),
+      generatedAt: now,
+      updatedAt: now
+    },
+    updatedAt: now
+  };
+
+  replaceStoredDeal(updatedDeal);
+  upsertDealInCache(updatedDeal);
+  return updatedDeal;
+}
+
+export async function saveDealMemo(dealId: number, content: string): Promise<Deal> {
+  const deal = getRequiredDeal(dealId);
+  const now = new Date().toISOString();
+  const updatedDeal: Deal = {
+    ...deal,
+    dealMemo: {
+      content,
+      generatedAt: deal.dealMemo?.generatedAt ?? now,
+      updatedAt: now
+    },
+    updatedAt: now
+  };
+
+  replaceStoredDeal(updatedDeal);
+  upsertDealInCache(updatedDeal);
+  return updatedDeal;
+}
+
+function saveEvidenceClaims(
+  dealId: number,
+  inputs: EvidenceClaimInput[],
+  documentRiskIds: string[] = []
+): Deal {
+  const deal = getRequiredDeal(dealId);
+  const now = new Date().toISOString();
+  const nextId = deal.evidenceClaims.reduce((maxId, claim) => Math.max(maxId, claim.id), 0) + 1;
+  const newClaims = inputs.map((input, index) => ({
+    id: nextId + index,
+    ...input,
+    createdAt: now,
+    updatedAt: now
+  }));
+  const updatedDeal: Deal = {
+    ...deal,
+    evidenceClaims: [...newClaims, ...deal.evidenceClaims],
+    ignoredDocumentRiskIds: Array.from(
+      new Set([...deal.ignoredDocumentRiskIds, ...documentRiskIds])
+    ),
+    updatedAt: now
   };
 
   replaceStoredDeal(updatedDeal);

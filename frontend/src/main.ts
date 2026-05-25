@@ -13,7 +13,7 @@ function renderBootLoading(rootElement: HTMLDivElement): void {
     <div class="page page--centered">
       <div class="card card--status">
         <h2>Loading workspace</h2>
-        <p>Connecting to backend and loading your deals...</p>
+        <p>Loading your local deal research...</p>
       </div>
     </div>
   `;
@@ -24,7 +24,7 @@ function renderBootError(rootElement: HTMLDivElement): void {
     <div class="page page--centered">
       <div class="card card--status">
         <h2>Failed to load app data</h2>
-        <p>Make sure the Spring Boot backend is running on port 8080.</p>
+        <p>The local browser storage could not be read. Try again or restore from a JSON backup.</p>
         <div class="form-actions form-actions--start">
           <button id="retry-bootstrap-button" class="button button--primary" type="button">
             Retry

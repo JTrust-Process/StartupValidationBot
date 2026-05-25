@@ -1,7 +1,8 @@
 import { getCurrentRoute, navigateTo, onRouteChange } from '../utils/router';
 import { bindDashboardPageEvents, renderDashboardPage } from '../pages/dashboardPage';
-import { renderDealsPage } from '../pages/dealsPage';
+import { bindDealsPageEvents, renderDealsPage } from '../pages/dealsPage';
 import { bindNewDealPageEvents, renderNewDealPage } from '../pages/newDealPage';
+import { bindTextImportPageEvents, renderTextImportPage } from '../pages/textImportPage';
 import {
   bindDealWorkspacePageEvents,
   renderDealWorkspacePage
@@ -12,6 +13,7 @@ function getPageHtml(path: string): string {
   if (path === '/dashboard') return renderDashboardPage();
   if (path === '/deals') return renderDealsPage();
   if (path === '/deals/new') return renderNewDealPage();
+  if (path === '/import-text') return renderTextImportPage();
   if (path.startsWith('/deals/')) return renderDealWorkspacePage(path);
 
   return renderDashboardPage();
@@ -53,8 +55,18 @@ function bindPageEvents(root: HTMLDivElement, path: string): void {
     return;
   }
 
+  if (path === '/deals') {
+    bindDealsPageEvents(pageContent);
+    return;
+  }
+
   if (path === '/deals/new') {
     bindNewDealPageEvents(pageContent);
+    return;
+  }
+
+  if (path === '/import-text') {
+    bindTextImportPageEvents(pageContent);
     return;
   }
 
@@ -86,6 +98,7 @@ function renderPageError(root: HTMLDivElement, message: string): void {
           <a href="#/dashboard" class="nav-link active" data-route="/dashboard">Dashboard</a>
           <a href="#/deals" class="nav-link" data-route="/deals">Deals</a>
           <a href="#/deals/new" class="nav-link" data-route="/deals/new">New Deal</a>
+          <a href="#/import-text" class="nav-link" data-route="/import-text">Text Import</a>
         </nav>
       </aside>
 
@@ -94,7 +107,7 @@ function renderPageError(root: HTMLDivElement, message: string): void {
           <div>
             <h1 class="topbar__title">Deal Diligence Workstation</h1>
             <p class="topbar__subtitle">
-              Structured startup diligence, scoring, and thesis tracking for real investing decisions.
+              Local-first diligence for risky startup and private-market deals.
             </p>
           </div>
         </header>
@@ -140,6 +153,7 @@ async function renderLayout(root: HTMLDivElement): Promise<void> {
           <a href="#/dashboard" class="nav-link" data-route="/dashboard">Dashboard</a>
           <a href="#/deals" class="nav-link" data-route="/deals">Deals</a>
           <a href="#/deals/new" class="nav-link" data-route="/deals/new">New Deal</a>
+          <a href="#/import-text" class="nav-link" data-route="/import-text">Text Import</a>
         </nav>
       </aside>
 
@@ -148,7 +162,7 @@ async function renderLayout(root: HTMLDivElement): Promise<void> {
           <div>
             <h1 class="topbar__title">Deal Diligence Workstation</h1>
             <p class="topbar__subtitle">
-              Structured startup diligence, scoring, and thesis tracking for real investing decisions.
+              Local-first diligence for risky startup and private-market deals.
             </p>
           </div>
         </header>
@@ -171,7 +185,7 @@ export function renderApp(root: HTMLDivElement): void {
       await renderLayout(root);
     } catch (error) {
       console.error('Failed to render app layout:', error);
-      renderPageError(root, 'Please make sure the backend is running and the selected deal still exists.');
+      renderPageError(root, 'The selected local deal could not be loaded. It may have been deleted or replaced by an import.');
     }
   };
 

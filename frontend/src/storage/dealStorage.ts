@@ -2,8 +2,12 @@ import type {
   Deal,
   DealDocument,
   DealExportPayload,
+  DealImportRecord,
   DealInput,
   EvidenceClaim,
+  ImportFieldSuggestion,
+  ImportRedFlagSuggestion,
+  ImportSection,
   RedFlagMap
 } from '../models/deal';
 import { RED_FLAG_DEFINITIONS } from '../models/deal';
@@ -144,6 +148,32 @@ function asDealDocumentType(value: unknown): DealDocument['documentType'] {
   return 'USER_NOTE';
 }
 
+function asImportMode(value: unknown): DealImportRecord['importMode'] {
+  return value === 'LAZY' || value === 'CLEAN' ? value : 'CLEAN';
+}
+
+function asSuggestionConfidence(value: unknown): ImportFieldSuggestion['confidence'] {
+  if (value === 'HIGH' || value === 'MEDIUM' || value === 'LOW') return value;
+  return 'LOW';
+}
+
+function asImportSectionName(value: unknown): ImportSection['sectionName'] {
+  if (
+    value === 'CORE_TERMS' ||
+    value === 'COMPANY_DESCRIPTION' ||
+    value === 'TRACTION_CLAIMS' ||
+    value === 'FINANCIALS' ||
+    value === 'RISK_FACTORS' ||
+    value === 'FEES_USE_OF_PROCEEDS' ||
+    value === 'LEGAL_ELIGIBILITY' ||
+    value === 'NOISE_IGNORE'
+  ) {
+    return value;
+  }
+
+  return 'NOISE_IGNORE';
+}
+
 function asEvidenceStrength(value: unknown): EvidenceClaim['evidenceStrength'] {
   if (
     value === 'STRONG' ||
@@ -232,6 +262,91 @@ function normalizeStringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string');
 }
 
+function normalizeImportSections(value: unknown): ImportSection[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((sectionValue) => {
+      if (!isRecord(sectionValue)) return null;
+
+      return {
+        sectionName: asImportSectionName(sectionValue.sectionName),
+        label: asString(sectionValue.label),
+        text: asString(sectionValue.text),
+        lineCount: Math.trunc(asNumber(sectionValue.lineCount) ?? 0)
+      };
+    })
+    .filter((section): section is ImportSection => Boolean(section));
+}
+
+function normalizeFieldSuggestions(value: unknown): ImportFieldSuggestion[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((suggestionValue, index): ImportFieldSuggestion | null => {
+      if (!isRecord(suggestionValue)) return null;
+
+      return {
+        id: asString(suggestionValue.id, `field-${index + 1}`),
+        fieldName: asString(suggestionValue.fieldName) as ImportFieldSuggestion['fieldName'],
+        suggestedValue: asString(suggestionValue.suggestedValue),
+        confidence: asSuggestionConfidence(suggestionValue.confidence),
+        sourceSnippet: asString(suggestionValue.sourceSnippet),
+        accepted: suggestionValue.accepted === true,
+        ignored: suggestionValue.ignored === true
+      };
+    })
+    .filter((suggestion): suggestion is ImportFieldSuggestion => Boolean(suggestion));
+}
+
+function normalizeImportRedFlagSuggestions(value: unknown): ImportRedFlagSuggestion[] {
+  if (!Array.isArray(value)) return [];
+
+  const allowedKeys = new Set(RED_FLAG_DEFINITIONS.map((definition) => definition.key));
+  return value
+    .map((suggestionValue, index): ImportRedFlagSuggestion | null => {
+      if (!isRecord(suggestionValue)) return null;
+      const redFlagKey = asString(suggestionValue.redFlagKey) as ImportRedFlagSuggestion['redFlagKey'];
+      if (!allowedKeys.has(redFlagKey)) return null;
+
+      return {
+        id: asString(suggestionValue.id, `risk-${index + 1}`),
+        redFlagKey,
+        label: asString(suggestionValue.label),
+        confidence: asSuggestionConfidence(suggestionValue.confidence),
+        sourceSnippet: asString(suggestionValue.sourceSnippet),
+        accepted: suggestionValue.accepted === true,
+        ignored: suggestionValue.ignored === true
+      };
+    })
+    .filter((suggestion): suggestion is ImportRedFlagSuggestion => Boolean(suggestion));
+}
+
+function normalizeImportRecords(value: unknown): DealImportRecord[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((recordValue, index) => {
+      if (!isRecord(recordValue)) return null;
+      const now = new Date().toISOString();
+
+      return {
+        id: Math.trunc(asNumber(recordValue.id) ?? index + 1),
+        dealId: Math.trunc(asNumber(recordValue.dealId) ?? 0),
+        importMode: asImportMode(recordValue.importMode),
+        title: asString(recordValue.title, `Import ${index + 1}`),
+        sourceUrl: asString(recordValue.sourceUrl),
+        rawText: asString(recordValue.rawText),
+        cleanedText: asString(recordValue.cleanedText),
+        sections: normalizeImportSections(recordValue.sections),
+        fieldSuggestions: normalizeFieldSuggestions(recordValue.fieldSuggestions),
+        suggestedRedFlags: normalizeImportRedFlagSuggestions(recordValue.suggestedRedFlags),
+        createdAt: asString(recordValue.createdAt, now)
+      };
+    })
+    .filter((record): record is DealImportRecord => Boolean(record));
+}
+
 function normalizeDeal(value: unknown, fallbackId: number): Deal | null {
   if (!isRecord(value)) return null;
 
@@ -271,6 +386,7 @@ function normalizeDeal(value: unknown, fallbackId: number): Deal | null {
     ignoredSuggestedRedFlags: normalizeIgnoredRedFlags(value.ignoredSuggestedRedFlags),
     evidenceClaims: normalizeEvidenceClaims(value.evidenceClaims),
     documents: normalizeDocuments(value.documents),
+    importRecords: normalizeImportRecords(value.importRecords),
     ignoredDocumentRiskIds: normalizeStringArray(value.ignoredDocumentRiskIds),
     dealMemo: isRecord(value.dealMemo)
       ? {
@@ -381,17 +497,35 @@ export function saveStoredDeals(deals: Deal[]): void {
 export function createStoredDeal(input: DealInput): Deal {
   const deals = loadStoredDeals();
   const now = new Date().toISOString();
+  const { importRecord, ...dealInput } = input;
+  delete dealInput.initialRedFlags;
+  const id = getNextId(deals);
+  const redFlags = createEmptyRedFlags();
+  input.initialRedFlags?.forEach((key) => {
+    redFlags[key] = true;
+  });
+  const importRecords = importRecord
+    ? [
+        {
+          id: 1,
+          dealId: id,
+          ...importRecord,
+          createdAt: now
+        }
+      ]
+    : [];
   const deal: Deal = {
-    id: getNextId(deals),
-    ...input,
-    rawDealText: input.rawDealText ?? '',
-    status: input.decision,
+    id,
+    ...dealInput,
+    rawDealText: input.rawDealText ?? importRecord?.rawText ?? '',
+    status: dealInput.decision,
     quickScore: 0,
     deepScore: null,
-    redFlags: createEmptyRedFlags(),
+    redFlags,
     ignoredSuggestedRedFlags: [],
     evidenceClaims: [],
     documents: [],
+    importRecords,
     ignoredDocumentRiskIds: [],
     dealMemo: null,
     createdAt: now,
@@ -414,11 +548,14 @@ export function updateStoredDeal(dealId: number, input: DealInput): Deal {
     throw new Error(`Deal ${dealId} not found`);
   }
 
+  const dealInput: DealInput = { ...input };
+  delete dealInput.importRecord;
+  delete dealInput.initialRedFlags;
   const updatedDeal: Deal = {
     ...existingDeal,
-    ...input,
+    ...dealInput,
     rawDealText: input.rawDealText ?? existingDeal.rawDealText,
-    status: input.decision,
+    status: dealInput.decision,
     updatedAt: new Date().toISOString()
   };
 

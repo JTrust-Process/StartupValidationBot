@@ -2,6 +2,7 @@ import { getCurrentRoute, navigateTo, onRouteChange } from '../utils/router';
 import { bindDashboardPageEvents, renderDashboardPage } from '../pages/dashboardPage';
 import { bindDealsPageEvents, renderDealsPage } from '../pages/dealsPage';
 import { bindNewDealPageEvents, renderNewDealPage } from '../pages/newDealPage';
+import { bindScoutPageEvents, renderScoutPage } from '../pages/scoutPage';
 import { bindTextImportPageEvents, renderTextImportPage } from '../pages/textImportPage';
 import {
   bindDealWorkspacePageEvents,
@@ -14,6 +15,7 @@ function getPageHtml(path: string): string {
   if (path === '/deals') return renderDealsPage();
   if (path === '/deals/new') return renderNewDealPage();
   if (path === '/import-text') return renderTextImportPage();
+  if (path === '/scout') return renderScoutPage();
   if (path.startsWith('/deals/')) return renderDealWorkspacePage(path);
 
   return renderDashboardPage();
@@ -70,6 +72,11 @@ function bindPageEvents(root: HTMLDivElement, path: string): void {
     return;
   }
 
+  if (path === '/scout') {
+    bindScoutPageEvents(pageContent);
+    return;
+  }
+
   if (path.startsWith('/deals/')) {
     bindDealWorkspacePageEvents(pageContent, path);
   }
@@ -99,6 +106,7 @@ function renderPageError(root: HTMLDivElement, message: string): void {
           <a href="#/deals" class="nav-link" data-route="/deals">Deals</a>
           <a href="#/deals/new" class="nav-link" data-route="/deals/new">New Deal</a>
           <a href="#/import-text" class="nav-link" data-route="/import-text">Text Import</a>
+          <a href="#/scout" class="nav-link" data-route="/scout">Deal Scout</a>
         </nav>
       </aside>
 
@@ -154,6 +162,7 @@ async function renderLayout(root: HTMLDivElement): Promise<void> {
           <a href="#/deals" class="nav-link" data-route="/deals">Deals</a>
           <a href="#/deals/new" class="nav-link" data-route="/deals/new">New Deal</a>
           <a href="#/import-text" class="nav-link" data-route="/import-text">Text Import</a>
+          <a href="#/scout" class="nav-link" data-route="/scout">Deal Scout</a>
         </nav>
       </aside>
 

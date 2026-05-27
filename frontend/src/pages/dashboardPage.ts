@@ -10,6 +10,7 @@ import {
   getDataConfidenceLabel,
   getDataConfidenceScore
 } from '../services/riskAnalysis';
+import { getScoutDashboardSummary } from '../services/dealScoutService';
 import { getAllDocumentRisks as getDocumentRiskItems } from '../services/documentIntelligence';
 import {
   formatDate,
@@ -92,6 +93,32 @@ function renderDealRows(deals: Deal[], emptyText: string): string {
     .join('');
 }
 
+function getImportRecords(deals: Deal[]): Array<{ deal: Deal; record: Deal['importRecords'][number] }> {
+  return deals.flatMap((deal) =>
+    deal.importRecords.map((record) => ({
+      deal,
+      record
+    }))
+  );
+}
+
+function importNeedsReview(record: Deal['importRecords'][number]): boolean {
+  const unreviewedFields = record.fieldSuggestions.some(
+    (suggestion) => !suggestion.accepted && !suggestion.ignored
+  );
+  const unreviewedRisks = record.suggestedRedFlags.some(
+    (suggestion) => !suggestion.accepted && !suggestion.ignored
+  );
+
+  return unreviewedFields || unreviewedRisks;
+}
+
+function hasAcceptedImportField(deal: Deal): boolean {
+  return deal.importRecords.some((record) =>
+    record.fieldSuggestions.some((suggestion) => suggestion.accepted)
+  );
+}
+
 function needsFollowUp(deal: Deal, today: string): boolean {
   if (deal.decision !== 'WATCH') return false;
   if (!deal.review?.nextReviewDate) return true;
@@ -120,10 +147,12 @@ function getFollowUpReasons(deal: Deal, today: string): string[] {
 
 export function renderDashboardPage(): string {
   const deals = getDeals();
+  const scoutSummary = getScoutDashboardSummary();
   const today = new Date().toISOString().slice(0, 10);
   const finalScores = deals.map((deal) => getFinalScore(deal));
 
   const totalDeals = deals.length;
+  const importRecords = getImportRecords(deals);
   const passCount = deals.filter((deal) => deal.decision === 'PASS').length;
   const watchCount = deals.filter((deal) => deal.decision === 'WATCH').length;
   const investSmallCount = deals.filter((deal) => deal.decision === 'INVEST_SMALL').length;
@@ -158,6 +187,20 @@ export function renderDashboardPage(): string {
       Boolean(deal.dealMemo?.content) &&
       getDataConfidenceScore(deal) >= 50 &&
       getDocumentRiskItems(deal).length === 0
+  ).length;
+  const importsNeedingReviewCount = importRecords.filter(({ record }) =>
+    importNeedsReview(record)
+  ).length;
+  const lowConfidenceSuggestionsCount = importRecords.reduce(
+    (count, { record }) =>
+      count +
+      record.fieldSuggestions.filter(
+        (suggestion) => suggestion.confidence === 'LOW' && !suggestion.ignored
+      ).length,
+    0
+  );
+  const rawImportsNoAcceptedFieldsCount = deals.filter(
+    (deal) => deal.importRecords.length > 0 && !hasAcceptedImportField(deal)
   ).length;
 
   const platformCounts = countBy(deals.map((deal) => deal.platform || 'Unknown'));
@@ -252,6 +295,111 @@ export function renderDashboardPage(): string {
           <h3>Ready for Review</h3>
           <p class="metric">${readyForReviewCount}</p>
           <p class="metric-subtext">Documents, memo, and confidence ready</p>
+        </div>
+      </div>
+
+      <div class="card-grid">
+        <div class="card">
+          <h3>Imports Needing Review</h3>
+          <p class="metric">${importsNeedingReviewCount}</p>
+          <p class="metric-subtext">Unaccepted field or risk suggestions</p>
+        </div>
+
+        <div class="card">
+          <h3>Low-Confidence Suggestions</h3>
+          <p class="metric">${lowConfidenceSuggestionsCount}</p>
+          <p class="metric-subtext">Parser hints to verify manually</p>
+        </div>
+
+        <div class="card">
+          <h3>Raw Imports Only</h3>
+          <p class="metric">${rawImportsNoAcceptedFieldsCount}</p>
+          <p class="metric-subtext">Imports saved with no accepted fields</p>
+        </div>
+
+        <div class="card">
+          <h3>Total Raw Imports</h3>
+          <p class="metric">${importRecords.length}</p>
+          <p class="metric-subtext">Original pasted text records preserved</p>
+        </div>
+      </div>
+
+      <div class="card-grid">
+        <div class="card">
+          <h3>Scout Sources</h3>
+          <p class="metric">${scoutSummary.enabledSourceCount}</p>
+          <p class="metric-subtext">${scoutSummary.sourceCount} total monitored sources</p>
+        </div>
+
+        <div class="card">
+          <h3>Scout Errors</h3>
+          <p class="metric">${scoutSummary.sourcesWithErrors.length}</p>
+          <p class="metric-subtext">Sources needing attention</p>
+        </div>
+
+        <div class="card">
+          <h3>Top Scout Candidate</h3>
+          <p class="metric">${scoutSummary.topCandidates[0]?.score ?? '-'}</p>
+          <p class="metric-subtext">${escapeHtml(scoutSummary.topCandidates[0]?.companyName ?? 'No candidate yet')}</p>
+        </div>
+
+        <div class="card">
+          <h3>Next Digest</h3>
+          <p class="metric metric--text">${escapeHtml(scoutSummary.nextDigestLabel)}</p>
+          <p class="metric-subtext">Research shortlist preview</p>
+        </div>
+      </div>
+
+      <div class="split-grid">
+        <div class="card">
+          <div class="page-header">
+            <h3>Top Review Candidates</h3>
+            <p>Companies to consider researching, not investment recommendations.</p>
+          </div>
+          ${
+            scoutSummary.topCandidates.length
+              ? `<div class="mini-list">${scoutSummary.topCandidates
+                  .slice(0, 5)
+                  .map(
+                    (candidate) => `
+                      <div class="mini-list__item mini-list__item--stacked">
+                        <strong><a class="table-link" href="${escapeHtml(candidate.appLink)}">${escapeHtml(candidate.companyName)}</a> (${candidate.score})</strong>
+                        <span>${escapeHtml(candidate.whyMatched.slice(0, 2).join('; '))}</span>
+                      </div>
+                    `
+                  )
+                  .join('')}</div>`
+              : '<p class="empty-copy">No scout candidates yet.</p>'
+          }
+        </div>
+
+        <div class="card">
+          <div class="page-header">
+            <h3>Scout Review Needs</h3>
+            <p>Source changes or sources needing manual paste/update.</p>
+          </div>
+          ${
+            scoutSummary.notableSnapshots.length || scoutSummary.manualUpdateSources.length
+              ? `<div class="mini-list">${[
+                  ...scoutSummary.notableSnapshots.slice(0, 4).map(
+                    (snapshot) => `
+                      <div class="mini-list__item mini-list__item--stacked">
+                        <strong>Source ${snapshot.sourceId}: ${formatDate(snapshot.checkedAt)}</strong>
+                        <span>${escapeHtml(snapshot.notableChanges.join(', '))}</span>
+                      </div>
+                    `
+                  ),
+                  ...scoutSummary.manualUpdateSources.slice(0, 4).map(
+                    (source) => `
+                      <div class="mini-list__item mini-list__item--stacked">
+                        <strong>${escapeHtml(source.companyName || 'Manual source needed')}</strong>
+                        <span>${escapeHtml(source.lastError || 'Paste allowed source text before the next scout run.')}</span>
+                      </div>
+                    `
+                  )
+                ].join('')}</div>`
+              : '<p class="empty-copy">No scout follow-up needed.</p>'
+          }
         </div>
       </div>
 

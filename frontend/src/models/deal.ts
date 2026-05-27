@@ -36,6 +36,18 @@ export type RevenueStatus =
   | 'REVENUE'
   | 'UNCLEAR';
 
+export type ImportMode = 'CLEAN' | 'LAZY';
+export type SuggestionConfidence = 'HIGH' | 'MEDIUM' | 'LOW';
+export type ImportSectionName =
+  | 'CORE_TERMS'
+  | 'COMPANY_DESCRIPTION'
+  | 'TRACTION_CLAIMS'
+  | 'FINANCIALS'
+  | 'RISK_FACTORS'
+  | 'FEES_USE_OF_PROCEEDS'
+  | 'LEGAL_ELIGIBILITY'
+  | 'NOISE_IGNORE';
+
 export type EvidenceSourceType =
   | 'CAMPAIGN_PAGE'
   | 'FORM_C'
@@ -178,6 +190,58 @@ export interface DealMemo {
   updatedAt: string;
 }
 
+export interface ImportSection {
+  sectionName: ImportSectionName;
+  label: string;
+  text: string;
+  lineCount: number;
+}
+
+export interface ImportFieldSuggestion {
+  id: string;
+  fieldName: keyof DealInput;
+  suggestedValue: string;
+  confidence: SuggestionConfidence;
+  sourceSnippet: string;
+  accepted: boolean;
+  ignored?: boolean;
+}
+
+export interface ImportRedFlagSuggestion {
+  id: string;
+  redFlagKey: RedFlagKey;
+  label: string;
+  confidence: SuggestionConfidence;
+  sourceSnippet: string;
+  accepted: boolean;
+  ignored?: boolean;
+}
+
+export interface DealImportRecord {
+  id: number;
+  dealId: number;
+  importMode: ImportMode;
+  title: string;
+  sourceUrl: string;
+  rawText: string;
+  cleanedText: string;
+  sections: ImportSection[];
+  fieldSuggestions: ImportFieldSuggestion[];
+  suggestedRedFlags: ImportRedFlagSuggestion[];
+  createdAt: string;
+}
+
+export interface DealImportRecordInput {
+  importMode: ImportMode;
+  title: string;
+  sourceUrl: string;
+  rawText: string;
+  cleanedText: string;
+  sections: ImportSection[];
+  fieldSuggestions: ImportFieldSuggestion[];
+  suggestedRedFlags: ImportRedFlagSuggestion[];
+}
+
 export interface QuickScreenData {
   businessClarity: number;
   tractionEvidence: number;
@@ -247,6 +311,7 @@ export interface Deal {
   ignoredSuggestedRedFlags: RedFlagKey[];
   evidenceClaims: EvidenceClaim[];
   documents: DealDocument[];
+  importRecords: DealImportRecord[];
   ignoredDocumentRiskIds: string[];
   dealMemo?: DealMemo | null;
   createdAt: string;
@@ -276,6 +341,8 @@ export interface DealInput {
   mainRisk: string;
   nextMilestone: string;
   rawDealText?: string;
+  importRecord?: DealImportRecordInput;
+  initialRedFlags?: RedFlagKey[];
   decision: DealDecision;
   shortDescription: string;
 }

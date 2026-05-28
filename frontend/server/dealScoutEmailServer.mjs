@@ -6,12 +6,22 @@ import { sendDealScoutDigestEmail } from './email/resendClient.mjs';
 
 const port = Number(process.env.DEAL_SCOUT_EMAIL_SERVER_PORT || 8787);
 const endpoint = '/api/deal-scout/digest/send';
-const allowedOrigin = process.env.DEAL_SCOUT_ALLOWED_ORIGIN || 'http://127.0.0.1:5173';
+const allowedOrigins = String(
+  process.env.DEAL_SCOUT_ALLOWED_ORIGIN || 'http://127.0.0.1:5173,http://localhost:5173'
+)
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
-function sendJson(response, statusCode, payload) {
+function getCorsOrigin(requestOrigin) {
+  if (requestOrigin && allowedOrigins.includes(requestOrigin)) return requestOrigin;
+  return allowedOrigins[0] || 'http://127.0.0.1:5173';
+}
+
+function sendJson(response, statusCode, payload, requestOrigin = '') {
   response.writeHead(statusCode, {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Origin': getCorsOrigin(requestOrigin),
     'Access-Control-Allow-Headers': 'content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS'
   });
@@ -33,16 +43,16 @@ async function readJson(request) {
 
 const server = http.createServer(async (request, response) => {
   const origin = request.headers.origin;
-  if (origin && origin !== allowedOrigin) {
+  if (origin && !allowedOrigins.includes(origin)) {
     sendJson(response, 403, {
       ok: false,
       error: 'origin not allowed for Deal Scout email sending'
-    });
+    }, origin);
     return;
   }
 
   if (request.method === 'OPTIONS') {
-    sendJson(response, 204, {});
+    sendJson(response, 204, {}, origin);
     return;
   }
 
@@ -50,7 +60,7 @@ const server = http.createServer(async (request, response) => {
     sendJson(response, 404, {
       ok: false,
       error: `Use POST ${endpoint}`
-    });
+    }, origin);
     return;
   }
 
@@ -62,32 +72,32 @@ const server = http.createServer(async (request, response) => {
     const html = String(payload.html || digestTextToHtml(text)).trim();
 
     if (!subject) {
-      sendJson(response, 400, { ok: false, error: 'missing subject' });
+      sendJson(response, 400, { ok: false, error: 'missing subject' }, origin);
       return;
     }
 
     if (!text && !html) {
-      sendJson(response, 400, { ok: false, error: 'missing text or html body' });
+      sendJson(response, 400, { ok: false, error: 'missing text or html body' }, origin);
       return;
     }
 
     if (!to) {
-      sendJson(response, 400, { ok: false, error: 'missing recipient' });
+      sendJson(response, 400, { ok: false, error: 'missing recipient' }, origin);
       return;
     }
 
     if (/[;,]/.test(String(to))) {
-      sendJson(response, 400, { ok: false, error: 'only one email recipient is allowed for now' });
+      sendJson(response, 400, { ok: false, error: 'only one email recipient is allowed for now' }, origin);
       return;
     }
 
     const result = await sendDealScoutDigestEmail({ to, subject, text, html });
-    sendJson(response, result.ok ? 200 : 400, result);
+    sendJson(response, result.ok ? 200 : 400, result, origin);
   } catch (error) {
     sendJson(response, 500, {
       ok: false,
       error: error instanceof Error ? error.message : 'unknown email server error'
-    });
+    }, origin);
   }
 });
 

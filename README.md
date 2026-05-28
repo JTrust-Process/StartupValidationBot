@@ -170,11 +170,11 @@ EMAIL_PROVIDER=resend
 RESEND_API_KEY=
 RESEND_FROM=Startup Deal OS <onboarding@resend.dev>
 DEAL_SCOUT_EMAIL_RECIPIENT=
-DEAL_SCOUT_ALLOWED_ORIGIN=http://127.0.0.1:5173
+DEAL_SCOUT_ALLOWED_ORIGIN=http://127.0.0.1:5173,http://localhost:5173
 ```
 
 `RESEND_API_KEY` must not be prefixed with `VITE_`. It must only be read by server-side code, a cron worker, or a server-side job.
-Set `DEAL_SCOUT_ALLOWED_ORIGIN` to the deployed frontend origin when the app is hosted, for example `https://your-app.example.com`.
+Set `DEAL_SCOUT_ALLOWED_ORIGIN` to the deployed frontend origin when the app is hosted, for example `https://your-app.example.com`. For local work, both `127.0.0.1` and `localhost` are allowed because Vite may be opened with either hostname.
 
 The browser can call a server endpoint only when explicitly configured:
 

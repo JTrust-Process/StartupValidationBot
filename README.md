@@ -152,13 +152,17 @@ Local/browser development is preview-only:
 VITE_DEAL_SCOUT_EMAIL_MODE=preview
 ```
 
+For local setup, copy `frontend/.env.example` to `frontend/.env`. Vite reads the `VITE_*`
+values from that file, and the local Deal Scout email server also loads the server-only
+values from the same file.
+
 `VITE_*` variables are exposed to the browser bundle. Never put email API keys in a `VITE_*` variable.
 
 ### Resend Setup
 
 1. Create a Resend account at [resend.com](https://resend.com/).
 2. Create an API key in the Resend dashboard.
-3. Copy `.env.example` into your server-side environment.
+3. Copy `frontend/.env.example` to `frontend/.env` for local testing, or set the same variables in your production server-side environment.
 4. Configure server-only variables:
 
 ```bash
@@ -166,9 +170,11 @@ EMAIL_PROVIDER=resend
 RESEND_API_KEY=
 RESEND_FROM=Startup Deal OS <onboarding@resend.dev>
 DEAL_SCOUT_EMAIL_RECIPIENT=
+DEAL_SCOUT_ALLOWED_ORIGIN=http://127.0.0.1:5173
 ```
 
 `RESEND_API_KEY` must not be prefixed with `VITE_`. It must only be read by server-side code, a cron worker, or a server-side job.
+Set `DEAL_SCOUT_ALLOWED_ORIGIN` to the deployed frontend origin when the app is hosted, for example `https://your-app.example.com`.
 
 The browser can call a server endpoint only when explicitly configured:
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './env/loadServerEnv.mjs';
 import { readFile } from 'node:fs/promises';
 import { stdin } from 'node:process';
 import { digestTextToHtml, DISCLAIMER } from './email/digestHtml.mjs';

@@ -1,15 +1,17 @@
 #!/usr/bin/env node
+import './env/loadServerEnv.mjs';
 import http from 'node:http';
 import { digestTextToHtml } from './email/digestHtml.mjs';
 import { sendDealScoutDigestEmail } from './email/resendClient.mjs';
 
 const port = Number(process.env.DEAL_SCOUT_EMAIL_SERVER_PORT || 8787);
 const endpoint = '/api/deal-scout/digest/send';
+const allowedOrigin = process.env.DEAL_SCOUT_ALLOWED_ORIGIN || 'http://127.0.0.1:5173';
 
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': 'http://127.0.0.1:5173',
+    'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Headers': 'content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS'
   });
@@ -30,6 +32,15 @@ async function readJson(request) {
 }
 
 const server = http.createServer(async (request, response) => {
+  const origin = request.headers.origin;
+  if (origin && origin !== allowedOrigin) {
+    sendJson(response, 403, {
+      ok: false,
+      error: 'origin not allowed for Deal Scout email sending'
+    });
+    return;
+  }
+
   if (request.method === 'OPTIONS') {
     sendJson(response, 204, {});
     return;

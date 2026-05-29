@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "email:server": "node server/dealScoutEmailServer.mjs",
-    "email:send": "node server/sendDealScoutDigest.mjs"
+    "email:send": "node server/sendDealScoutDigest.mjs",
+    "start:email": "node server/dealScoutEmailServer.mjs"
   },
   "devDependencies": {
     "typescript": "~6.0.2",

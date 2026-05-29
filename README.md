@@ -170,11 +170,13 @@ EMAIL_PROVIDER=resend
 RESEND_API_KEY=
 RESEND_FROM=Startup Deal OS <onboarding@resend.dev>
 DEAL_SCOUT_EMAIL_RECIPIENT=
+DEAL_SCOUT_ALLOW_CLIENT_RECIPIENT=false
 DEAL_SCOUT_ALLOWED_ORIGIN=http://127.0.0.1:5173,http://localhost:5173
 ```
 
 `RESEND_API_KEY` must not be prefixed with `VITE_`. It must only be read by server-side code, a cron worker, or a server-side job.
 Set `DEAL_SCOUT_ALLOWED_ORIGIN` to the deployed frontend origin when the app is hosted, for example `https://your-app.example.com`. For local work, both `127.0.0.1` and `localhost` are allowed because Vite may be opened with either hostname.
+Keep `DEAL_SCOUT_ALLOW_CLIENT_RECIPIENT=false` for hosted use so the server sends only to `DEAL_SCOUT_EMAIL_RECIPIENT`.
 
 The browser can call a server endpoint only when explicitly configured:
 
@@ -188,6 +190,8 @@ Run the local server-side email endpoint from `frontend/`:
 ```bash
 npm run email:server
 ```
+
+For a hosted Node service, use `npm run start:email`. The email server reads the platform-provided `PORT` automatically and binds to `0.0.0.0` when `PORT` is present.
 
 You can also send a prepared JSON payload through the server-side script:
 

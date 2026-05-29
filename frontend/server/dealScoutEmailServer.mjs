@@ -4,7 +4,8 @@ import http from 'node:http';
 import { digestTextToHtml } from './email/digestHtml.mjs';
 import { sendDealScoutDigestEmail } from './email/resendClient.mjs';
 
-const port = Number(process.env.DEAL_SCOUT_EMAIL_SERVER_PORT || 8787);
+const port = Number(process.env.PORT || process.env.DEAL_SCOUT_EMAIL_SERVER_PORT || 8787);
+const host = process.env.DEAL_SCOUT_EMAIL_SERVER_HOST || (process.env.PORT ? '0.0.0.0' : '127.0.0.1');
 const endpoint = '/api/deal-scout/digest/send';
 const allowedOrigins = String(
   process.env.DEAL_SCOUT_ALLOWED_ORIGIN || 'http://127.0.0.1:5173,http://localhost:5173'
@@ -12,6 +13,7 @@ const allowedOrigins = String(
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+const allowClientRecipient = process.env.DEAL_SCOUT_ALLOW_CLIENT_RECIPIENT === 'true';
 
 function getCorsOrigin(requestOrigin) {
   if (requestOrigin && allowedOrigins.includes(requestOrigin)) return requestOrigin;
@@ -66,7 +68,7 @@ const server = http.createServer(async (request, response) => {
 
   try {
     const payload = await readJson(request);
-    const to = payload.to || process.env.DEAL_SCOUT_EMAIL_RECIPIENT || '';
+    const to = process.env.DEAL_SCOUT_EMAIL_RECIPIENT || (allowClientRecipient ? payload.to : '');
     const subject = String(payload.subject || '').trim();
     const text = String(payload.text || '').trim();
     const html = String(payload.html || digestTextToHtml(text)).trim();
@@ -101,6 +103,6 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
-server.listen(port, '127.0.0.1', () => {
-  console.log(`Deal Scout email server listening on http://127.0.0.1:${port}${endpoint}`);
+server.listen(port, host, () => {
+  console.log(`Deal Scout email server listening on http://${host}:${port}${endpoint}`);
 });

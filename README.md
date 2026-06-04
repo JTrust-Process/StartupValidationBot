@@ -136,6 +136,7 @@ npm run build
 - Added weekly email digest generation with research-only language and a required financial-advice disclaimer
 - Added preview-only email behavior in development and server-only Resend sending support for production/server runtimes
 - Added a manual digest job function that can later be invoked by GitHub Actions, cron, Render cron, or another worker
+- Added V6 automated server-side digest support from configured public/source-text inputs, with a protected run endpoint for cron jobs
 
 ## Source Monitoring Rules
 
@@ -177,6 +178,7 @@ DEAL_SCOUT_ALLOWED_ORIGIN=http://127.0.0.1:5173,http://localhost:5173
 `RESEND_API_KEY` must not be prefixed with `VITE_`. It must only be read by server-side code, a cron worker, or a server-side job.
 Set `DEAL_SCOUT_ALLOWED_ORIGIN` to the deployed frontend origin when the app is hosted, for example `https://your-app.example.com`. For local work, both `127.0.0.1` and `localhost` are allowed because Vite may be opened with either hostname.
 Keep `DEAL_SCOUT_ALLOW_CLIENT_RECIPIENT=false` for hosted use so the server sends only to `DEAL_SCOUT_EMAIL_RECIPIENT`.
+Set `DEAL_SCOUT_RUN_TOKEN` before enabling scheduled automated digest runs. The `/api/deal-scout/digest/run` endpoint refuses to run without it.
 
 The browser can call a server endpoint only when explicitly configured:
 
@@ -209,6 +211,60 @@ Example payload:
 }
 ```
 
+## Automated Scout Digest
+
+V6 adds a server-side digest runner so you do not need to open the browser every week. Because the main app is still localStorage-first, the automated runner uses server-side source configuration instead of reading your browser data.
+
+Configure sources with public URLs:
+
+```bash
+DEAL_SCOUT_SOURCE_URLS=https://example.com/deal-one,https://example.com/deal-two
+```
+
+Or configure richer source records as JSON:
+
+```bash
+DEAL_SCOUT_AUTOMATION_SOURCES_JSON=[{"sourceType":"REPUBLIC","url":"https://republic.com/example","companyName":"Example Co","enabled":true}]
+```
+
+Automation filters:
+
+```bash
+DEAL_SCOUT_PREFERRED_THEMES=AI infrastructure,data centers,energy,fintech,automation
+DEAL_SCOUT_MAX_MINIMUM_INVESTMENT=500
+DEAL_SCOUT_MAX_RED_FLAGS=6
+DEAL_SCOUT_REQUIRE_NON_ACCREDITED=true
+DEAL_SCOUT_REQUIRE_REG_CF_OR_REG_A=true
+DEAL_SCOUT_RUN_TOKEN=use-a-long-random-token
+```
+
+Preview from `frontend/` without sending:
+
+```bash
+npm run scout:digest:preview
+```
+
+Send from `frontend/`:
+
+```bash
+npm run scout:digest:send
+```
+
+Trigger the hosted server endpoint from GitHub Actions, Render cron, or another scheduler:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $DEAL_SCOUT_RUN_TOKEN" \
+  https://startupvalidationbot.onrender.com/api/deal-scout/digest/run
+```
+
+This repo includes `.github/workflows/deal-scout-digest.yml` for weekly automation. To enable it, add:
+
+- GitHub repository variable `DEAL_SCOUT_DIGEST_RUN_URL` = `https://startupvalidationbot.onrender.com/api/deal-scout/digest/run`
+- GitHub repository secret `DEAL_SCOUT_RUN_TOKEN` = the same token configured on the Render email server
+
+The automated runner only performs conservative public fetches or processes source text you configure. It does not bypass logins, paywalls, captchas, robots.txt, rate limits, anti-bot systems, or source terms.
+
 ## Running the Digest Manually
 
 For now, open the local app and use:
@@ -217,7 +273,7 @@ For now, open the local app and use:
 Deal Scout -> Run Digest Job
 ```
 
-That runs the local scout check, stores snapshots, and generates an email preview. Later, the same architecture can be moved into GitHub Actions, cron, Render cron, or a small server worker that imports the scout job and sends through SMTP or a transactional email provider.
+That runs the local scout check, stores snapshots, and generates an email preview. Use the automated server-side runner above when you want the digest to run while the browser is closed.
 
 To test the Resend path with the GridCool synthetic source:
 
@@ -228,7 +284,7 @@ To test the Resend path with the GridCool synthetic source:
 - Click `Send / Preview`.
 - A successful send returns a Resend email id; missing configuration returns a clear failure such as `missing RESEND_API_KEY` or `missing recipient`.
 
-## Future V6 Ideas
+## Future V7 Ideas
 
 - OCR/import from screenshots and downloaded PDFs
 - More robust SEC filing parsing for Reg CF / Reg A documents

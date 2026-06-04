@@ -1,0 +1,31 @@
+name: Deal Scout Digest
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Monday 9:00 AM Eastern during standard time. Adjust as needed.
+    - cron: '0 14 * * 1'
+
+jobs:
+  run-digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger hosted Deal Scout digest
+        env:
+          DEAL_SCOUT_DIGEST_RUN_URL: ${{ vars.DEAL_SCOUT_DIGEST_RUN_URL }}
+          DEAL_SCOUT_RUN_TOKEN: ${{ secrets.DEAL_SCOUT_RUN_TOKEN }}
+        run: |
+          if [ -z "$DEAL_SCOUT_DIGEST_RUN_URL" ]; then
+            echo "Missing repository variable DEAL_SCOUT_DIGEST_RUN_URL"
+            exit 1
+          fi
+
+          if [ -z "$DEAL_SCOUT_RUN_TOKEN" ]; then
+            echo "Missing repository secret DEAL_SCOUT_RUN_TOKEN"
+            exit 1
+          fi
+
+          curl --fail --show-error --silent \
+            --request POST \
+            --header "Authorization: Bearer $DEAL_SCOUT_RUN_TOKEN" \
+            "$DEAL_SCOUT_DIGEST_RUN_URL"

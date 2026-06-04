@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "email:server": "node server/dealScoutEmailServer.mjs",
     "email:send": "node server/sendDealScoutDigest.mjs",
-    "start:email": "node server/dealScoutEmailServer.mjs"
+    "start:email": "node server/dealScoutEmailServer.mjs",
+    "scout:digest:preview": "node server/runAutomatedDealScoutDigest.mjs",
+    "scout:digest:send": "node server/runAutomatedDealScoutDigest.mjs --send"
   },
   "devDependencies": {
     "typescript": "~6.0.2",

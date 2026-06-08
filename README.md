@@ -213,28 +213,43 @@ Example payload:
 
 ## Automated Scout Digest
 
-V6 adds a server-side digest runner so you do not need to open the browser every week. Because the main app is still localStorage-first, the automated runner uses server-side source configuration instead of reading your browser data.
+V6 adds a server-side digest runner so you do not need to open the browser every week. Because the main app is still localStorage-first, the automated runner uses server-side discovery settings instead of reading your browser data.
 
-Configure sources with public URLs:
+Turn on discovery so the bot searches broad feeds/queries for leads:
+
+```bash
+DEAL_SCOUT_ENABLE_DISCOVERY=true
+DEAL_SCOUT_DISCOVERY_QUERIES=Reg CF startup raising Republic;Regulation Crowdfunding startup Wefunder;StartEngine Reg CF offering startup
+DEAL_SCOUT_PREFERRED_THEMES=AI infrastructure,data centers,energy,fintech,automation
+```
+
+Optional discovery feeds:
+
+```bash
+DEAL_SCOUT_DISCOVERY_RSS_URLS=https://example.com/startup-deals.rss
+DEAL_SCOUT_ENABLE_SEC_EDGAR_DISCOVERY=true
+DEAL_SCOUT_DISCOVERY_MAX_ITEMS=25
+DEAL_SCOUT_DISCOVERY_FETCH_LINKS=false
+DEAL_SCOUT_INCLUDE_DISCOVERY_LEADS=true
+```
+
+`DEAL_SCOUT_DISCOVERY_FETCH_LINKS=false` means the bot ranks the RSS/search result text itself rather than crawling the linked page. Keep it false unless a source clearly allows automated public fetching.
+
+You can still add specific sources as optional extras:
 
 ```bash
 DEAL_SCOUT_SOURCE_URLS=https://example.com/deal-one,https://example.com/deal-two
-```
-
-Or configure richer source records as JSON:
-
-```bash
 DEAL_SCOUT_AUTOMATION_SOURCES_JSON=[{"sourceType":"REPUBLIC","url":"https://republic.com/example","companyName":"Example Co","enabled":true}]
 ```
 
-Automation filters:
+Automation filters and trigger token:
 
 ```bash
-DEAL_SCOUT_PREFERRED_THEMES=AI infrastructure,data centers,energy,fintech,automation
 DEAL_SCOUT_MAX_MINIMUM_INVESTMENT=500
 DEAL_SCOUT_MAX_RED_FLAGS=6
 DEAL_SCOUT_REQUIRE_NON_ACCREDITED=true
 DEAL_SCOUT_REQUIRE_REG_CF_OR_REG_A=true
+DEAL_SCOUT_FETCH_DELAY_MS=750
 DEAL_SCOUT_RUN_TOKEN=use-a-long-random-token
 ```
 
@@ -263,7 +278,7 @@ This repo includes `.github/workflows/deal-scout-digest.yml` for weekly automati
 - GitHub repository variable `DEAL_SCOUT_DIGEST_RUN_URL` = `https://startupvalidationbot.onrender.com/api/deal-scout/digest/run`
 - GitHub repository secret `DEAL_SCOUT_RUN_TOKEN` = the same token configured on the Render email server
 
-The automated runner only performs conservative public fetches or processes source text you configure. It does not bypass logins, paywalls, captchas, robots.txt, rate limits, anti-bot systems, or source terms.
+The automated runner only searches configured RSS/search feeds, optional SEC EDGAR Form C feed results, specific public URLs you provide, or source text you configure. It does not bypass logins, paywalls, captchas, robots.txt, rate limits, anti-bot systems, or source terms.
 
 ## Running the Digest Manually
 

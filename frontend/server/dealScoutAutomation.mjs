@@ -38,6 +38,13 @@ function parseList(value) {
     .filter(Boolean);
 }
 
+function parseListPreserveCase(value) {
+  return String(value ?? '')
+    .split(/[,;\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function parseBooleanEnv(name, fallback) {
   const value = process.env[name];
   if (value === undefined || value === '') return fallback;
@@ -47,6 +54,12 @@ function parseBooleanEnv(name, fallback) {
 function parseNumberEnv(name, fallback) {
   const parsed = Number(process.env[name]);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function parseMoney(value) {
@@ -73,6 +86,55 @@ function formatCurrency(value) {
 function matchLine(rawText, labelPattern) {
   const pattern = new RegExp(`^\\s*(?:${labelPattern})\\s*[:|-]\\s*(.+)$`, 'im');
   return clean(rawText.match(pattern)?.[1] ?? '');
+}
+
+function decodeXml(value) {
+  return String(value ?? '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([a-f0-9]+);/gi, (_, code) => String.fromCharCode(parseInt(code, 16)));
+}
+
+function stripTags(value) {
+  return clean(decodeXml(value).replace(/<[^>]+>/g, ' '));
+}
+
+function extractTag(block, tagName) {
+  const match = block.match(new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'i'));
+  return match?.[1] ?? '';
+}
+
+function extractLink(block) {
+  const atomHref = block.match(/<link\b[^>]*href=["']([^"']+)["'][^>]*\/?>/i)?.[1];
+  const tagLink = extractTag(block, 'link');
+  return clean(decodeXml(atomHref || tagLink));
+}
+
+export function parseRssItems(xml, feedUrl = '') {
+  const blocks = [
+    ...(String(xml ?? '').match(/<item\b[\s\S]*?<\/item>/gi) ?? []),
+    ...(String(xml ?? '').match(/<entry\b[\s\S]*?<\/entry>/gi) ?? [])
+  ];
+
+  return blocks
+    .map((block) => ({
+      title: stripTags(extractTag(block, 'title')),
+      link: extractLink(block),
+      description: stripTags(
+        extractTag(block, 'description') ||
+          extractTag(block, 'summary') ||
+          extractTag(block, 'content') ||
+          extractTag(block, 'content:encoded')
+      ),
+      publishedAt: stripTags(extractTag(block, 'pubDate') || extractTag(block, 'updated') || extractTag(block, 'published')),
+      feedUrl
+    }))
+    .filter((item) => item.title || item.link || item.description);
 }
 
 function inferSourceType(url) {
@@ -233,6 +295,164 @@ function estimateDataConfidence(deal) {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
+function buildGoogleNewsRssUrl(query) {
+  return `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+}
+
+function buildSecEdgarFormCFeedUrl() {
+  return 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=C&owner=include&count=100&output=atom';
+}
+
+function inferCompanyNameFromTitle(title) {
+  return clean(
+    String(title ?? '')
+      .replace(/^(?:C|C\/A|C-U|C-AR|C-TR)\s+-\s*/i, '')
+      .replace(/\s+\|\s+.*$/, '')
+      .replace(/\s+-\s+(Republic|Wefunder|StartEngine|DealMaker|SEC.*|Form C.*|Google News).*$/i, '')
+      .replace(/\b(raises?|raising|launches?|files?|announces?)\b.*$/i, '')
+  ) || 'Discovered lead';
+}
+
+function defaultDiscoveryQueries() {
+  return [
+    'Reg CF startup raising Republic',
+    'Regulation Crowdfunding startup Wefunder',
+    'StartEngine Reg CF offering startup',
+    'Republic startup offering non accredited investors',
+    'Form C startup Regulation Crowdfunding'
+  ];
+}
+
+function loadDiscoveryConfig() {
+  const enabled = parseBooleanEnv('DEAL_SCOUT_ENABLE_DISCOVERY', false);
+  const configuredQueries = parseListPreserveCase(process.env.DEAL_SCOUT_DISCOVERY_QUERIES);
+  const rssUrls = parseListPreserveCase(process.env.DEAL_SCOUT_DISCOVERY_RSS_URLS);
+  const enableSecEdgar = parseBooleanEnv('DEAL_SCOUT_ENABLE_SEC_EDGAR_DISCOVERY', false);
+  const queries = configuredQueries.length ? configuredQueries : defaultDiscoveryQueries();
+
+  return {
+    enabled,
+    rssUrls: [
+      ...rssUrls,
+      ...(enabled ? queries.map(buildGoogleNewsRssUrl) : []),
+      ...(enableSecEdgar ? [buildSecEdgarFormCFeedUrl()] : [])
+    ],
+    maxItems: parseNumberEnv('DEAL_SCOUT_DISCOVERY_MAX_ITEMS', 25),
+    fetchLinks: parseBooleanEnv('DEAL_SCOUT_DISCOVERY_FETCH_LINKS', false),
+    requestDelayMs: parseNumberEnv('DEAL_SCOUT_FETCH_DELAY_MS', 750)
+  };
+}
+
+async function fetchTextUrl(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'StartupDealOS/1.0 research-digest; contact: configured-user',
+        Accept: 'application/rss+xml,application/atom+xml,text/xml,text/html,text/plain;q=0.9,*/*;q=0.8'
+      }
+    });
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        text: '',
+        error: `Public fetch failed with HTTP ${response.status}.`
+      };
+    }
+
+    return {
+      ok: true,
+      text: await response.text(),
+      error: ''
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      text: '',
+      error: error.name === 'AbortError' ? 'Public fetch timed out.' : error.message
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function discoverSources() {
+  const config = loadDiscoveryConfig();
+  if (!config.enabled && !config.rssUrls.length) return { sources: [], results: [] };
+
+  const sources = [];
+  const results = [];
+  let nextId = 100_000;
+
+  for (const rssUrl of config.rssUrls) {
+    const fetchResult = await fetchTextUrl(rssUrl);
+    let discoveredItems = fetchResult.ok
+      ? parseRssItems(fetchResult.text, rssUrl)
+      : [];
+    if (/sec\.gov\/cgi-bin\/browse-edgar/i.test(rssUrl) && /type=C\b/i.test(rssUrl)) {
+      discoveredItems = discoveredItems.filter(
+        (item) => /^(C|C\/A)\s+-/i.test(item.title) && !/^CERT\b/i.test(item.title)
+      );
+    }
+    discoveredItems = discoveredItems.slice(0, config.maxItems);
+
+    results.push({
+      source: {
+        id: nextId,
+        sourceType: 'OTHER',
+        url: rssUrl,
+        companyName: 'Discovery feed',
+        enabled: true,
+        notes: 'Discovery feed fetch',
+        pastedText: '',
+        discoveryLead: true
+      },
+      status: fetchResult.ok ? 'OK' : 'ERROR',
+      rawText: '',
+      error: fetchResult.error,
+      discoveredCount: discoveredItems.length
+    });
+
+    discoveredItems.forEach((item) => {
+      const isSecFormC = /sec\.gov\/cgi-bin\/browse-edgar/i.test(rssUrl) && /^(C|C\/A)\s+-/i.test(item.title);
+      const text = [
+        item.title,
+        item.description,
+        isSecFormC ? 'Offering exemption: Reg CF. Investor eligibility: Non-accredited investors may be eligible subject to Regulation Crowdfunding limits.' : '',
+        item.publishedAt ? `Published: ${item.publishedAt}` : ''
+      ]
+        .filter(Boolean)
+        .join('\n');
+      const url = item.link || item.feedUrl;
+
+      sources.push({
+        id: nextId += 1,
+        sourceType: inferSourceType(url),
+        url,
+        companyName: inferCompanyNameFromTitle(item.title),
+        enabled: true,
+        notes: `Discovered from ${rssUrl}`,
+        pastedText: text,
+        discoveryLead: true,
+        fetchUrl: config.fetchLinks
+      });
+    });
+
+    if (config.requestDelayMs > 0) await wait(config.requestDelayMs);
+  }
+
+  return {
+    sources,
+    results
+  };
+}
+
 function loadAutomationSources() {
   const json = process.env.DEAL_SCOUT_AUTOMATION_SOURCES_JSON;
   const sources = [];
@@ -246,7 +466,7 @@ function loadAutomationSources() {
     }
   }
 
-  parseList(process.env.DEAL_SCOUT_SOURCE_URLS).forEach((url) => {
+  parseListPreserveCase(process.env.DEAL_SCOUT_SOURCE_URLS).forEach((url) => {
     sources.push({
       sourceType: inferSourceType(url),
       url,
@@ -265,7 +485,9 @@ function loadAutomationSources() {
       companyName: String(source.companyName ?? '').trim(),
       enabled: source.enabled !== false,
       notes: String(source.notes ?? '').trim(),
-      pastedText: String(source.pastedText ?? '').trim()
+      pastedText: String(source.pastedText ?? '').trim(),
+      discoveryLead: Boolean(source.discoveryLead),
+      fetchUrl: Boolean(source.fetchUrl)
     }))
     .filter((source) => source.enabled && (source.url || source.pastedText || source.notes));
 }
@@ -276,12 +498,13 @@ function loadPreferences() {
     maxMinimumInvestment: parseNumberEnv('DEAL_SCOUT_MAX_MINIMUM_INVESTMENT', 500),
     maxRedFlags: parseNumberEnv('DEAL_SCOUT_MAX_RED_FLAGS', 6),
     requireNonAccredited: parseBooleanEnv('DEAL_SCOUT_REQUIRE_NON_ACCREDITED', true),
-    requireRegCfOrRegA: parseBooleanEnv('DEAL_SCOUT_REQUIRE_REG_CF_OR_REG_A', true)
+    requireRegCfOrRegA: parseBooleanEnv('DEAL_SCOUT_REQUIRE_REG_CF_OR_REG_A', true),
+    includeDiscoveryLeads: parseBooleanEnv('DEAL_SCOUT_INCLUDE_DISCOVERY_LEADS', true)
   };
 }
 
 async function fetchSource(source) {
-  if (source.pastedText || source.notes) {
+  if ((source.pastedText || source.notes) && !source.fetchUrl) {
     return {
       source,
       status: 'OK',
@@ -317,7 +540,11 @@ async function fetchSource(source) {
     }
 
     const rawText = await response.text();
-    return { source, status: 'OK', rawText };
+    return {
+      source,
+      status: 'OK',
+      rawText: [source.pastedText, source.notes, rawText].filter(Boolean).join('\n\n')
+    };
   } catch (error) {
     return {
       source,
@@ -360,7 +587,14 @@ function scoreCandidate(deal, preferences) {
   };
 }
 
-function preferencesAllow(deal, preferences) {
+function preferencesAllow(deal, preferences, source) {
+  if (source.discoveryLead && preferences.includeDiscoveryLeads) {
+    if (deal.eligibility === 'ACCREDITED_ONLY' || deal.exemption === 'REG_D') return false;
+    if (deal.minimumInvestmentValue && deal.minimumInvestmentValue > preferences.maxMinimumInvestment) return false;
+    if (deal.risks.length > preferences.maxRedFlags) return false;
+    return true;
+  }
+
   if (preferences.requireNonAccredited && deal.eligibility !== 'NON_ACCREDITED') return false;
   if (preferences.requireRegCfOrRegA && !['REG_CF', 'REG_A'].includes(deal.exemption)) return false;
   if (deal.minimumInvestmentValue && deal.minimumInvestmentValue > preferences.maxMinimumInvestment) return false;
@@ -393,7 +627,9 @@ function buildCandidate(deal, source, preferences) {
         : 'No strong evidence captured yet.',
     mainRedFlags: deal.risks.map((risk) => risk.label),
     notableChanges: [],
-    suggestedNextStep: source.url
+    suggestedNextStep: source.discoveryLead
+      ? 'Open the discovered source and confirm whether this is a real Reg CF or Reg A offering before adding it to your deal tracker.'
+      : source.url
       ? 'Open the source and review offering documents before making any decision.'
       : 'Review the configured source notes and add a deal record if it is worth tracking.'
   };
@@ -438,10 +674,23 @@ Open: ${candidate.sourceUrl || 'No URL configured'}`
   };
 }
 
+function dedupeSources(sources) {
+  const seen = new Set();
+
+  return sources.filter((source) => {
+    const key = `${String(source.url || '').toLowerCase()}|${String(source.companyName || '').toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export async function runAutomatedDealScoutDigest({ send = false } = {}) {
-  const sources = loadAutomationSources();
+  const configuredSources = loadAutomationSources();
+  const discovery = await discoverSources();
+  const sources = dedupeSources([...configuredSources, ...discovery.sources]);
   const preferences = loadPreferences();
-  const sourceResults = [];
+  const sourceResults = [...discovery.results];
   const candidates = [];
 
   for (const source of sources) {
@@ -451,7 +700,7 @@ export async function runAutomatedDealScoutDigest({ send = false } = {}) {
     if (fetchResult.status !== 'OK') continue;
 
     const deal = extractDeal(source, fetchResult.rawText);
-    if (!preferencesAllow(deal, preferences)) continue;
+    if (!preferencesAllow(deal, preferences, source)) continue;
     candidates.push(buildCandidate(deal, source, preferences));
   }
 
@@ -461,6 +710,8 @@ export async function runAutomatedDealScoutDigest({ send = false } = {}) {
     ok: true,
     generatedAt: new Date().toISOString(),
     sourceCount: sources.length,
+    configuredSourceCount: configuredSources.length,
+    discoveredSourceCount: discovery.sources.length,
     checkedCount: sourceResults.filter((item) => item.status === 'OK').length,
     errorCount: sourceResults.filter((item) => item.status !== 'OK').length,
     candidateCount: candidates.length,

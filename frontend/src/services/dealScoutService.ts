@@ -801,7 +801,10 @@ Open: ${candidate.sourceUrl || candidate.appLink}`
   };
 }
 
-export async function sendScoutDigestEmail(digest: ScoutDigest): Promise<EmailSendResult> {
+export async function sendScoutDigestEmail(
+  digest: ScoutDigest,
+  serverToken = ''
+): Promise<EmailSendResult> {
   const mode = String(import.meta.env.VITE_DEAL_SCOUT_EMAIL_MODE ?? 'preview').toLowerCase();
   const endpoint = String(
     import.meta.env.VITE_DEAL_SCOUT_EMAIL_ENDPOINT ?? '/api/deal-scout/digest/send'
@@ -824,10 +827,20 @@ export async function sendScoutDigestEmail(digest: ScoutDigest): Promise<EmailSe
     };
   }
 
+  const token = serverToken.trim();
+  if (!token) {
+    appendScoutLog('WARN', 'Authenticated email sending requires a server token.');
+    return {
+      status: 'NOT_CONFIGURED',
+      message: 'Server token required. It is used for this request only and is not saved.'
+    };
+  }
+
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({

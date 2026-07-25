@@ -73,11 +73,22 @@ Then open the local Vite URL shown in the terminal, usually:
 http://localhost:5173
 ```
 
-To verify a production build:
+To run the frontend quality checks and production build:
 
 ```bash
 cd frontend
+npm test
+npm run lint
 npm run build
+```
+
+The Spring backend is optional for the current localStorage-first frontend. When running it,
+provide database credentials through server environment variables rather than committing them:
+
+```bash
+SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/startup_validation_bot
+SPRING_DATASOURCE_USERNAME=postgres
+SPRING_DATASOURCE_PASSWORD=replace-with-your-local-password
 ```
 
 ## V2 Roadmap Completed
@@ -173,19 +184,24 @@ RESEND_FROM=Startup Deal OS <onboarding@resend.dev>
 DEAL_SCOUT_EMAIL_RECIPIENT=
 DEAL_SCOUT_ALLOW_CLIENT_RECIPIENT=false
 DEAL_SCOUT_ALLOWED_ORIGIN=http://127.0.0.1:5173,http://localhost:5173
+DEAL_SCOUT_RUN_TOKEN=use-a-long-random-token
 ```
 
 `RESEND_API_KEY` must not be prefixed with `VITE_`. It must only be read by server-side code, a cron worker, or a server-side job.
 Set `DEAL_SCOUT_ALLOWED_ORIGIN` to the deployed frontend origin when the app is hosted, for example `https://your-app.example.com`. For local work, both `127.0.0.1` and `localhost` are allowed because Vite may be opened with either hostname.
 Keep `DEAL_SCOUT_ALLOW_CLIENT_RECIPIENT=false` for hosted use so the server sends only to `DEAL_SCOUT_EMAIL_RECIPIENT`.
-Set `DEAL_SCOUT_RUN_TOKEN` before enabling scheduled automated digest runs. The `/api/deal-scout/digest/run` endpoint refuses to run without it.
+Set `DEAL_SCOUT_RUN_TOKEN` before enabling email sending. Both `/api/deal-scout/digest/send` and `/api/deal-scout/digest/run` reject unauthenticated requests.
 
-The browser can call a server endpoint only when explicitly configured:
+The browser can call the authenticated send endpoint only when explicitly configured:
 
 ```bash
 VITE_DEAL_SCOUT_EMAIL_MODE=resend
 VITE_DEAL_SCOUT_EMAIL_ENDPOINT=http://127.0.0.1:8787/api/deal-scout/digest/send
 ```
+
+Enter `DEAL_SCOUT_RUN_TOKEN` in the Scout page only when sending manually. The value is
+attached as a bearer token for that request, then cleared; it is not bundled, logged, or saved
+in localStorage. Never create `VITE_DEAL_SCOUT_RUN_TOKEN`.
 
 Run the local server-side email endpoint from `frontend/`:
 
@@ -295,8 +311,8 @@ To test the Resend path with the GridCool synthetic source:
 - Add GridCool Systems as a Manual Deal Scout source.
 - Run `Deal Scout -> Run Digest Job`.
 - Confirm the digest preview says "research shortlist, not financial advice."
-- Set `VITE_DEAL_SCOUT_EMAIL_MODE=resend` and run `npm run email:server` in a server-side terminal with `RESEND_API_KEY`, `RESEND_FROM`, and `DEAL_SCOUT_EMAIL_RECIPIENT` configured.
-- Click `Send / Preview`.
+- Set `VITE_DEAL_SCOUT_EMAIL_MODE=resend` and run `npm run email:server` in a server-side terminal with `RESEND_API_KEY`, `RESEND_FROM`, `DEAL_SCOUT_EMAIL_RECIPIENT`, and `DEAL_SCOUT_RUN_TOKEN` configured.
+- Enter the server token in the Scout page and click `Send / Preview`.
 - A successful send returns a Resend email id; missing configuration returns a clear failure such as `missing RESEND_API_KEY` or `missing recipient`.
 
 ## Future V7 Ideas

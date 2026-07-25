@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import './env/loadServerEnv.mjs';
+import { timingSafeEqual } from 'node:crypto';
 import http from 'node:http';
 import { runAutomatedDealScoutDigest } from './dealScoutAutomation.mjs';
 import { digestTextToHtml } from './email/digestHtml.mjs';
@@ -61,22 +62,30 @@ async function readJson(request) {
 function getBearerToken(request) {
   const authorization = request.headers.authorization || '';
   if (authorization.startsWith('Bearer ')) return authorization.slice('Bearer '.length).trim();
-  return request.headers['x-deal-scout-run-token'] || '';
+
+  const headerToken = request.headers['x-deal-scout-run-token'];
+  return Array.isArray(headerToken) ? headerToken[0] || '' : String(headerToken || '');
 }
 
-function requireRunToken(request, response, origin) {
+function tokensMatch(providedToken, expectedToken) {
+  const provided = Buffer.from(providedToken);
+  const expected = Buffer.from(expectedToken);
+  return provided.length === expected.length && timingSafeEqual(provided, expected);
+}
+
+function requireServerToken(request, response, origin) {
   if (!runToken) {
     sendJson(response, 503, {
       ok: false,
-      error: 'missing DEAL_SCOUT_RUN_TOKEN; automated digest endpoint is not enabled'
+      error: 'missing DEAL_SCOUT_RUN_TOKEN; Deal Scout email endpoints are not enabled'
     }, origin);
     return false;
   }
 
-  if (getBearerToken(request) !== runToken) {
+  if (!tokensMatch(getBearerToken(request), runToken)) {
     sendJson(response, 401, {
       ok: false,
-      error: 'invalid or missing Deal Scout run token'
+      error: 'invalid or missing Deal Scout server token'
     }, origin);
     return false;
   }
@@ -117,10 +126,10 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (!requireServerToken(request, response, origin)) return;
+
   if (url.pathname === runEndpoint) {
     try {
-      if (!requireRunToken(request, response, origin)) return;
-
       const result = await runAutomatedDealScoutDigest({ send: true });
       sendJson(response, result.ok ? 200 : 400, result, origin);
     } catch (error) {

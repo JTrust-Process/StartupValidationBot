@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test --test-isolation=none server/*.test.mjs",
+    "lint": "eslint src server",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -15,7 +16,11 @@
     "scout:digest:send": "node server/runAutomatedDealScoutDigest.mjs --send"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.0",
+    "globals": "^17.7.0",
     "typescript": "~6.0.2",
+    "typescript-eslint": "^8.65.0",
     "vite": "^8.0.9"
   },
   "dependencies": {

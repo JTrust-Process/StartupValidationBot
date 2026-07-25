@@ -485,15 +485,19 @@ export function renderScoutPage(): string {
         <div class="page-header page-header--row">
           <div>
             <h3>Email Digest Preview</h3>
-            <p>Development mode generates preview only. Production sending belongs in a server-side SMTP or email-provider worker.</p>
+            <p>Preview stays local. Sending requires the server-side token and configured email provider.</p>
           </div>
           <div class="workspace-actions workspace-actions--wrap">
             <button class="button button--secondary" id="generate-digest-preview-button" type="button">Generate Preview</button>
             <button class="button button--secondary" id="send-digest-preview-button" type="button">Send / Preview</button>
           </div>
         </div>
+        <div class="form-field form-field--full">
+          <label for="digest-server-token">Server token</label>
+          <input id="digest-server-token" type="password" autocomplete="off" placeholder="Required only when sending" />
+        </div>
         <div class="notice notice--neutral notice--compact" id="email-send-status">
-          Preview mode keeps email local. Server/resend mode calls the configured server endpoint.
+          The token is used for one request and is never stored in localStorage.
         </div>
         <pre class="import-preview" id="digest-preview">${escapeHtml(preview)}</pre>
       </div>
@@ -509,6 +513,7 @@ export function bindScoutPageEvents(root: HTMLElement): void {
   const generateDigestButton = root.querySelector<HTMLButtonElement>('#generate-digest-preview-button');
   const sendDigestButton = root.querySelector<HTMLButtonElement>('#send-digest-preview-button');
   const digestPreview = root.querySelector<HTMLElement>('#digest-preview');
+  const digestServerToken = root.querySelector<HTMLInputElement>('#digest-server-token');
   const emailSendStatus = root.querySelector<HTMLElement>('#email-send-status');
 
   preferencesForm?.addEventListener('submit', (event) => {
@@ -568,7 +573,11 @@ export function bindScoutPageEvents(root: HTMLElement): void {
       emailSendStatus.className = 'notice notice--neutral notice--compact';
     }
 
-    const result = await sendScoutDigestEmail(generateScoutDigest());
+    const result = await sendScoutDigestEmail(
+      generateScoutDigest(),
+      digestServerToken?.value ?? ''
+    );
+    if (digestServerToken) digestServerToken.value = '';
 
     if (emailSendStatus) {
       emailSendStatus.textContent = result.message;

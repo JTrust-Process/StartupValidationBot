@@ -486,7 +486,7 @@ function loadAutomationSources() {
       });
       sources.push(...parsed);
     } catch (error) {
-      throw new Error(`Invalid DEAL_SCOUT_AUTOMATION_SOURCES_JSON: ${error.message}`);
+      throw new Error(`Invalid DEAL_SCOUT_AUTOMATION_SOURCES_JSON: ${error.message}`, { cause: error });
     }
   }
 

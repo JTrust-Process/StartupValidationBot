@@ -33,17 +33,29 @@ function sendJson(response, statusCode, payload, requestOrigin = '') {
   response.end(JSON.stringify(payload));
 }
 
+function createRequestError(message, statusCode) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
 async function readJson(request) {
   let body = '';
 
   for await (const chunk of request) {
     body += chunk;
     if (body.length > 128_000) {
-      throw new Error('request body too large');
+      throw createRequestError('request body too large', 413);
     }
   }
 
-  return body.trim() ? JSON.parse(body) : {};
+  if (!body.trim()) return {};
+
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw createRequestError('invalid JSON request body', 400);
+  }
 }
 
 function getBearerToken(request) {
@@ -150,7 +162,8 @@ const server = http.createServer(async (request, response) => {
     const result = await sendDealScoutDigestEmail({ to, subject, text, html });
     sendJson(response, result.ok ? 200 : 400, result, origin);
   } catch (error) {
-    sendJson(response, 500, {
+    const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+    sendJson(response, statusCode, {
       ok: false,
       error: error instanceof Error ? error.message : 'unknown email server error'
     }, origin);

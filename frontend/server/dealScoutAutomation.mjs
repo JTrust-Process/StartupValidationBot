@@ -47,13 +47,23 @@ function parseListPreserveCase(value) {
 
 function parseBooleanEnv(name, fallback) {
   const value = process.env[name];
-  if (value === undefined || value === '') return fallback;
-  return /^(1|true|yes)$/i.test(value);
+  if (value === undefined || value.trim() === '') return fallback;
+  if (/^(1|true|yes)$/i.test(value)) return true;
+  if (/^(0|false|no)$/i.test(value)) return false;
+  throw new Error(`${name} must be true or false.`);
 }
 
-function parseNumberEnv(name, fallback) {
-  const parsed = Number(process.env[name]);
-  return Number.isFinite(parsed) ? parsed : fallback;
+function parseNumberEnv(name, fallback, { min = -Infinity, integer = false } = {}) {
+  const value = process.env[name];
+  if (value === undefined || value.trim() === '') return fallback;
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || (integer && !Number.isInteger(parsed)) || parsed < min) {
+    const minimum = Number.isFinite(min) ? ` at least ${min}` : '';
+    throw new Error(`${name} must be ${integer ? 'an integer' : 'a number'}${minimum}.`);
+  }
+
+  return parsed;
 }
 
 function wait(ms) {
@@ -337,9 +347,15 @@ function loadDiscoveryConfig() {
       ...(enabled ? queries.map(buildGoogleNewsRssUrl) : []),
       ...(enableSecEdgar ? [buildSecEdgarFormCFeedUrl()] : [])
     ],
-    maxItems: parseNumberEnv('DEAL_SCOUT_DISCOVERY_MAX_ITEMS', 25),
+    maxItems: parseNumberEnv('DEAL_SCOUT_DISCOVERY_MAX_ITEMS', 25, {
+      min: 0,
+      integer: true
+    }),
     fetchLinks: parseBooleanEnv('DEAL_SCOUT_DISCOVERY_FETCH_LINKS', false),
-    requestDelayMs: parseNumberEnv('DEAL_SCOUT_FETCH_DELAY_MS', 750)
+    requestDelayMs: parseNumberEnv('DEAL_SCOUT_FETCH_DELAY_MS', 750, {
+      min: 0,
+      integer: true
+    })
   };
 }
 
@@ -460,7 +476,15 @@ function loadAutomationSources() {
   if (json?.trim()) {
     try {
       const parsed = JSON.parse(json);
-      if (Array.isArray(parsed)) sources.push(...parsed);
+      if (!Array.isArray(parsed)) {
+        throw new Error('must be a JSON array');
+      }
+      parsed.forEach((source, index) => {
+        if (!source || typeof source !== 'object' || Array.isArray(source)) {
+          throw new Error(`item ${index + 1} must be an object`);
+        }
+      });
+      sources.push(...parsed);
     } catch (error) {
       throw new Error(`Invalid DEAL_SCOUT_AUTOMATION_SOURCES_JSON: ${error.message}`);
     }
@@ -495,8 +519,13 @@ function loadAutomationSources() {
 function loadPreferences() {
   return {
     preferredThemes: parseList(process.env.DEAL_SCOUT_PREFERRED_THEMES || 'AI infrastructure,data centers,energy,fintech,automation'),
-    maxMinimumInvestment: parseNumberEnv('DEAL_SCOUT_MAX_MINIMUM_INVESTMENT', 500),
-    maxRedFlags: parseNumberEnv('DEAL_SCOUT_MAX_RED_FLAGS', 6),
+    maxMinimumInvestment: parseNumberEnv('DEAL_SCOUT_MAX_MINIMUM_INVESTMENT', 500, {
+      min: 0
+    }),
+    maxRedFlags: parseNumberEnv('DEAL_SCOUT_MAX_RED_FLAGS', 6, {
+      min: 0,
+      integer: true
+    }),
     requireNonAccredited: parseBooleanEnv('DEAL_SCOUT_REQUIRE_NON_ACCREDITED', true),
     requireRegCfOrRegA: parseBooleanEnv('DEAL_SCOUT_REQUIRE_REG_CF_OR_REG_A', true),
     includeDiscoveryLeads: parseBooleanEnv('DEAL_SCOUT_INCLUDE_DISCOVERY_LEADS', true)
@@ -678,7 +707,14 @@ function dedupeSources(sources) {
   const seen = new Set();
 
   return sources.filter((source) => {
-    const key = `${String(source.url || '').toLowerCase()}|${String(source.companyName || '').toLowerCase()}`;
+    const normalizedUrl = String(source.url || '').trim().replace(/\/+$/, '').toLowerCase();
+    const normalizedCompany = String(source.companyName || '').trim().toLowerCase();
+    const key = normalizedUrl
+      ? `url:${normalizedUrl}`
+      : normalizedCompany
+        ? `company:${normalizedCompany}`
+        : `id:${source.id}`;
+
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -691,11 +727,13 @@ export async function runAutomatedDealScoutDigest({ send = false } = {}) {
   const sources = dedupeSources([...configuredSources, ...discovery.sources]);
   const preferences = loadPreferences();
   const sourceResults = [...discovery.results];
+  const sourceFetchResults = [];
   const candidates = [];
 
   for (const source of sources) {
     const fetchResult = await fetchSource(source);
     sourceResults.push(fetchResult);
+    sourceFetchResults.push(fetchResult);
 
     if (fetchResult.status !== 'OK') continue;
 
@@ -710,9 +748,10 @@ export async function runAutomatedDealScoutDigest({ send = false } = {}) {
     ok: true,
     generatedAt: new Date().toISOString(),
     sourceCount: sources.length,
-    configuredSourceCount: configuredSources.length,
-    discoveredSourceCount: discovery.sources.length,
-    checkedCount: sourceResults.filter((item) => item.status === 'OK').length,
+    configuredSourceCount: sources.filter((source) => !source.discoveryLead).length,
+    discoveredSourceCount: sources.filter((source) => source.discoveryLead).length,
+    discoveryFeedCount: discovery.results.length,
+    checkedCount: sourceFetchResults.filter((item) => item.status === 'OK').length,
     errorCount: sourceResults.filter((item) => item.status !== 'OK').length,
     candidateCount: candidates.length,
     candidates: candidates.slice(0, 5),

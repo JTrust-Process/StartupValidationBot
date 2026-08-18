@@ -1,21 +1,36 @@
-# StartupValidationBot / Startup Deal OS
+# Startup Intelligence / Venture Radar
 
-A local-first diligence workspace for non-accredited retail investors reviewing risky startup and private-market deals.
+A personal startup intelligence platform with a preserved local-first diligence workspace for non-accredited retail investors reviewing risky startup and private-market deals.
 
-The app helps a user manually enter deals from platforms such as Wefunder, StartEngine, Republic, Fundrise, Jarsy, Ross Pre-IPO, and similar sources, then slow down enough to score the opportunity, identify red flags, decide Pass / Watch / Invest Small, and review the thesis later.
+The Radar discovers and monitors startups across public, permitted sources. Deal Scout separately helps a user evaluate accessible private-market opportunities from platforms such as Wefunder, StartEngine, Republic, Fundrise, Jarsy, and similar sources. An interesting company is not automatically a good investment, so Radar Score, Personal Relevance, and Deal Scout investment scoring remain separate.
 
 This is a research organization tool. It is not financial, legal, or tax advice.
 
 ## Target User
 
 - Non-accredited startup/private-market investor
+- Startup ecosystem researcher who wants an automated shortlist of companies and themes worth understanding
 - Manually reviews crowdfunding, Reg CF, Reg A, fund, SPV, and pre-IPO-style offerings
 - Wants a consistent process before sharing sensitive information or sending funds
 - Needs local persistence, evidence tracking, document analysis, and JSON backup before adding accounts, scraping, or AI
 
 ## Current Features
 
-- Local-first V5 frontend powered by browser `localStorage`
+- Persistent PostgreSQL Startup Radar with Flyway migrations
+- Modular discovery adapters for configurable RSS/Atom feeds, the official Product Hunt API, and manual sources
+- Conservative YC directory entry retained as manual-only rather than relying on an undocumented scraper
+- Company deduplication by normalized domain, normalized name, and legal-name aliases
+- Company snapshots, source citations, watchlist status, meaningful change labels, and duplicate-safe discoveries
+- Provider-neutral Radar AI interface with Groq as the first implementation
+- `openai/gpt-oss-20b` for bounded routine enrichment and `openai/gpt-oss-120b` only for protected manual Deep Dives
+- Strict JSON-schema output validation, bounded retries, persisted provider attempts, stable caching, and deterministic fallback
+- Public-data-only provider payload that is isolated from Deal Scout, offering documents, notes, and browser storage
+- Separate 0-100 Radar Score and Personal Relevance score; neither is an investment recommendation
+- Public Radar filters for search, sector/theme, score, recency, and sort order
+- Watchlist, 30-day trend clustering, and a structured company deep-dive workspace
+- Idempotent discovery, watchlist, trend, and combined-digest jobs with retry handling and persisted run logs
+- Combined weekly digest with new startups, watchlist updates, and existing Deal Scout candidates
+- Local-first Deal Scout frontend powered by browser `localStorage`
 - Manual deal intake with expanded private-market metadata
 - Paste-text import for campaign pages, full-page copy/paste dumps, Form C excerpts, offering circular text, founder notes, and user notes
 - Clean Import and Lazy Import modes for focused text versus messy platform page dumps
@@ -61,9 +76,34 @@ This is a research organization tool. It is not financial, legal, or tax advice.
 
 ## How to Run Locally
 
-```bash
+Radar requires PostgreSQL and the Spring backend. Copy the templates to local `.env` files without committing them, or set equivalent shell environment variables. At minimum configure `DATABASE_URL`, the worker-only `RADAR_RUN_TOKEN`, `RADAR_ADMIN_PASSWORD_HASH`, `RADAR_BROWSER_ORIGIN`, and `VITE_RADAR_API_BASE_URL`. AI is optional and disabled by default.
+
+Generate the admin password hash locally. The password is read without echo and only the PBKDF2-SHA256 hash is printed:
+
+```powershell
+cd backend
+.\mvnw.cmd -q -DskipTests compile
+java -cp target/classes com.startupvalidationbot.radar.auth.RadarPasswordHashTool
+```
+
+Start the Java 21 backend:
+
+```powershell
+cd backend
+$env:DATABASE_URL="jdbc:postgresql://localhost:5432/startup_validation_bot"
+$env:RADAR_RUN_TOKEN="replace-with-a-long-random-token"
+$env:RADAR_ADMIN_PASSWORD_HASH='paste-the-generated-hash'
+$env:RADAR_BROWSER_ORIGIN="http://localhost:5173"
+$env:RADAR_AUTH_SECURE_COOKIE="false"
+.\mvnw.cmd spring-boot:run
+```
+
+Start the frontend in a second terminal:
+
+```powershell
 cd frontend
 npm install
+$env:VITE_RADAR_API_BASE_URL="http://localhost:8080/api/radar"
 npm run dev
 ```
 
@@ -82,14 +122,51 @@ npm run lint
 npm run build
 ```
 
-The Spring backend is optional for the current localStorage-first frontend. When running it,
-provide database credentials through server environment variables rather than committing them:
+The Diligence and Deal Scout routes continue to work from browser `localStorage` if the backend is offline. Radar, Watchlist, Trends, and server jobs require the backend.
+
+Run backend tests and package with Java 21:
 
 ```bash
-SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/startup_validation_bot
-SPRING_DATASOURCE_USERNAME=postgres
-SPRING_DATASOURCE_PASSWORD=replace-with-your-local-password
+cd backend
+./mvnw test
+./mvnw package
 ```
+
+## Startup Radar Architecture
+
+New Radar data lives in provider-independent PostgreSQL tables managed by Flyway. Existing Deal Scout and diligence records remain in browser `localStorage`; no silent migration or destructive conversion occurs. Use the existing JSON export before moving browsers or devices. A later authenticated sync can import those backups into server storage without changing their current schema.
+
+General company, trend, and source-status reads use sanitized public DTOs. They omit Personal Relevance, watch/ignore state, watchlist notes, next-review dates, source configuration, raw snapshots, and source excerpts. Protected reads and mutations accept either a server-side browser session or the separate worker bearer token. `RADAR_RUN_TOKEN` remains server-only and is never sent to Vite.
+
+Production browser administration uses the Vercel function at `/api/radar/*` as a same-origin reverse proxy to Fly. The proxy forwards the HttpOnly session cookie but strips browser-supplied `Authorization` and `X-Radar-Run-Token` headers. Spring stores only SHA-256 session-token hashes in PostgreSQL, enforces a fixed expiration, validates the exact `RADAR_BROWSER_ORIGIN` for login/logout and mutations, and rate-limits failed logins. Cookies are Secure, HttpOnly, and SameSite=Strict in production. Direct Vercel-to-Fly browser cookie authentication is intentionally unsupported because cross-site cookie blocking makes it unreliable.
+
+The authenticated Admin page provides system status, source management, manual public intake, protected job runs, logout, and Radar JSON export. Authenticated company pages provide Watch, Unwatch, Ignore, Restore, and Deep Dive controls. Sessions expire after `RADAR_AUTH_SESSION_HOURS` and can be revoked immediately with logout.
+
+Discovery jobs fetch only configured public sources. Product Hunt uses its official GraphQL API and requires `PRODUCT_HUNT_TOKEN`. Add RSS/Atom URLs with `RADAR_RSS_URLS` or the protected source API. YC remains manual-only: YC exposes public company pages, but its official `robots.txt` disallows `/companies?*` query-directory crawling and no supported company-discovery API/feed has been identified. The adapters do not bypass authentication, paywalls, captchas, rate limits, robots rules, or source terms.
+
+Every discovery is deduplicated, snapshotted, scored, and linked to a source. Source-supported facts and analyst inferences are displayed separately. Deterministic structured analysis remains the baseline and owns the final Radar and Personal Relevance scores.
+
+## Optional Groq Radar Analysis
+
+Groq is an enhancement, never a runtime dependency. Configure these server-side variables in `backend/.env` or the host secret manager:
+
+```env
+RADAR_ENABLE_AI=true
+AI_PROVIDER=groq
+GROQ_API_KEY=
+RADAR_AI_MODEL=openai/gpt-oss-20b
+RADAR_DEEP_DIVE_MODEL=openai/gpt-oss-120b
+RADAR_AI_MAX_ITEMS_PER_RUN=25
+RADAR_AI_MAX_RETRIES=2
+RADAR_AI_PROMPT_VERSION=radar-v2
+RADAR_AI_SCHEMA_VERSION=radar-analysis-v1
+```
+
+Never prefix `GROQ_API_KEY` or `RADAR_RUN_TOKEN` with `VITE_`. The provider receives only company name/domain/website, externally sourced public description, sector/categories, headquarters/founding year, public accelerator/launch/funding/investor/traction text, eligible public RSS/Product Hunt source URLs/excerpts, and source count. Manual Radar excerpts are excluded from provider text. Deal Scout pasted text, Form C contents, offering documents, user notes, evidence records, localStorage, email addresses, keys, tokens, and private investment research are never joined into the provider payload.
+
+Routine runs use `openai/gpt-oss-20b`. A shared per-run budget is consumed only on cache misses, prioritizing newly discovered companies, watched companies with meaningful public changes, then other changed/stale companies. With the default setting, a daily run makes at most 25 AI calls and usually fewer. Protected manual Deep Dive requests use `openai/gpt-oss-120b`; saved results are reused while the public input, provider, model, prompt version, and schema version remain unchanged.
+
+Groq output must satisfy the strict typed analysis schema. Invalid output is retried within `RADAR_AI_MAX_RETRIES`; credential errors, model errors, timeouts, rate limits, malformed responses, and provider outages are recorded without secrets. The affected company then receives cached or newly generated deterministic analysis, and the worker continues.
 
 ## V2 Roadmap Completed
 
@@ -281,7 +358,7 @@ Send from `frontend/`:
 npm run scout:digest:send
 ```
 
-Trigger the hosted server endpoint from GitHub Actions, Render cron, or another scheduler:
+Trigger the hosted server endpoint manually when diagnosing the legacy Deal Scout service:
 
 ```bash
 curl -X POST \
@@ -289,7 +366,7 @@ curl -X POST \
   https://startupvalidationbot.onrender.com/api/deal-scout/digest/run
 ```
 
-This repo includes `.github/workflows/deal-scout-digest.yml` for weekly automation. To enable it, add:
+The `.github/workflows/deal-scout-digest.yml` workflow is retained as a manual diagnostic only. It has no production schedule. If you run it manually, add:
 
 - GitHub repository variable `DEAL_SCOUT_DIGEST_RUN_URL` = `https://startupvalidationbot.onrender.com/api/deal-scout/digest/run`
 - GitHub repository secret `DEAL_SCOUT_RUN_TOKEN` = the same token configured on the Render email server
@@ -315,15 +392,72 @@ To test the Resend path with the GridCool synthetic source:
 - Enter the server token in the Scout page and click `Send / Preview`.
 - A successful send returns a Resend email id; missing configuration returns a clear failure such as `missing RESEND_API_KEY` or `missing recipient`.
 
-## Future V7 Ideas
+## Fly.io Web And Worker Deployment
+
+The root `Dockerfile` uses Java 21. `fly.toml` defines separate `web` and `worker` process groups; only `web` receives HTTP traffic. The worker runs Spring schedules for discovery, watchlist refresh, trends, and the weekly combined digest. A Fly release command runs Flyway with Hibernate DDL disabled before either process is replaced. Migrations are additive, checksum-validated, and Flyway clean is disabled.
+
+Readiness uses `/actuator/health/readiness` and includes database connectivity; health details are never exposed. SIGTERM triggers graceful HTTP and scheduler shutdown with a 60-second drain. PostgreSQL-backed job leases prevent overlap across processes, while `(job_type, idempotency_key)` uniqueness keeps scheduled retries idempotent. A crashed lease expires after `RADAR_JOB_LEASE_MINUTES`; keep one worker for predictable scheduling even though the database lock provides a second guardrail.
+
+Staging deployment procedure:
+
+1. Create a dedicated Fly staging app and Postgres database, then set the `app` value in `fly.toml` to that staging app.
+2. Generate a password hash with `RadarPasswordHashTool`; keep the plaintext password only in your password manager.
+3. Set the Fly secrets below. Use the exact Vercel staging origin with no path, slash, or hash route.
+4. In the Vercel project rooted at `frontend`, set server-only `RADAR_BACKEND_ORIGIN=https://<fly-staging-app>.fly.dev`. Set `VITE_RADAR_API_BASE_URL=/api/radar` or remove it so the same-origin default is used.
+5. Run `fly deploy --config fly.toml`. The release command must succeed before web/worker replacement proceeds.
+6. Run `fly scale count web=1 worker=1`, then verify `/actuator/health/readiness`, browser login/logout, Admin system status, one digest preview, and a JSON export.
+
+```bash
+fly secrets set DATABASE_URL="postgres://..." \
+  RADAR_RUN_TOKEN="..." \
+  RADAR_ADMIN_PASSWORD_HASH='pbkdf2-sha256$...' \
+  RADAR_BROWSER_ORIGIN="https://your-staging-frontend.vercel.app" \
+  APP_ALLOWED_ORIGINS="https://your-staging-frontend.vercel.app" \
+  RADAR_AUTH_SECURE_COOKIE="true" \
+  RADAR_AUTH_SAME_SITE="Strict" \
+  PRODUCT_HUNT_TOKEN="..." \
+  RADAR_ENABLE_AI="true" \
+  AI_PROVIDER="groq" \
+  GROQ_API_KEY="..." \
+  RADAR_AI_MODEL="openai/gpt-oss-20b" \
+  RADAR_DEEP_DIVE_MODEL="openai/gpt-oss-120b" \
+  DEAL_SCOUT_RUN_URL="https://your-email-service/api/deal-scout/digest/run" \
+  DEAL_SCOUT_RUN_TOKEN="..." \
+  RADAR_EMAIL_SEND_URL="https://your-email-service/api/deal-scout/digest/send" \
+  RADAR_EMAIL_TOKEN="..."
+fly deploy
+fly scale count web=1 worker=1
+```
+
+Required staging secrets are `DATABASE_URL`, `RADAR_RUN_TOKEN`, `RADAR_ADMIN_PASSWORD_HASH`, `RADAR_BROWSER_ORIGIN`, and `APP_ALLOWED_ORIGINS`. `GROQ_API_KEY`, Product Hunt, Deal Scout, and email secrets are required only when those integrations are enabled. Never put any of these secrets in `VITE_*`. See Fly's [process group documentation](https://fly.io/docs/launch/processes/).
+
+The worker posts a preview request to the authenticated Deal Scout `/digest/run` endpoint, combines those candidates with Radar and Watchlist content, and sends the final message through the existing authenticated Resend `/digest/send` endpoint. The digest says companies and deals to review, never investments to buy.
+
+## Radar Status, Fixture, And Export
+
+`GET /api/radar/admin/status` is authenticated and reports database health, latest jobs, recent failures, discovery and AI counters, configured provider/model names, and integration-configured booleans. It never returns environment values, URLs containing credentials, API keys, tokens, database URLs, cookies, or authorization headers.
+
+For a deterministic development demo, start the backend with `RADAR_DEMO_FIXTURE_ENABLED=true` and `RADAR_ENABLE_AI=false`, then invoke the protected fixture once:
+
+```powershell
+Invoke-RestMethod -Method Post `
+  -Uri "http://localhost:8080/api/radar/admin/fixtures/synthetic" `
+  -Headers @{ Authorization = "Bearer $env:RADAR_RUN_TOKEN" }
+```
+
+The fixture performs manual ingestion, normalization, domain deduplication, persistence, two snapshots, deterministic Radar and Personal scoring, Watchlist, deterministic Deep Dive, trend clustering, and digest preview. It uses only `.example` URLs and never calls Groq or Product Hunt. Keep `RADAR_DEMO_FIXTURE_ENABLED=false` in staging and production. `RadarEndToEndFixtureIntegrationTest` runs the same workflow automatically.
+
+The Admin page downloads `GET /api/radar/admin/export` as `startup-radar-export.json`. The export includes companies, normalized discovery references and hashes, public source metadata, sanitized snapshots, analyses, watchlist, trends, and research-source references. It excludes raw discovery text, source configuration JSON, sessions, password hashes, worker tokens, credentials, database settings, AI attempt errors, email settings, and all unrelated Deal Scout/diligence data.
+
+## Next Radar Iterations
 
 - OCR/import from screenshots and downloaded PDFs
 - More robust SEC filing parsing for Reg CF / Reg A documents
 - Platform page import helpers for Wefunder, StartEngine, Republic, Fundrise, and similar pages, only where allowed
-- Supabase persistence and cross-device sync
-- Optional local or user-approved AI summary of offering documents and founder updates
+- Authenticated multi-device access and encrypted user settings
+- Optional, separately consented AI summary of offering documents; private diligence remains outside Radar AI
 - Server-side email worker with SMTP/provider implementation
-- Official API connectors and RSS/newsletter source adapters
+- More official accelerator, funding-announcement, and VC portfolio connectors
 - Deal alerts and follow-up reminders
 - Evidence templates by deal type and exemption
 - Portfolio-level exposure limits and allocation rules
@@ -333,8 +467,10 @@ To test the Resend path with the GridCool synthetic source:
 
 ```text
 StartupValidationBot/
-  frontend/   Vite + TypeScript local-first app
-  backend/    Existing Spring Boot backend kept for possible future API work
+  frontend/   Vite + TypeScript Radar UI plus local-first Deal Scout/Diligence
+  backend/    Java 21 Spring Boot Radar API, PostgreSQL migrations, and scheduled worker
+  Dockerfile  Fly web/worker image
+  fly.toml    Fly process-group and health-check configuration
 ```
 
-V5 intentionally avoids overbuilding authentication, aggressive scraping, AI investment decisions, or brokerage-style workflows. The goal is an evidence-based manual diligence workstation with a careful research scout layer.
+The platform intentionally avoids aggressive scraping, AI investment decisions, brokerage actions, or automated investing. It is a research system, not financial advice.

@@ -11,7 +11,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/deals")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:5173")
 public class DealController {
 
     private final DealService dealService;

@@ -12,7 +12,7 @@ kill_timeout = "90s"
   release_command = "java -jar /app/backend.jar --spring.main.web-application-type=none --spring.jpa.hibernate.ddl-auto=none --radar.migrate-only=true"
 
 [processes]
-  web = "java -jar /app/backend.jar"
+  web = "env JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=70 java -jar /app/backend.jar"
   worker = "java -jar /app/backend.jar --spring.profiles.active=worker --spring.main.web-application-type=none"
 
 [http_service]
@@ -20,7 +20,7 @@ kill_timeout = "90s"
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
   processes = ["web"]
 
   [[http_service.checks]]
@@ -31,6 +31,13 @@ kill_timeout = "90s"
     path = "/actuator/health/readiness"
 
 [[vm]]
+  processes = ["web"]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[[vm]]
+  processes = ["worker"]
   memory = "512mb"
   cpu_kind = "shared"
   cpus = 1

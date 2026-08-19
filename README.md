@@ -412,17 +412,6 @@ configuration error in that case rather than a login form that could never succe
 strict header allowlist that excludes `authorization` and `x-radar-run-token`, so a browser can never
 present it.
 
-### Generating the admin password hash
-
-Never store a plaintext admin password.
-
-```bash
-cd backend
-./mvnw -q compile exec:java -Dexec.mainClass=com.startupvalidationbot.radar.auth.RadarPasswordHashTool
-```
-
-Store only the printed `pbkdf2-sha256$310000$...` string as `RADAR_ADMIN_PASSWORD_HASH`.
-
 ### Login throttling
 
 Failed logins are recorded in PostgreSQL (`radar_login_attempts`), so lockouts survive deploys and
@@ -574,14 +563,16 @@ feed exists.
 
 The root `Dockerfile` uses Java 21. `fly.toml` defines separate `web` and `worker` process groups; only `web` receives HTTP traffic. The worker runs Spring schedules for discovery, watchlist refresh, trends, and the weekly combined digest. A Fly release command runs Flyway with Hibernate DDL disabled before either process is replaced. Migrations are additive, checksum-validated, and Flyway clean is disabled.
 
+The web group uses one shared CPU and 1 GB RAM. `min_machines_running = 1` keeps one web Machine running in the primary region, so a stopped Spring JVM is not on the critical path of the first daily request. No startup-duration estimate is assumed. The web command scopes `JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=70` to that process, limiting its maximum Java heap to roughly 70% of the 1 GB Machine and leaving roughly 30% for metaspace, code cache, direct buffers, thread stacks, and other native memory. The worker remains on one shared CPU and 512 MB with its existing JVM defaults.
+
 Readiness uses `/actuator/health/readiness` and includes database connectivity; health details are never exposed. SIGTERM triggers graceful HTTP and scheduler shutdown with a 60-second drain. PostgreSQL-backed job leases prevent overlap across processes, while `(job_type, idempotency_key)` uniqueness keeps scheduled retries idempotent. A crashed lease expires after `RADAR_JOB_LEASE_MINUTES`; keep one worker for predictable scheduling even though the database lock provides a second guardrail.
 
 Staging deployment procedure:
 
 1. Create a dedicated Fly staging app and Postgres database, then set the `app` value in `fly.toml` to that staging app.
 2. Generate a password hash with `RadarPasswordHashTool`; keep the plaintext password only in your password manager.
-3. Set the Fly secrets below. Use the exact Vercel staging origin with no path, slash, or hash route.
-4. In the Vercel project rooted at `frontend`, set server-only `RADAR_BACKEND_ORIGIN=https://<fly-staging-app>.fly.dev`. Set `VITE_RADAR_API_BASE_URL=/api/radar` or remove it so the same-origin default is used.
+3. Set the required Fly secrets below. Use the exact Vercel staging origin with no path, slash, or hash route.
+4. In the Vercel project rooted at `frontend`, set only the server-side `RADAR_BACKEND_ORIGIN=https://<fly-staging-app>.fly.dev`. Do not set `VITE_RADAR_API_BASE_URL`; the frontend uses its same-origin `/api/radar` proxy by default.
 5. Run `fly deploy --config fly.toml`. The release command must succeed before web/worker replacement proceeds.
 6. Run `fly scale count web=1 worker=1`, then verify `/actuator/health/readiness`, browser login/logout, Admin system status, one digest preview, and a JSON export.
 
@@ -593,21 +584,12 @@ fly secrets set DATABASE_URL="postgres://..." \
   APP_ALLOWED_ORIGINS="https://your-staging-frontend.vercel.app" \
   RADAR_AUTH_SECURE_COOKIE="true" \
   RADAR_AUTH_SAME_SITE="Strict" \
-  PRODUCT_HUNT_TOKEN="..." \
-  RADAR_ENABLE_AI="true" \
-  AI_PROVIDER="groq" \
-  GROQ_API_KEY="..." \
-  RADAR_AI_MODEL="openai/gpt-oss-20b" \
-  RADAR_DEEP_DIVE_MODEL="openai/gpt-oss-120b" \
-  DEAL_SCOUT_RUN_URL="https://your-email-service/api/deal-scout/digest/run" \
-  DEAL_SCOUT_RUN_TOKEN="..." \
-  RADAR_EMAIL_SEND_URL="https://your-email-service/api/deal-scout/digest/send" \
-  RADAR_EMAIL_TOKEN="..."
+  RADAR_ENABLE_AI="false"
 fly deploy
 fly scale count web=1 worker=1
 ```
 
-Required staging secrets are `DATABASE_URL`, `RADAR_RUN_TOKEN`, `RADAR_ADMIN_PASSWORD_HASH`, `RADAR_BROWSER_ORIGIN`, and `APP_ALLOWED_ORIGINS`. `GROQ_API_KEY`, Product Hunt, Deal Scout, and email secrets are required only when those integrations are enabled. Never put any of these secrets in `VITE_*`. See Fly's [process group documentation](https://fly.io/docs/launch/processes/).
+For initial staging, leave `DEAL_SCOUT_RUN_URL`, `RADAR_EMAIL_SEND_URL`, and `RADAR_RSS_URLS` unset, and keep `RADAR_ENABLE_AI=false`. If those variables were configured previously, remove them before staging. Do not set `VITE_RADAR_API_BASE_URL` in Vercel. Required staging secrets are `DATABASE_URL`, `RADAR_RUN_TOKEN`, `RADAR_ADMIN_PASSWORD_HASH`, `RADAR_BROWSER_ORIGIN`, and `APP_ALLOWED_ORIGINS`. `GROQ_API_KEY`, Product Hunt, Deal Scout, and email secrets are required only when those integrations are deliberately enabled later. Never put any server secret in `VITE_*`. See Fly's [process group documentation](https://fly.io/docs/launch/processes/).
 
 The worker posts a preview request to the authenticated Deal Scout `/digest/run` endpoint, combines those candidates with Radar and Watchlist content, and sends the final message through the existing authenticated Resend `/digest/send` endpoint. The digest says companies and deals to review, never investments to buy.
 

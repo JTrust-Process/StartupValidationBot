@@ -4,7 +4,6 @@ import static com.startupvalidationbot.radar.RadarDomain.*;
 import static com.startupvalidationbot.radar.RadarAdminViews.*;
 
 import java.sql.PreparedStatement;
-import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -137,7 +136,7 @@ public class RadarStore {
                             headquarters, founded_year, aliases_json, accelerator, accelerator_batch,
                             first_seen_at, last_seen_at, created_at, updated_at
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?)
-                        """, Statement.RETURN_GENERATED_KEYS);
+                        """, new String[] { "id" });
                 statement.setString(1, candidate.companyName().trim());
                 statement.setString(2, normalizedName);
                 statement.setString(3, domain);
@@ -480,7 +479,7 @@ public class RadarStore {
                             trend_key, name, summary, company_count, momentum_score, period_start, period_end,
                             created_at, updated_at
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, Statement.RETURN_GENERATED_KEYS);
+                        """, new String[] { "id" });
                 statement.setString(1, trend.key());
                 statement.setString(2, trend.name());
                 statement.setString(3, trend.summary());

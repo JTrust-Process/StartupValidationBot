@@ -162,7 +162,7 @@ RADAR_AI_PROMPT_VERSION=radar-v2
 RADAR_AI_SCHEMA_VERSION=radar-analysis-v1
 ```
 
-Never prefix `GROQ_API_KEY` or `RADAR_RUN_TOKEN` with `VITE_`. The provider receives only company name/domain/website, externally sourced public description, sector/categories, headquarters/founding year, public accelerator/launch/funding/investor/traction text, eligible public RSS/Product Hunt source URLs/excerpts, and source count. Manual Radar excerpts are excluded from provider text. Deal Scout pasted text, Form C contents, offering documents, user notes, evidence records, localStorage, email addresses, keys, tokens, and private investment research are never joined into the provider payload.
+Never prefix `GROQ_API_KEY` or `RADAR_RUN_TOKEN` with `VITE_`. The provider receives only company name/domain/website, externally sourced public description, sector/categories, headquarters/founding year, public accelerator/launch/funding/investor/traction text, eligible public RSS/Product Hunt/Hacker News source URLs/excerpts, and source count. Manual Radar excerpts are excluded from provider text. Deal Scout pasted text, Form C contents, offering documents, user notes, evidence records, localStorage, email addresses, keys, tokens, and private investment research are never joined into the provider payload.
 
 Routine runs use `openai/gpt-oss-20b`. A shared per-run budget is consumed only on cache misses, prioritizing newly discovered companies, watched companies with meaningful public changes, then other changed/stale companies. With the default setting, a daily run makes at most 25 AI calls and usually fewer. Protected manual Deep Dive requests use `openai/gpt-oss-120b`; saved results are reused while the public input, provider, model, prompt version, and schema version remain unchanged.
 
@@ -391,6 +391,184 @@ To test the Resend path with the GridCool synthetic source:
 - Set `VITE_DEAL_SCOUT_EMAIL_MODE=resend` and run `npm run email:server` in a server-side terminal with `RESEND_API_KEY`, `RESEND_FROM`, `DEAL_SCOUT_EMAIL_RECIPIENT`, and `DEAL_SCOUT_RUN_TOKEN` configured.
 - Enter the server token in the Scout page and click `Send / Preview`.
 - A successful send returns a Resend email id; missing configuration returns a clear failure such as `missing RESEND_API_KEY` or `missing recipient`.
+
+## Radar Access Control
+
+Startup Radar is a private single-user application. **Every Radar data read requires an
+authenticated browser session.** Only these endpoints are anonymous:
+
+| Endpoint | Why it is public |
+|---|---|
+| `GET /api/radar/health` | Liveness/readiness probing |
+| `GET /api/radar/auth/session` | Lets the SPA decide whether to render a login form |
+| `POST /api/radar/auth/login` / `logout` | Session bootstrap |
+
+`GET /api/radar/companies`, `/companies/{id}`, `/sources` and `/trends` are authenticated. There is
+no fail-open path: when `RADAR_ADMIN_PASSWORD_HASH` is unset no session can validate, so the data
+stays closed and `/auth/session` reports `configured: false`. The SPA renders an explicit
+configuration error in that case rather than a login form that could never succeed.
+
+`RADAR_RUN_TOKEN` remains a separate server-to-server worker credential. The Vercel proxy forwards a
+strict header allowlist that excludes `authorization` and `x-radar-run-token`, so a browser can never
+present it.
+
+### Generating the admin password hash
+
+Never store a plaintext admin password.
+
+```bash
+cd backend
+./mvnw -q compile exec:java -Dexec.mainClass=com.startupvalidationbot.radar.auth.RadarPasswordHashTool
+```
+
+Store only the printed `pbkdf2-sha256$310000$...` string as `RADAR_ADMIN_PASSWORD_HASH`.
+
+### Login throttling
+
+Failed logins are recorded in PostgreSQL (`radar_login_attempts`), so lockouts survive deploys and
+Fly machine auto-stop. Attempts are keyed per client address, taken from the address the Vercel proxy
+forwards as `X-Radar-Client-Ip` (a header the browser cannot set, because the proxy derives it and
+never copies a client-supplied value). This prevents a single attacker from locking the legitimate
+user out globally. Passwords are never stored or logged.
+
+Tunable via `RADAR_AUTH_MAX_LOGIN_ATTEMPTS`, `RADAR_AUTH_LOGIN_WINDOW_MINUTES`,
+`RADAR_AUTH_LOGIN_LOCKOUT_MINUTES`, `RADAR_AUTH_ATTEMPT_RETENTION_HOURS`,
+`RADAR_AUTH_TRUST_FORWARDED_FOR`.
+
+## Database Schema Ownership
+
+Flyway is the single schema authority. Migrations `V1`-`V6` live in
+`backend/src/main/resources/db/migration`:
+
+| Migration | Contents |
+|---|---|
+| `V1` | Radar core: sources, companies, discoveries, snapshots, analyses, watchlist, investors, research sources, trends, digests, job runs |
+| `V2` | AI analysis metadata and `radar_ai_attempts` |
+| `V3` | Admin sessions and job locks |
+| `V4` | Legacy Deal Scout / diligence tables (`deals`, `quick_screens`, `decisions`, `deep_diligence`, `reviews`) previously created implicitly by Hibernate |
+| `V5` | Durable login throttling (`radar_login_attempts`) |
+| `V6` | Intelligence layer: interest profile, interaction signals, tiered company changes, accelerator provenance, trend velocity columns |
+
+The application runs with `spring.jpa.hibernate.ddl-auto=validate`, so **neither the web nor the
+worker process mutates the schema at boot** - important because both start concurrently on deploy.
+`V4` uses `CREATE TABLE IF NOT EXISTS` only, so it is non-destructive on a database where Hibernate
+already created those tables and their rows are preserved.
+
+If Hibernate validation ever reports a benign type mismatch on an existing database, set
+`JPA_DDL_AUTO=none` as a temporary escape hatch and reconcile the migration.
+
+## RSS Company Extraction
+
+RSS feeds provide headlines, not company records, so `HeadlineCompanyName` deterministically extracts
+a startup name before any company is created. No AI is involved - routine discovery must not incur
+model cost.
+
+```text
+"Acme Robotics raises $20M Series A"              -> Acme Robotics   (HIGH)
+"Beta Systems launches agent platform"            -> Beta Systems    (HIGH)
+"Fintech startup Acme raises $15M led by Sequoia" -> Acme            (MEDIUM)
+"Acme secures $8M seed round"                     -> Acme            (HIGH)
+"Why every startup should rethink pricing"        -> no company created
+```
+
+Supported verbs include raises/raised, secures, lands, closes, nabs, bags, launches, unveils, debuts,
+emerges from stealth, exits stealth, acquires and acquired by. Editorial prefixes (`Exclusive:`) and
+publisher suffixes (`- TechCrunch`) are stripped.
+
+Two safety rules matter:
+
+1. The article URL is stored as `sourceUrl` and **never** as `websiteUrl`. `radar_companies.domain`
+   is `UNIQUE`, so a publisher host there would merge an entire feed into one company record.
+   `CompanyIdentity.normalizeDomain` additionally refuses publisher, aggregator, social and VC hosts.
+2. When no company name can be extracted confidently the article is skipped and logged
+   (`radar_headline_skipped`) rather than creating a junk identity.
+
+`RADAR_RSS_URLS` remains empty by default.
+
+## Radar Home And Personal Relevance
+
+`#/radar` is the daily intelligence view. Six sections, filled in a fixed priority order so a company
+never appears twice:
+
+| Section | Contents |
+|---|---|
+| Watchlist Updates | Important/Major changes on watched companies (last 14 days) |
+| New Today | First discovered in the last 24 hours (falls back to 7 days when quiet, and says so) |
+| Recently Funded | A funding round or new investor detected in the last 30 days |
+| Best Matches For You | Highest personal relevance against your configured interests |
+| High Momentum | Multi-source corroboration, recent activity and detected change |
+| Emerging Trends | Themes grounded in companies actually in your Radar |
+
+Rendering the page makes **zero AI calls** - every field comes from stored data or a deterministic
+function.
+
+### Personal relevance is configurable and explainable
+
+Edit interests under `#/radar-admin`, one per line:
+
+```text
+label | weight 1-25 | comma, separated, keywords
+```
+
+Keywords match **whole words only**. Substring matching would score nonsense - "erp" occurs inside
+"perpetuals", and "ai" inside "retail", "email" and "maintain".
+
+Saving recomputes every personal score immediately. That recompute is deterministic and free, so you
+can tune the profile as often as you like.
+
+Interaction signals (`WATCH`, `IGNORE`, `DEEP_DIVE`, `VISIT`) are persisted in
+`radar_interaction_signals`. Today they make small, stated adjustments (watching adds points; ignoring
+holds a company at or below 12). They are stored so a future personalisation model has real history -
+there is deliberately no opaque ML yet.
+
+Personal relevance is never an investment signal. Investment judgement stays in Deal Scout.
+
+## Change Significance
+
+Snapshot differences are classified deterministically into `MINOR`, `INTERESTING`, `IMPORTANT` and
+`MAJOR`:
+
+| Change | Tier |
+|---|---|
+| New funding round, acquisition, shutdown | Major |
+| New tier-one investor | Major (other investors: Important) |
+| Traction more than doubled | Major |
+| Traction moved 25%+ either way | Important |
+| Named enterprise customer | Major (unnamed: Important) |
+| Founder change, accelerator, regulatory | Important |
+| Product launch, partnership, repositioning | Interesting |
+| Job postings, website change | Minor |
+| Reworded description with no new facts | **suppressed entirely** |
+
+The classifier is the authority; AI is not consulted to decide whether a database event matters. The
+detector compares meaning rather than bytes - it extracts numeric metrics ("2,700 traders" ->
+"4,100 traders" = +52%), funding language and investor names, and only reports a rewrite when word
+overlap falls below 82%.
+
+## Trends And Similar Startups
+
+Trends report company count, recent vs prior 30-day discovery counts, direction, and a confidence
+grade. **A percentage is only shown when the prior window holds at least three companies.** Otherwise
+the trend states absolute counts and explains why no rate is given.
+
+Similar startups are ranked from category overlap, shared trends, sector and a coarse business-model
+tag. "Likely competitor" is only claimed on heavy category overlap. This is computed from stored data,
+so opening a company profile costs no AI calls.
+
+## Discovery Sources
+
+| Source | Access | Default |
+|---|---|---|
+| Manual | Direct entry | Enabled |
+| Hacker News launches | Official public HN Search API, no key | Enabled |
+| Product Hunt | Official GraphQL API | Enabled when `PRODUCT_HUNT_TOKEN` is set |
+| Configured RSS | `RADAR_RSS_URLS` | Enabled when configured |
+| RSS presets (TechCrunch venture, EU-Startups, a16z) | Official publisher feeds | **Registered disabled** |
+| Y Combinator directory | No supported public feed | Manual review only |
+
+Presets are registered disabled and never re-enabled behind your back: if you turn one on, the
+bootstrap preserves that choice on every restart. YC stays manual-only until a legitimate supported
+feed exists.
 
 ## Fly.io Web And Worker Deployment
 

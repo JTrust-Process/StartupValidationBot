@@ -4,6 +4,7 @@ import { bindDealsPageEvents, renderDealsPage } from '../pages/dealsPage';
 import { bindNewDealPageEvents, renderNewDealPage } from '../pages/newDealPage';
 import { bindScoutPageEvents, renderScoutPage } from '../pages/scoutPage';
 import { bindTextImportPageEvents, renderTextImportPage } from '../pages/textImportPage';
+import { bindRadarHomePageEvents, renderRadarHomePage } from '../pages/radarHomePage';
 import { bindRadarPageEvents, renderRadarPage } from '../pages/radarPage';
 import { bindWatchlistPageEvents, renderWatchlistPage } from '../pages/watchlistPage';
 import { bindTrendsPageEvents, renderTrendsPage } from '../pages/trendsPage';
@@ -16,7 +17,8 @@ import {
 import { getDealById, loadDealById } from '../services/dealService';
 
 function getPageHtml(path: string): string {
-  if (path === '/radar') return renderRadarPage();
+  if (path === '/radar') return renderRadarHomePage();
+  if (path === '/radar/all') return renderRadarPage();
   if (path === '/watchlist') return renderWatchlistPage();
   if (path === '/trends') return renderTrendsPage();
   if (path.startsWith('/radar/company/')) return renderRadarCompanyPage();
@@ -53,6 +55,7 @@ function updateActiveNav(root: HTMLDivElement, path: string): void {
     const isActive =
       route === path ||
       (route === '/radar' && path.startsWith('/radar/company/')) ||
+      (route === '/radar/all' && path === '/radar/all') ||
       (route === '/deals' && path.startsWith('/deals/') && path !== '/deals/new');
 
     link.classList.toggle('active', Boolean(isActive));
@@ -64,6 +67,11 @@ function bindPageEvents(root: HTMLDivElement, path: string): void {
   if (!pageContent) return;
 
   if (path === '/radar') {
+    bindRadarHomePageEvents(pageContent);
+    return;
+  }
+
+  if (path === '/radar/all') {
     bindRadarPageEvents(pageContent);
     return;
   }
@@ -139,7 +147,8 @@ function renderPageError(root: HTMLDivElement, message: string): void {
 
         <nav class="sidebar__nav">
           <span class="nav-section-label">Intelligence</span>
-          <a href="#/radar" class="nav-link" data-route="/radar">Radar</a>
+          <a href="#/radar" class="nav-link" data-route="/radar">Radar Home</a>
+          <a href="#/radar/all" class="nav-link" data-route="/radar/all">All Companies</a>
           <a href="#/watchlist" class="nav-link" data-route="/watchlist">Watchlist</a>
           <a href="#/trends" class="nav-link" data-route="/trends">Trends</a>
           <a href="#/radar-admin" class="nav-link" data-route="/radar-admin">Admin</a>
@@ -201,7 +210,8 @@ async function renderLayout(root: HTMLDivElement): Promise<void> {
 
         <nav class="sidebar__nav">
           <span class="nav-section-label">Intelligence</span>
-          <a href="#/radar" class="nav-link" data-route="/radar">Radar</a>
+          <a href="#/radar" class="nav-link" data-route="/radar">Radar Home</a>
+          <a href="#/radar/all" class="nav-link" data-route="/radar/all">All Companies</a>
           <a href="#/watchlist" class="nav-link" data-route="/watchlist">Watchlist</a>
           <a href="#/trends" class="nav-link" data-route="/trends">Trends</a>
           <a href="#/radar-admin" class="nav-link" data-route="/radar-admin">Admin</a>

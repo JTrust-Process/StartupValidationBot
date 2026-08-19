@@ -7,20 +7,32 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.startupvalidationbot.radar.RadarDomain.Company;
 import com.startupvalidationbot.radar.RadarStore.AnalysisPayload;
+import com.startupvalidationbot.radar.intel.PersonalRelevance;
+import com.startupvalidationbot.radar.intel.PersonalRelevanceInputs;
 
 @Service
 public class RadarScoringService {
     private final List<String> preferredThemes;
+    private final PersonalRelevanceInputs relevanceInputs;
 
+    // Two constructors exist, so the injection target must be explicit.
+    @Autowired
     public RadarScoringService(@Value("${RADAR_PREFERRED_THEMES:AI infrastructure,developer tools,energy,fintech,automation}")
-            String preferredThemes) {
+            String preferredThemes, PersonalRelevanceInputs relevanceInputs) {
         this.preferredThemes = List.of(preferredThemes.split(",")).stream()
                 .map(String::trim).filter(value -> !value.isBlank()).toList();
+        this.relevanceInputs = relevanceInputs;
+    }
+
+    /** Scoring without persistence: default interest profile and no interaction history. */
+    public RadarScoringService(String preferredThemes) {
+        this(preferredThemes, PersonalRelevanceInputs.defaults());
     }
 
     public AnalysisPayload score(Company company) {
@@ -57,10 +69,18 @@ public class RadarScoringService {
         int radarScore = clamp((int) Math.round(dimensions.values().stream().mapToInt(Integer::intValue).average()
                 .orElse(0)));
 
+        // Whole-phrase matching only: "erp" must not match "perpetuals", nor "ai" match "retail".
         List<String> themeMatches = preferredThemes.stream()
                 .filter(theme -> containsWholePhrase(corpus, theme))
                 .toList();
-        int personalScore = clamp(25 + themeMatches.size() * 18 + Math.min(20, company.sourceCount() * 5));
+
+        // Personal relevance comes from the user's configurable interest profile plus the interaction
+        // signals they have generated. It is deliberately separate from the Radar Score above, which
+        // measures general importance, and from any investment view, which stays in Deal Scout.
+        PersonalRelevance.Result relevance = PersonalRelevance.score(company.name(), company.description(),
+                company.sector(), company.categories(), relevanceInputs.loadProfile(),
+                relevanceInputs.signalSummary(company.id() == null ? 0L : company.id()));
+        int personalScore = relevance.score();
 
         List<String> facts = new ArrayList<>();
         facts.add("Discovered from " + company.sourceCount() + " configured source(s).");
@@ -91,9 +111,9 @@ public class RadarScoringService {
         String summary = company.description() == null || company.description().isBlank()
                 ? company.name() + " is a newly discovered startup with limited source detail."
                 : company.description();
-        String whyCare = themeMatches.isEmpty()
-                ? "Track it only if the underlying market or product becomes relevant to your research themes."
-                : "It overlaps with your stated research themes: " + String.join(", ", themeMatches) + ".";
+        String whyCare = relevance.matchedInterests().isEmpty()
+                ? "No configured interest matched. Track it only if the market or product becomes relevant."
+                : "It overlaps with your interests: " + String.join(", ", relevance.matchedInterests()) + ".";
         return new AnalysisPayload(summary, "Unknown from current sources", "Unknown from current sources",
                 "Unknown from current sources", "Unknown", List.of(), "Unknown from current sources", List.of(),
                 company.categories(), List.of("New independent source", "Verified traction update", "Funding event"),
@@ -101,12 +121,11 @@ public class RadarScoringService {
                 List.of("Seen across " + company.sourceCount() + " source(s)."), List.of(), List.of(), List.of(),
                 risks, List.of(), List.of(), questions,
                 "Radar relevance is based on public startup signals, not investment suitability.", whyCare,
-                "Unknown from current sources", themeMatches.isEmpty()
+                "Unknown from current sources", relevance.matchedInterests().isEmpty()
                         ? "No clear career overlap is supported by current source data."
-                        : "Potential career overlap with: " + String.join(", ", themeMatches) + ".",
+                        : "Potential career overlap with: " + String.join(", ", relevance.matchedInterests()) + ".",
                 List.of(), company.sourceCount() >= 2 ? "MEDIUM" : "LOW", whyInteresting,
-                themeMatches.isEmpty() ? List.of("No configured interest match in current public text.")
-                        : themeMatches.stream().map(theme -> "Matches configured interest: " + theme).toList(),
+                relevance.reasons(),
                 dimensions, radarScore, personalScore);
     }
 

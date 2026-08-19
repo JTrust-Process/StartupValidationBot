@@ -50,7 +50,8 @@ import jakarta.validation.Valid;
 @RestController
 @RequestMapping("/api/radar")
 public class RadarController {
-    private static final Set<String> SOURCE_TYPES = Set.of("RSS", "PRODUCT_HUNT", "MANUAL", "YC_DIRECTORY");
+    private static final Set<String> SOURCE_TYPES = Set.of("RSS", "PRODUCT_HUNT", "MANUAL", "YC_DIRECTORY",
+            "HACKER_NEWS");
 
     private final RadarStore store;
     private final RadarQueryService queryService;

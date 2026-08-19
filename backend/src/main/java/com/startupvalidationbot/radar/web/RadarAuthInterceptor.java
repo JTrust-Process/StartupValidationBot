@@ -38,6 +38,17 @@ public class RadarAuthInterceptor implements HandlerInterceptor {
         return true;
     }
 
+    /**
+     * The minimum public surface for a private single-user application.
+     *
+     * Only liveness and the session bootstrap are anonymous. Every Radar data read - companies,
+     * company detail, sources and trends - now requires the browser session, because the Fly backend
+     * is a public HTTPS service and those responses expose the full research dataset and the
+     * configured source list.
+     *
+     * There is deliberately no fail-open branch: when RADAR_ADMIN_PASSWORD_HASH is unset no session
+     * can ever validate, so these routes stay closed rather than reverting to anonymous access.
+     */
     private static boolean isPublic(HttpServletRequest request) {
         String method = request.getMethod();
         String path = request.getRequestURI();

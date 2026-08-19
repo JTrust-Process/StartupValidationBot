@@ -54,3 +54,23 @@ test('relays session cookies through the same-origin proxy', async () => {
   assert.deepEqual(responseHeaders.get('set-cookie'), ['radar_admin_session=value; HttpOnly']);
   assert.equal(response.statusCode, 200);
 });
+
+test('derives a client address for durable login throttling', () => {
+  const withRealIp = buildForwardedHeaders({
+    'x-real-ip': '203.0.113.44',
+    'x-forwarded-for': '198.51.100.9, 203.0.113.44'
+  });
+  assert.equal(withRealIp.get('x-radar-client-ip'), '203.0.113.44');
+
+  // Right-most forwarded entry wins: it is appended by the closest proxy.
+  const forwardedOnly = buildForwardedHeaders({ 'x-forwarded-for': 'attacker-value, 203.0.113.7' });
+  assert.equal(forwardedOnly.get('x-radar-client-ip'), '203.0.113.7');
+
+  // A client cannot inject the header the backend trusts.
+  const spoofed = buildForwardedHeaders({ 'x-radar-client-ip': '10.0.0.1' });
+  assert.equal(spoofed.get('x-radar-client-ip'), null);
+
+  // Junk is dropped rather than forwarded.
+  const junk = buildForwardedHeaders({ 'x-real-ip': 'not an address; DROP TABLE' });
+  assert.equal(junk.get('x-radar-client-ip'), null);
+});

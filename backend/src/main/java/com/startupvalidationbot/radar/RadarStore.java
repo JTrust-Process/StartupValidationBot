@@ -4,18 +4,18 @@ import static com.startupvalidationbot.radar.RadarDomain.*;
 import static com.startupvalidationbot.radar.RadarAdminViews.*;
 
 import java.sql.PreparedStatement;
-import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -27,6 +27,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.TextNode;
+import com.startupvalidationbot.radar.intel.SnapshotChangeDetector;
+import com.startupvalidationbot.radar.intel.SnapshotChangeDetector.DetectedChange;
 
 @Repository
 public class RadarStore {
@@ -39,10 +44,13 @@ public class RadarStore {
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final boolean postgres;
 
     public RadarStore(JdbcTemplate jdbc, ObjectMapper objectMapper) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.postgres = Boolean.TRUE.equals(jdbc.execute((ConnectionCallback<Boolean>) connection ->
+                "PostgreSQL".equalsIgnoreCase(connection.getMetaData().getDatabaseProductName())));
     }
 
     public List<Source> listSources() {
@@ -125,9 +133,10 @@ public class RadarStore {
                 PreparedStatement statement = connection.prepareStatement("""
                         INSERT INTO radar_companies (
                             name, normalized_name, domain, website_url, description, sector, categories_json,
-                            headquarters, founded_year, aliases_json, first_seen_at, last_seen_at, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, ?)
-                        """, Statement.RETURN_GENERATED_KEYS);
+                            headquarters, founded_year, aliases_json, accelerator, accelerator_batch,
+                            first_seen_at, last_seen_at, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?)
+                        """, new String[] { "id" });
                 statement.setString(1, candidate.companyName().trim());
                 statement.setString(2, normalizedName);
                 statement.setString(3, domain);
@@ -141,10 +150,12 @@ public class RadarStore {
                 } else {
                     statement.setInt(9, candidate.foundedYear());
                 }
-                statement.setTimestamp(10, Timestamp.valueOf(now));
-                statement.setTimestamp(11, Timestamp.valueOf(now));
+                statement.setString(10, valueOrEmpty(candidate.accelerator()));
+                statement.setString(11, valueOrEmpty(candidate.acceleratorBatch()));
                 statement.setTimestamp(12, Timestamp.valueOf(now));
                 statement.setTimestamp(13, Timestamp.valueOf(now));
+                statement.setTimestamp(14, Timestamp.valueOf(now));
+                statement.setTimestamp(15, Timestamp.valueOf(now));
                 return statement;
             }, keys);
             companyId = keys.getKey().longValue();
@@ -158,8 +169,8 @@ public class RadarStore {
             jdbc.update("""
                     UPDATE radar_companies SET
                         name = ?, normalized_name = ?, domain = ?, website_url = ?, description = ?, sector = ?,
-                        categories_json = ?, headquarters = ?, founded_year = ?, aliases_json = ?, last_seen_at = ?,
-                        updated_at = ?
+                        categories_json = ?, headquarters = ?, founded_year = ?, aliases_json = ?,
+                        accelerator = ?, accelerator_batch = ?, last_seen_at = ?, updated_at = ?
                     WHERE id = ?
                     """,
                     candidate.companyName().trim(), normalizedName, domain != null ? domain : current.domain(),
@@ -169,7 +180,8 @@ public class RadarStore {
                     toJson(mergeLists(current.categories(), candidate.categories())),
                     prefer(candidate.headquarters(), current.headquarters()),
                     candidate.foundedYear() != null ? candidate.foundedYear() : current.foundedYear(),
-                    toJson(aliases), now, now, companyId);
+                    toJson(aliases), prefer(candidate.accelerator(), current.accelerator()),
+                    prefer(candidate.acceleratorBatch(), current.acceleratorBatch()), now, now, companyId);
         }
         return new CompanyUpsert(findCompany(companyId).orElseThrow(), created);
     }
@@ -205,26 +217,61 @@ public class RadarStore {
 
         String snapshotJson = toJson(new PublicSnapshot(candidate.companyName(), candidate.websiteUrl(),
                 candidate.description(), candidate.sector(), safeList(candidate.categories()), candidate.headquarters(),
-                candidate.foundedYear(), candidate.sourceUrl(), candidate.publishedAt()));
+                candidate.foundedYear(), candidate.sourceUrl(), candidate.publishedAt(), candidate.accelerator(),
+                candidate.acceleratorBatch()));
         String inputHash = ContentHash.sha256(snapshotJson);
         boolean snapshotCreated = false;
+        Long snapshotId = null;
+        List<DetectedChange> detectedChanges = List.of();
         if (jdbc.queryForObject("SELECT COUNT(*) FROM radar_company_snapshots WHERE company_id = ? AND input_hash = ?",
                 Integer.class, companyId, inputHash) == 0) {
             List<String> priorSnapshots = jdbc.queryForList("""
                     SELECT snapshot_json FROM radar_company_snapshots
                     WHERE company_id = ? ORDER BY captured_at DESC LIMIT 1
                     """, String.class, companyId);
+
+            // Deterministic, tiered change detection. Comparing meaning rather than bytes means a
+            // reworded sentence no longer looks the same as a Series A.
+            detectedChanges = priorSnapshots.isEmpty()
+                    ? List.of()
+                    : SnapshotChangeDetector.detect(flattenSnapshot(readTree(priorSnapshots.get(0))),
+                            flattenSnapshot(readTree(snapshotJson)));
             List<String> changes = priorSnapshots.isEmpty()
                     ? List.of("First snapshot")
-                    : describeChanges(readTree(priorSnapshots.get(0)), readTree(snapshotJson));
+                    : detectedChanges.stream().map(DetectedChange::summary).toList();
             jdbc.update("""
                     INSERT INTO radar_company_snapshots (
                         company_id, source_id, captured_at, input_hash, snapshot_json, notable_changes_json
                     ) VALUES (?, ?, ?, ?, ?, ?)
                     """, companyId, source.id(), now, inputHash, snapshotJson, toJson(changes));
             snapshotCreated = true;
+            snapshotId = jdbc.queryForList(
+                    "SELECT id FROM radar_company_snapshots WHERE company_id = ? AND input_hash = ?",
+                    Long.class, companyId, inputHash).stream().findFirst().orElse(null);
         }
-        return new DiscoverySaveResult(created, snapshotCreated);
+        return new DiscoverySaveResult(created, snapshotCreated, snapshotId, detectedChanges);
+    }
+
+    /** Flattens a stored snapshot document into the plain field map the change detector consumes. */
+    private static Map<String, String> flattenSnapshot(JsonNode node) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("companyName", node.path("companyName").asText(""));
+        fields.put("websiteUrl", node.path("websiteUrl").asText(""));
+        fields.put("description", node.path("description").asText(""));
+        fields.put("sector", node.path("sector").asText(""));
+        fields.put("headquarters", node.path("headquarters").asText(""));
+        fields.put("sourceUrl", node.path("sourceUrl").asText(""));
+        fields.put("accelerator", node.path("accelerator").asText(""));
+        fields.put("acceleratorBatch", node.path("acceleratorBatch").asText(""));
+        JsonNode categories = node.path("categories");
+        if (categories.isArray()) {
+            List<String> values = new ArrayList<>();
+            categories.forEach(entry -> values.add(entry.asText("")));
+            fields.put("categories", String.join(", ", values));
+        } else {
+            fields.put("categories", "");
+        }
+        return fields;
     }
 
     public Optional<Analysis> findCachedAnalysis(long companyId, String analysisType, String inputHash,
@@ -255,16 +302,33 @@ public class RadarStore {
     public Analysis saveAnalysis(long companyId, String analysisType, String inputHash, String promptVersion,
             String schemaVersion, String analysisOrigin, String provider, String model, AnalysisPayload payload) {
         LocalDateTime now = LocalDateTime.now();
-        try {
-            jdbc.update("""
-                    INSERT INTO radar_company_analyses (
-                        company_id, analysis_type, input_hash, prompt_version, schema_version, provider, model,
-                        analysis_origin, status, analysis_json, radar_score, personal_score, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SUCCESS', ?, ?, ?, ?)
-                    """, companyId, analysisType, inputHash, promptVersion, schemaVersion, provider, model,
-                    analysisOrigin, toJson(payload),
-                    payload.radarScore(), payload.personalScore(), now);
-        } catch (DuplicateKeyException ignored) {
+        int inserted = insertIgnore("""
+                INSERT INTO radar_company_analyses (
+                    company_id, analysis_type, input_hash, prompt_version, schema_version, provider, model,
+                    analysis_origin, status, analysis_json, radar_score, personal_score, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SUCCESS', ?, ?, ?, ?)
+                ON CONFLICT (company_id, analysis_type, input_hash, prompt_version) DO NOTHING
+                """, """
+                MERGE INTO radar_company_analyses AS target
+                USING (VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)) AS incoming (
+                    company_id, analysis_type, input_hash, prompt_version, schema_version, provider, model,
+                    analysis_origin, analysis_json, radar_score, personal_score, created_at
+                ) ON target.company_id = incoming.company_id
+                    AND target.analysis_type = incoming.analysis_type
+                    AND target.input_hash = incoming.input_hash
+                    AND target.prompt_version = incoming.prompt_version
+                WHEN NOT MATCHED THEN INSERT (
+                    company_id, analysis_type, input_hash, prompt_version, schema_version, provider, model,
+                    analysis_origin, status, analysis_json, radar_score, personal_score, created_at
+                ) VALUES (
+                    incoming.company_id, incoming.analysis_type, incoming.input_hash, incoming.prompt_version,
+                    incoming.schema_version, incoming.provider, incoming.model, incoming.analysis_origin,
+                    'SUCCESS', incoming.analysis_json, incoming.radar_score, incoming.personal_score,
+                    incoming.created_at
+                )
+                """, companyId, analysisType, inputHash, promptVersion, schemaVersion, provider, model,
+                analysisOrigin, toJson(payload), payload.radarScore(), payload.personalScore(), now);
+        if (inserted == 0) {
             return findCachedAnalysis(companyId, analysisType, inputHash, promptVersion, schemaVersion, provider,
                     model).orElseThrow();
         }
@@ -297,36 +361,35 @@ public class RadarStore {
             if (normalized.isBlank()) {
                 continue;
             }
-            List<Long> ids = jdbc.queryForList(
+            LocalDateTime now = LocalDateTime.now();
+            insertIgnore("""
+                    INSERT INTO radar_investors (
+                        name, normalized_name, investor_type, created_at, updated_at
+                    ) VALUES (?, ?, 'Unknown', ?, ?)
+                    ON CONFLICT (normalized_name) DO NOTHING
+                    """, """
+                    MERGE INTO radar_investors AS target
+                    USING (VALUES (?, ?, ?, ?)) AS incoming (name, normalized_name, created_at, updated_at)
+                       ON target.normalized_name = incoming.normalized_name
+                    WHEN NOT MATCHED THEN
+                        INSERT (name, normalized_name, investor_type, created_at, updated_at)
+                        VALUES (incoming.name, incoming.normalized_name, 'Unknown', incoming.created_at,
+                            incoming.updated_at)
+                    """, name, normalized, now, now);
+            long investorId = jdbc.queryForObject(
                     "SELECT id FROM radar_investors WHERE normalized_name = ?", Long.class, normalized);
-            long investorId;
-            if (ids.isEmpty()) {
-                KeyHolder keys = new GeneratedKeyHolder();
-                LocalDateTime now = LocalDateTime.now();
-                jdbc.update(connection -> {
-                    PreparedStatement statement = connection.prepareStatement("""
-                            INSERT INTO radar_investors (
-                                name, normalized_name, investor_type, created_at, updated_at
-                            ) VALUES (?, ?, 'Unknown', ?, ?)
-                            """, Statement.RETURN_GENERATED_KEYS);
-                    statement.setString(1, name);
-                    statement.setString(2, normalized);
-                    statement.setTimestamp(3, Timestamp.valueOf(now));
-                    statement.setTimestamp(4, Timestamp.valueOf(now));
-                    return statement;
-                }, keys);
-                investorId = keys.getKey().longValue();
-            } else {
-                investorId = ids.get(0);
-            }
-            try {
-                jdbc.update("""
-                        INSERT INTO radar_company_investors (company_id, investor_id, created_at)
-                        VALUES (?, ?, ?)
-                        """, companyId, investorId, LocalDateTime.now());
-            } catch (DuplicateKeyException ignored) {
-                // The relationship is already captured.
-            }
+            insertIgnore("""
+                    INSERT INTO radar_company_investors (company_id, investor_id, created_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT (company_id, investor_id) DO NOTHING
+                    """, """
+                    MERGE INTO radar_company_investors AS target
+                    USING (VALUES (?, ?, ?)) AS incoming (company_id, investor_id, created_at)
+                       ON target.company_id = incoming.company_id AND target.investor_id = incoming.investor_id
+                    WHEN NOT MATCHED THEN
+                        INSERT (company_id, investor_id, created_at)
+                        VALUES (incoming.company_id, incoming.investor_id, incoming.created_at)
+                    """, companyId, investorId, now);
         }
     }
 
@@ -416,7 +479,7 @@ public class RadarStore {
                             trend_key, name, summary, company_count, momentum_score, period_start, period_end,
                             created_at, updated_at
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, Statement.RETURN_GENERATED_KEYS);
+                        """, new String[] { "id" });
                 statement.setString(1, trend.key());
                 statement.setString(2, trend.name());
                 statement.setString(3, trend.summary());
@@ -520,14 +583,15 @@ public class RadarStore {
                 SELECT id, source_key, source_type, name, url, enabled, last_checked_at, last_status, last_error
                 FROM radar_sources ORDER BY id
                 """, (rs, row) -> new ExportSource(rs.getLong("id"), rs.getString("source_key"),
-                        rs.getString("source_type"), rs.getString("name"), rs.getString("url"),
+                        rs.getString("source_type"), rs.getString("name"), SafeUrl.redact(rs.getString("url")),
                         rs.getBoolean("enabled"), timestamp(rs, "last_checked_at"), rs.getString("last_status"),
-                        rs.getString("last_error")));
+                        SafeUrl.redactUrlsIn(rs.getString("last_error"))));
         List<ExportDiscovery> discoveries = jdbc.query("""
                 SELECT id, company_id, source_id, external_id, source_url, raw_text_hash, discovered_at, last_seen_at
                 FROM radar_discoveries ORDER BY id
                 """, (rs, row) -> new ExportDiscovery(rs.getLong("id"), rs.getLong("company_id"),
-                        rs.getLong("source_id"), rs.getString("external_id"), rs.getString("source_url"),
+                        rs.getLong("source_id"), rs.getString("external_id"),
+                        SafeUrl.redact(rs.getString("source_url")),
                         rs.getString("raw_text_hash"), timestamp(rs, "discovered_at"),
                         timestamp(rs, "last_seen_at")));
         List<ExportSnapshot> snapshots = jdbc.query("""
@@ -535,39 +599,47 @@ public class RadarStore {
                 FROM radar_company_snapshots ORDER BY id
                 """, (rs, row) -> new ExportSnapshot(rs.getLong("id"), rs.getLong("company_id"),
                         rs.getObject("source_id", Long.class), timestamp(rs, "captured_at"),
-                        rs.getString("input_hash"), readTree(rs.getString("snapshot_json")),
+                        rs.getString("input_hash"), redactUrls(readTree(rs.getString("snapshot_json"))),
                         readStringList(rs.getString("notable_changes_json"))));
         RowMapper<Analysis> mapper = analysisMapper();
         List<ExportAnalysis> analyses = jdbc.query("SELECT * FROM radar_company_analyses ORDER BY id",
                 (rs, row) -> new ExportAnalysis(rs.getLong("company_id"), rs.getString("input_hash"),
-                        rs.getString("status"), mapper.mapRow(rs, row)));
+                        rs.getString("status"), redactUrls(mapper.mapRow(rs, row), Analysis.class)));
         List<ExportWatchlist> watchlist = jdbc.query("""
                 SELECT company_id, status, notes, next_review_at, created_at, updated_at
                 FROM radar_watchlist_entries ORDER BY id
                 """, (rs, row) -> new ExportWatchlist(rs.getLong("company_id"), rs.getString("status"),
-                        rs.getString("notes"), timestamp(rs, "next_review_at"), timestamp(rs, "created_at"),
+                        SafeUrl.redactUrlsIn(rs.getString("notes")), timestamp(rs, "next_review_at"),
+                        timestamp(rs, "created_at"),
                         timestamp(rs, "updated_at")));
         List<ExportResearchSource> research = jdbc.query("""
                 SELECT id, company_id, source_type, title, url, source_date, is_fact, created_at
                 FROM radar_research_sources ORDER BY id
                 """, (rs, row) -> new ExportResearchSource(rs.getLong("id"), rs.getLong("company_id"),
-                        rs.getString("source_type"), rs.getString("title"), rs.getString("url"),
+                        rs.getString("source_type"), rs.getString("title"), SafeUrl.redact(rs.getString("url")),
                         timestamp(rs, "source_date"), rs.getBoolean("is_fact"), timestamp(rs, "created_at")));
-        return new RadarExport("startup-radar-export-v1", LocalDateTime.now(), listCompanies(), discoveries,
-                sources, snapshots, analyses, watchlist, listTrends(), research);
+        List<Company> companies = listCompanies().stream()
+                .map(company -> redactUrls(company, Company.class)).toList();
+        List<Trend> trends = listTrends().stream().map(trend -> redactUrls(trend, Trend.class)).toList();
+        return new RadarExport("startup-radar-export-v1", LocalDateTime.now(), companies, discoveries,
+                sources, snapshots, analyses, watchlist, trends, research);
     }
 
     @Transactional
     public JobStart beginJob(String jobType, String idempotencyKey, Duration leaseDuration) {
         LocalDateTime now = LocalDateTime.now();
-        try {
-            jdbc.update("""
-                    INSERT INTO radar_job_locks (job_type, lease_token, locked_until, updated_at)
-                    VALUES (?, NULL, ?, ?)
-                    """, jobType, now.minusSeconds(1), now);
-        } catch (DuplicateKeyException ignored) {
-            // The singleton lock row already exists.
-        }
+        insertIgnore("""
+                INSERT INTO radar_job_locks (job_type, lease_token, locked_until, updated_at)
+                VALUES (?, NULL, ?, ?)
+                ON CONFLICT (job_type) DO NOTHING
+                """, """
+                MERGE INTO radar_job_locks AS target
+                USING (VALUES (?, ?, ?)) AS incoming (job_type, locked_until, updated_at)
+                   ON target.job_type = incoming.job_type
+                WHEN NOT MATCHED THEN
+                    INSERT (job_type, lease_token, locked_until, updated_at)
+                    VALUES (incoming.job_type, NULL, incoming.locked_until, incoming.updated_at)
+                """, jobType, now.minusSeconds(1), now);
         String leaseToken = UUID.randomUUID().toString();
         int acquired = jdbc.update("""
                 UPDATE radar_job_locks SET lease_token = ?, locked_until = ?, updated_at = ?
@@ -575,23 +647,31 @@ public class RadarStore {
                 """, leaseToken, now.plus(leaseDuration), now, jobType, now);
         if (acquired == 0) return new JobStart(false, false, null);
 
-        try {
-            jdbc.update("""
-                    INSERT INTO radar_job_runs (job_type, idempotency_key, status, started_at)
-                    VALUES (?, ?, 'RUNNING', ?)
-                    """, jobType, idempotencyKey, now);
+        int inserted = insertIgnore("""
+                INSERT INTO radar_job_runs (job_type, idempotency_key, status, started_at)
+                VALUES (?, ?, 'RUNNING', ?)
+                ON CONFLICT (job_type, idempotency_key) DO NOTHING
+                """, """
+                MERGE INTO radar_job_runs AS target
+                USING (VALUES (?, ?, ?)) AS incoming (job_type, idempotency_key, started_at)
+                   ON target.job_type = incoming.job_type
+                    AND target.idempotency_key = incoming.idempotency_key
+                WHEN NOT MATCHED THEN
+                    INSERT (job_type, idempotency_key, status, started_at)
+                    VALUES (incoming.job_type, incoming.idempotency_key, 'RUNNING', incoming.started_at)
+                """, jobType, idempotencyKey, now);
+        if (inserted == 1) {
             return new JobStart(true, false, leaseToken);
-        } catch (DuplicateKeyException duplicate) {
-            int restarted = jdbc.update("""
-                    UPDATE radar_job_runs SET status = 'RUNNING', summary_json = '{}', error_message = NULL,
-                        started_at = ?, completed_at = NULL
-                    WHERE job_type = ? AND idempotency_key = ?
-                        AND (status = 'FAILED' OR (status = 'RUNNING' AND started_at < ?))
-                    """, now, jobType, idempotencyKey, now.minus(leaseDuration));
-            if (restarted == 1) return new JobStart(true, false, leaseToken);
-            releaseJobLock(jobType, leaseToken);
-            return new JobStart(false, true, null);
         }
+        int restarted = jdbc.update("""
+                UPDATE radar_job_runs SET status = 'RUNNING', summary_json = '{}', error_message = NULL,
+                    started_at = ?, completed_at = NULL
+                WHERE job_type = ? AND idempotency_key = ?
+                    AND (status = 'FAILED' OR (status = 'RUNNING' AND started_at < ?))
+                """, now, jobType, idempotencyKey, now.minus(leaseDuration));
+        if (restarted == 1) return new JobStart(true, false, leaseToken);
+        releaseJobLock(jobType, leaseToken);
+        return new JobStart(false, true, null);
     }
 
     private static JobRunStatus jobRunStatus(java.sql.ResultSet rs) throws java.sql.SQLException {
@@ -642,7 +722,8 @@ public class RadarStore {
     public record CompanyUpsert(Company company, boolean created) {
     }
 
-    public record DiscoverySaveResult(boolean discoveryCreated, boolean snapshotCreated) {
+    public record DiscoverySaveResult(boolean discoveryCreated, boolean snapshotCreated, Long snapshotId,
+            List<DetectedChange> changes) {
     }
 
     public record JobStart(boolean acquired, boolean duplicate, String leaseToken) {
@@ -650,7 +731,7 @@ public class RadarStore {
 
     private record PublicSnapshot(String companyName, String websiteUrl, String description, String sector,
             List<String> categories, String headquarters, Integer foundedYear, String sourceUrl,
-            LocalDateTime publishedAt) {
+            LocalDateTime publishedAt, String accelerator, String acceleratorBatch) {
     }
 
     public record TrendDraft(String key, String name, String summary, int momentumScore, List<Long> companyIds) {
@@ -680,7 +761,8 @@ public class RadarStore {
                 (Integer) rs.getObject("founded_year"), readStringList(rs.getString("aliases_json")),
                 rs.getInt("radar_score"), rs.getInt("personal_score"), rs.getString("score_reasoning"),
                 rs.getInt("source_count"), timestamp(rs, "first_seen_at"), timestamp(rs, "last_seen_at"),
-                rs.getBoolean("ignored"), rs.getBoolean("watched"));
+                rs.getBoolean("ignored"), rs.getBoolean("watched"),
+                valueOrEmpty(rs.getString("accelerator")), valueOrEmpty(rs.getString("accelerator_batch")));
     }
 
     private RowMapper<Analysis> analysisMapper() {
@@ -727,20 +809,38 @@ public class RadarStore {
         }
     }
 
-    private static List<String> describeChanges(JsonNode previous, JsonNode current) {
-        List<String> changes = new ArrayList<>();
-        compareField(previous, current, "websiteUrl", "Website changed", changes);
-        compareField(previous, current, "description", "Company description changed", changes);
-        compareField(previous, current, "sector", "Sector classification changed", changes);
-        compareField(previous, current, "categories", "Category tags changed", changes);
-        return changes.isEmpty() ? List.of("Source content changed") : changes;
+    private <T> T redactUrls(T value, Class<T> type) {
+        try {
+            return objectMapper.treeToValue(redactUrls(objectMapper.valueToTree(value)), type);
+        } catch (JsonProcessingException error) {
+            throw new IllegalArgumentException("Unable to sanitize Radar export data", error);
+        }
     }
 
-    private static void compareField(JsonNode previous, JsonNode current, String field, String label,
-            List<String> changes) {
-        if (!previous.path(field).equals(current.path(field))) {
-            changes.add(label);
+    private static JsonNode redactUrls(JsonNode node) {
+        if (node == null) return null;
+        if (node.isObject()) {
+            ObjectNode object = (ObjectNode) node;
+            object.properties().forEach(entry -> {
+                JsonNode value = entry.getValue();
+                if (value.isTextual()) {
+                    object.put(entry.getKey(), SafeUrl.redactUrlsIn(value.asText()));
+                } else {
+                    redactUrls(value);
+                }
+            });
+        } else if (node.isArray()) {
+            ArrayNode array = (ArrayNode) node;
+            for (int index = 0; index < array.size(); index++) {
+                JsonNode value = array.get(index);
+                if (value.isTextual()) {
+                    array.set(index, TextNode.valueOf(SafeUrl.redactUrlsIn(value.asText())));
+                } else {
+                    redactUrls(value);
+                }
+            }
         }
+        return node;
     }
 
     private List<String> readStringList(String value) {
@@ -761,6 +861,10 @@ public class RadarStore {
         List<String> values = new ArrayList<>();
         node.forEach(item -> values.add(item.asText()));
         return values;
+    }
+
+    private int insertIgnore(String postgresSql, String fallbackSql, Object... args) {
+        return jdbc.update(postgres ? postgresSql : fallbackSql, args);
     }
 
     private static LocalDateTime timestamp(java.sql.ResultSet rs, String column) throws java.sql.SQLException {

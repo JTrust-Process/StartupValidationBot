@@ -49,9 +49,6 @@ class RadarBrowserAuthIntegrationTest {
 
     @Test
     void rejectsUnauthenticatedAndInvalidSessions() throws Exception {
-        mockMvc.perform(get("/api/radar/companies")).andExpect(status().isUnauthorized());
-        mockMvc.perform(get("/api/radar/sources")).andExpect(status().isUnauthorized());
-        mockMvc.perform(get("/api/radar/trends")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/radar/admin/companies")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/radar/admin/companies")
                 .cookie(new MockCookie(RadarBrowserAuthService.COOKIE_NAME, "invalid-session")))
@@ -59,7 +56,19 @@ class RadarBrowserAuthIntegrationTest {
         mockMvc.perform(get("/api/radar/auth/session")
                 .cookie(new MockCookie(RadarBrowserAuthService.COOKIE_NAME, "invalid-session")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.authenticated").value(false));
+                .andExpect(jsonPath("$.authenticated").value(false))
+                .andExpect(jsonPath("$.configured").value(true));
+    }
+
+    @Test
+    void rejectsAnonymousRadarDataReads() throws Exception {
+        mockMvc.perform(get("/api/radar/companies")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/radar/companies/1")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/radar/sources")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/radar/trends")).andExpect(status().isUnauthorized());
+        // Liveness and the session bootstrap remain anonymous so the SPA can render a login screen.
+        mockMvc.perform(get("/api/radar/health")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/radar/auth/session")).andExpect(status().isOk());
     }
 
     @Test
@@ -77,7 +86,10 @@ class RadarBrowserAuthIntegrationTest {
         MockCookie cookie = new MockCookie(RadarBrowserAuthService.COOKIE_NAME, token);
 
         mockMvc.perform(get("/api/radar/admin/companies").cookie(cookie)).andExpect(status().isOk());
+        // Authenticated browser reads of the Radar data surface succeed with the same session cookie.
         mockMvc.perform(get("/api/radar/companies").cookie(cookie)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/radar/sources").cookie(cookie)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/radar/trends").cookie(cookie)).andExpect(status().isOk());
         mockMvc.perform(get("/api/radar/auth/session").cookie(cookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.authenticated").value(true))
@@ -118,6 +130,14 @@ class RadarBrowserAuthIntegrationTest {
                 .contentType("application/json")
                 .content("{\"password\":\"wrong-password\"}"))
                 .andExpect(status().isTooManyRequests());
+
+        // A different client is unaffected: one attacker cannot lock the real user out.
+        mockMvc.perform(post("/api/radar/auth/login")
+                .with(request -> { request.setRemoteAddr("198.51.100.7"); return request; })
+                .header("Origin", "https://radar.example")
+                .contentType("application/json")
+                .content("{\"password\":\"" + PASSWORD + "\"}"))
+                .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/radar/admin/companies")
                 .header("Authorization", "Bearer test-worker-token"))

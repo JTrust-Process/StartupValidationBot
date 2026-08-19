@@ -1,13 +1,16 @@
-import type { RadarSystemStatus } from '../models/radar';
+import type { RadarInterest, RadarSystemStatus } from '../models/radar';
 import {
   addManualRadarCompany,
   downloadRadarExport,
   getRadarAdminSession,
+  getRadarInterests,
   getRadarSystemStatus,
   listRadarAdminSources,
   loginRadarAdmin,
   logoutRadarAdmin,
+  recomputeRadarRelevance,
   runRadarJob,
+  saveRadarInterests,
   upsertRadarSource
 } from '../services/radarService';
 import { escapeHtml } from '../utils/html';
@@ -70,6 +73,18 @@ function adminHtml(status: RadarSystemStatus, sources: Awaited<ReturnType<typeof
   return `
     <div class="radar-admin-heading"><span class="status-pill status-pill--green">Authenticated</span><button id="radar-logout-button" class="button button--secondary" type="button">Log out</button></div>
     ${statusHtml(status)}
+    <section class="radar-panel" id="radar-interests-panel">
+      <div class="page-header page-header--row">
+        <div>
+          <h3>Personal relevance interests</h3>
+          <p>Personal relevance is computed from these interests plus your Watch / Ignore / Deep Dive /
+             Visit history. It is deterministic, costs no AI calls, and is never an investment signal.</p>
+        </div>
+        <button id="radar-recompute-button" class="button button--secondary" type="button">Rescore all</button>
+      </div>
+      <div id="radar-interests-editor"><p class="radar-muted">Loading interests...</p></div>
+    </section>
+
     <section class="radar-panel">
       <h3>Run jobs</h3>
       <div class="form-actions form-actions--start">
@@ -84,7 +99,7 @@ function adminHtml(status: RadarSystemStatus, sources: Awaited<ReturnType<typeof
       <form id="radar-source-form" class="radar-admin-form-grid">
         <div class="form-field"><label for="source-key">Source key</label><input id="source-key" name="sourceKey" pattern="[a-z0-9][a-z0-9-]{0,159}" required /></div>
         <div class="form-field"><label for="source-name">Name</label><input id="source-name" name="name" maxlength="240" required /></div>
-        <div class="form-field"><label for="source-type">Type</label><select id="source-type" name="sourceType"><option>RSS</option><option>PRODUCT_HUNT</option><option>MANUAL</option><option>YC_DIRECTORY</option></select></div>
+        <div class="form-field"><label for="source-type">Type</label><select id="source-type" name="sourceType"><option>RSS</option><option>PRODUCT_HUNT</option><option>MANUAL</option><option>YC_DIRECTORY</option><option>HACKER_NEWS</option></select></div>
         <div class="form-field"><label for="source-url">Public URL</label><input id="source-url" name="url" type="url" maxlength="1200" /></div>
         <label class="checkbox-row"><input name="enabled" type="checkbox" checked /> Enabled</label>
         <button class="button button--primary" type="submit">Save source</button>
@@ -131,7 +146,77 @@ export function bindRadarAdminPageEvents(root: HTMLElement): void {
     });
   };
 
+  const renderInterests = (interests: RadarInterest[]): string => `
+    <form id="radar-interests-form" class="radar-interests-form">
+      <p class="radar-muted">One interest per line: <code>label | weight 1-25 | comma,separated,keywords</code>.
+         Keywords match whole words only, so "ai" will not match "retail".</p>
+      <div class="form-field radar-form-span">
+        <label for="radar-interests-text">Interests</label>
+        <textarea id="radar-interests-text" name="interests" rows="14">${escapeHtml(interests
+          .map((interest) => `${interest.label} | ${interest.weight} | ${interest.keywords.join(', ')}`)
+          .join('\n'))}</textarea>
+      </div>
+      <div class="form-actions form-actions--start">
+        <button class="button button--primary" type="submit">Save interests and rescore</button>
+      </div>
+    </form>
+  `;
+
+  const parseInterests = (raw: string): RadarInterest[] => raw.split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [label = '', weight = '', keywords = ''] = line.split('|').map((part) => part.trim());
+      const parsedWeight = Number(weight);
+      return {
+        label,
+        weight: Number.isFinite(parsedWeight) && parsedWeight > 0 ? Math.round(parsedWeight) : 10,
+        keywords: keywords.split(',').map((keyword) => keyword.trim()).filter(Boolean)
+      };
+    })
+    .filter((interest) => interest.label.length > 0);
+
+  const loadInterests = async () => {
+    const editor = content.querySelector<HTMLElement>('#radar-interests-editor');
+    if (!editor) return;
+    try {
+      const profile = await getRadarInterests();
+      editor.innerHTML = renderInterests(profile.interests);
+      const form = editor.querySelector<HTMLFormElement>('#radar-interests-form');
+      form?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+        if (button) button.disabled = true;
+        try {
+          const raw = String(new FormData(form).get('interests') || '');
+          const result = await saveRadarInterests(parseInterests(raw));
+          showMessage(`Interests saved. ${result.companiesRescored} compan`
+            + `${result.companiesRescored === 1 ? 'y' : 'ies'} rescored.`);
+          await loadInterests();
+        } catch (error) {
+          showMessage(error instanceof Error ? error.message : 'Saving interests failed.', true);
+        } finally {
+          if (button) button.disabled = false;
+        }
+      });
+    } catch (error) {
+      editor.innerHTML = renderRadarError(error);
+    }
+  };
+
   const bindAdmin = () => {
+    void loadInterests();
+    const recompute = content.querySelector<HTMLButtonElement>('#radar-recompute-button');
+    recompute?.addEventListener('click', async () => {
+      recompute.disabled = true;
+      try {
+        const result = await recomputeRadarRelevance();
+        showMessage(`${result.companiesRescored} personal score`
+          + `${result.companiesRescored === 1 ? '' : 's'} refreshed.`);
+      } catch (error) {
+        showMessage(error instanceof Error ? error.message : 'Rescore failed.', true);
+      } finally { recompute.disabled = false; }
+    });
     content.querySelector<HTMLButtonElement>('#radar-logout-button')?.addEventListener('click', async () => {
       await logoutRadarAdmin();
       await load();

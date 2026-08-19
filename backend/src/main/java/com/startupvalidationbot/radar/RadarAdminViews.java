@@ -28,8 +28,10 @@ public final class RadarAdminViews {
     public record AdminSource(long id, String sourceKey, String sourceType, String name, String url,
             boolean enabled, LocalDateTime lastCheckedAt, String lastStatus, String lastError) {
         public static AdminSource from(Source source) {
-            return new AdminSource(source.id(), source.sourceKey(), source.sourceType(), source.name(), source.url(),
-                    source.enabled(), source.lastCheckedAt(), source.lastStatus(), source.lastError());
+            // A configured feed URL can carry a credential; never disclose the query string.
+            return new AdminSource(source.id(), source.sourceKey(), source.sourceType(), source.name(),
+                    SafeUrl.redact(source.url()), source.enabled(), source.lastCheckedAt(), source.lastStatus(),
+                    SafeUrl.redactUrlsIn(source.lastError()));
         }
     }
 

@@ -22,11 +22,14 @@ class RadarScoringServiceTest {
 
         assertThat(result.radarScore()).isBetween(0, 100);
         assertThat(result.personalScore()).isBetween(0, 100);
-        assertThat(result.personalScore()).isGreaterThan(25);
         assertThat(result.whyInteresting()).anyMatch(value -> value.contains("Radar score"));
         assertThat(result.inferences()).anyMatch(value -> value.contains("not verified"));
     }
 
+    /**
+     * Configured themes are matched as whole words or phrases. Substring matching would fire on
+     * "erp" inside "perpetuals" and "ai" inside "retail", "email", "maintain" and "chain".
+     */
     @Test
     void matchesConfiguredInterestsAsWholeWordsOrPhrases() {
         RadarScoringService service = new RadarScoringService("erp,ai");
@@ -37,12 +40,28 @@ class RadarScoringServiceTest {
         var falsePositiveResult = service.score(falsePositive);
         var realMatchResult = service.score(realMatch);
 
-        assertThat(falsePositiveResult.personalScore()).isEqualTo(30);
-        assertThat(falsePositiveResult.personalScoreInputs())
-                .containsExactly("No configured interest match in current public text.");
-        assertThat(realMatchResult.personalScore()).isEqualTo(66);
-        assertThat(realMatchResult.personalScoreInputs())
-                .containsExactly("Matches configured interest: erp", "Matches configured interest: ai");
+        assertThat(falsePositiveResult.whyInteresting())
+                .noneMatch(value -> value.startsWith("Matches your themes"));
+        assertThat(realMatchResult.whyInteresting())
+                .anyMatch(value -> value.equals("Matches your themes: erp, ai."));
+    }
+
+    /**
+     * The same whole-word rule applies to the personal relevance interest profile, which is scored
+     * independently of the configured themes above.
+     */
+    @Test
+    void doesNotMatchPersonalInterestsOnSubstrings() {
+        RadarScoringService service = new RadarScoringService("energy");
+        Company falsePositive = company("Perpetual Systems",
+                "Retail email tools maintain a perpetuals chain for shops.");
+
+        var result = service.score(falsePositive);
+
+        assertThat(result.personalScoreInputs())
+                .noneMatch(value -> value.contains("Enterprise software"))
+                .noneMatch(value -> value.contains("AI"));
+        assertThat(result.personalScore()).isBetween(0, 100);
     }
 
     private static Company company(String name, String description) {

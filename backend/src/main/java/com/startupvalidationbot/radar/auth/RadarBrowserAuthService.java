@@ -53,15 +53,20 @@ public class RadarBrowserAuthService {
             sessions.deleteExpired();
             IssuedSession issued = sessions.issue(sessionLifetime);
             response.addHeader(HttpHeaders.SET_COOKIE, sessionCookie(issued.token(), sessionLifetime).toString());
-            return new BrowserSession(true, issued.expiresAt());
+            return new BrowserSession(true, issued.expiresAt(), true);
         } finally {
             Arrays.fill(password, '\0');
         }
     }
 
+    /** True when an admin password hash is configured; false means the deployment cannot authenticate. */
+    public boolean isConfigured() {
+        return !passwordHash.isBlank();
+    }
+
     public BrowserSession status(HttpServletRequest request) {
-        return session(request).map(value -> new BrowserSession(true, value.expiresAt()))
-                .orElseGet(() -> new BrowserSession(false, null));
+        return session(request).map(value -> new BrowserSession(true, value.expiresAt(), isConfigured()))
+                .orElseGet(() -> new BrowserSession(false, null, isConfigured()));
     }
 
     public Optional<Session> session(HttpServletRequest request) {
@@ -105,6 +110,6 @@ public class RadarBrowserAuthService {
         };
     }
 
-    public record BrowserSession(boolean authenticated, LocalDateTime expiresAt) {
+    public record BrowserSession(boolean authenticated, LocalDateTime expiresAt, boolean configured) {
     }
 }

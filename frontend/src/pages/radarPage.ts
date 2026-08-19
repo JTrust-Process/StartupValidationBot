@@ -1,4 +1,4 @@
-import { renderCompanyRows, renderRadarError, formatRadarDate } from '../components/radarUi';
+import { guardRadarView, renderCompanyRows, formatRadarDate } from '../components/radarUi';
 import type { RadarCompanyFilters, RadarSource } from '../models/radar';
 import {
   getRadarApiBase,
@@ -91,13 +91,14 @@ function readFilters(form: HTMLFormElement): RadarCompanyFilters {
   };
 }
 
+/** Throws on failure so guardRadarView can convert a 401 into a sign-in form. */
 async function refreshRadar(root: HTMLElement): Promise<void> {
   const list = root.querySelector<HTMLElement>('#radar-company-list');
   const summary = root.querySelector<HTMLElement>('#radar-summary');
   const sourceRows = root.querySelector<HTMLElement>('#radar-source-rows');
   const form = root.querySelector<HTMLFormElement>('#radar-filter-form');
   if (!list || !summary || !sourceRows || !form) return;
-  try {
+  {
     const [companies, sources] = await Promise.all([listRadarCompanies(readFilters(form)), listRadarSources()]);
     list.innerHTML = renderCompanyRows(companies);
     sourceRows.innerHTML = renderSourceRows(sources);
@@ -110,19 +111,33 @@ async function refreshRadar(root: HTMLElement): Promise<void> {
       <div><span>Updated this week</span><strong>${recentlyUpdated}</strong></div>
       <div><span>Enabled sources</span><strong>${sources.filter((source) => source.enabled).length}</strong></div>
     `;
-  } catch (error) {
-    list.innerHTML = renderRadarError(error);
   }
 }
 
 export function bindRadarPageEvents(root: HTMLElement): void {
+  const list = root.querySelector<HTMLElement>('#radar-company-list');
+  const sourceRows = root.querySelector<HTMLElement>('#radar-source-rows');
+  if (!list) return;
+
+  const load = async () => {
+    // Restore the feed shell if a sign-in gate replaced it.
+    if (!list.querySelector('.radar-company-row, .radar-empty, .notice')) {
+      list.innerHTML = '<div class="radar-empty">Loading Radar...</div>';
+    }
+    await refreshRadar(root);
+  };
+  const reload = () => {
+    if (sourceRows) sourceRows.innerHTML = '<tr><td colspan="4">Loading sources...</td></tr>';
+    void guardRadarView(list, load);
+  };
+
   const filterForm = root.querySelector<HTMLFormElement>('#radar-filter-form');
   let filterTimer = 0;
   filterForm?.addEventListener('input', () => {
     window.clearTimeout(filterTimer);
-    filterTimer = window.setTimeout(() => void refreshRadar(root), 180);
+    filterTimer = window.setTimeout(reload, 180);
   });
-  filterForm?.addEventListener('change', () => void refreshRadar(root));
+  filterForm?.addEventListener('change', reload);
 
-  void refreshRadar(root);
+  reload();
 }

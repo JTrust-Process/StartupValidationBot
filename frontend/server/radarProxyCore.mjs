@@ -1,4 +1,8 @@
+// Strict allowlist. `authorization` and `x-radar-run-token` are deliberately absent so a browser can
+// never present the server-to-server worker credential, and `x-radar-client-ip` is absent so a client
+// cannot forge the value we derive below.
 const FORWARDED_REQUEST_HEADERS = ['accept', 'content-type', 'cookie', 'origin', 'user-agent'];
+const CLIENT_IP_HEADER = 'x-radar-client-ip';
 const FORWARDED_RESPONSE_HEADERS = ['content-type', 'content-disposition'];
 
 export function buildRadarTarget(requestUrl, backendOrigin) {
@@ -18,13 +22,44 @@ export function buildRadarTarget(requestUrl, backendOrigin) {
   return new URL(`${incoming.pathname}${incoming.search}`, backend).toString();
 }
 
+function headerValue(headers, name) {
+  const value = typeof headers.get === 'function' ? headers.get(name) : headers[name];
+  if (!value) return '';
+  return Array.isArray(value) ? value.join(', ') : String(value);
+}
+
+/**
+ * Resolves the calling client's address from what the hosting platform supplies, so the backend can
+ * throttle logins per client instead of per proxy. Only well-formed addresses are forwarded; anything
+ * else is dropped and the backend falls back to its own socket address.
+ */
+export function resolveClientIp(headers = {}) {
+  const realIp = headerValue(headers, 'x-real-ip').trim();
+  if (isPlausibleAddress(realIp)) return realIp.toLowerCase();
+
+  const forwardedFor = headerValue(headers, 'x-forwarded-for');
+  if (!forwardedFor) return '';
+  // Right-most entry is appended by the closest proxy and is hardest for a client to control.
+  const parts = forwardedFor.split(',');
+  const nearest = parts[parts.length - 1].trim();
+  return isPlausibleAddress(nearest) ? nearest.toLowerCase() : '';
+}
+
+function isPlausibleAddress(value) {
+  return Boolean(value) && value.length <= 64 && /^[0-9a-fA-F.:[\]%]+$/.test(value);
+}
+
 export function buildForwardedHeaders(headers = {}) {
   const forwarded = new Headers();
   for (const name of FORWARDED_REQUEST_HEADERS) {
-    const value = typeof headers.get === 'function' ? headers.get(name) : headers[name];
-    if (value) forwarded.set(name, Array.isArray(value) ? value.join(', ') : String(value));
+    const value = headerValue(headers, name);
+    if (value) forwarded.set(name, value);
   }
   forwarded.set('accept-encoding', 'identity');
+
+  const clientIp = resolveClientIp(headers);
+  if (clientIp) forwarded.set(CLIENT_IP_HEADER, clientIp);
+
   return forwarded;
 }
 
@@ -60,9 +95,12 @@ export async function proxyRadarRequest(request, response, options = {}) {
     if (cookies.length) response.setHeader('Set-Cookie', cookies);
     response.end(Buffer.from(await upstream.arrayBuffer()));
   } catch (error) {
+    // Internal configuration detail stays in the platform log; the browser gets a generic message so
+    // deployment state is not disclosed to anonymous callers.
+    console.error('radar_proxy_error', error instanceof Error ? error.message : 'unknown proxy failure');
     response.statusCode = 502;
     response.setHeader('Content-Type', 'application/json');
     response.setHeader('Cache-Control', 'no-store');
-    response.end(JSON.stringify({ ok: false, error: error instanceof Error ? error.message : 'Radar proxy failed' }));
+    response.end(JSON.stringify({ ok: false, error: 'Radar backend is unavailable.' }));
   }
 }

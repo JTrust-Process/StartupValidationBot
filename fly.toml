@@ -1,7 +1,9 @@
 app = "startup-validation-bot-radar"
 primary_region = "iad"
 kill_signal = "SIGTERM"
-kill_timeout = "60s"
+# Must exceed spring.lifecycle.timeout-per-shutdown-phase (60s) so a job that uses its full grace
+# period finishes instead of being SIGKILLed at the boundary.
+kill_timeout = "90s"
 
 [build]
   dockerfile = "Dockerfile"

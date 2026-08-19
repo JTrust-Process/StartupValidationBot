@@ -1,7 +1,7 @@
 export interface RadarSource {
   id: number;
   sourceKey: string;
-  sourceType: 'RSS' | 'PRODUCT_HUNT' | 'MANUAL' | 'YC_DIRECTORY';
+  sourceType: 'RSS' | 'PRODUCT_HUNT' | 'MANUAL' | 'YC_DIRECTORY' | 'HACKER_NEWS';
   name: string;
   enabled: boolean;
   lastCheckedAt: string | null;
@@ -21,6 +21,8 @@ export interface RadarCompany {
   sourceCount: number;
   firstSeenAt: string;
   lastSeenAt: string;
+  accelerator: string;
+  acceleratorBatch: string;
 }
 
 export interface RadarAdminCompany extends RadarCompany {
@@ -99,6 +101,8 @@ export interface RadarAdminCompanyDetail {
 export interface RadarAdminSession {
   authenticated: boolean;
   expiresAt: string | null;
+  /** False when RADAR_ADMIN_PASSWORD_HASH is unset: the deployment cannot authenticate anyone. */
+  configured: boolean;
 }
 
 export interface RadarJobStatus {
@@ -175,3 +179,108 @@ export interface RadarCompanyFilters {
   minRadar?: number;
   sort?: 'radar' | 'newest' | 'updated';
 }
+
+/* ------------------------------------------------------------------ Phase 2 intelligence layer */
+
+export type ChangeSignificance = 'MINOR' | 'INTERESTING' | 'IMPORTANT' | 'MAJOR';
+
+export interface RadarCompanyChange {
+  id: number;
+  companyId: number;
+  companyName: string;
+  changeType: string;
+  significance: ChangeSignificance;
+  summary: string;
+  previousValue: string | null;
+  currentValue: string | null;
+  whyItMatters: string | null;
+  detectedAt: string;
+}
+
+export interface RadarHomeCompanyCard {
+  id: number;
+  name: string;
+  description: string;
+  sector: string;
+  categories: string[];
+  accelerator: string;
+  acceleratorBatch: string;
+  radarScore: number;
+  personalScore: number;
+  sourceCount: number;
+  watched: boolean;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  whyItMatters: string[];
+  whyYouMightCare: string[];
+  highlight: string;
+}
+
+export interface RadarTrendDetail {
+  id: number;
+  key: string;
+  name: string;
+  summary: string;
+  whyItMatters: string;
+  confidence: 'LOW' | 'MEDIUM' | 'HIGH';
+  companyCount: number;
+  recentDiscoveries: number;
+  priorDiscoveries: number;
+  velocityDirection: 'NEW' | 'RISING' | 'STEADY' | 'COOLING' | 'UNKNOWN';
+  velocityNote: string;
+  momentumScore: number;
+  companies: RadarAdminCompany[];
+}
+
+export interface RadarHomeSection {
+  key: string;
+  title: string;
+  subtitle: string;
+  kind: 'COMPANIES' | 'CHANGES' | 'TRENDS';
+  companies: RadarHomeCompanyCard[];
+  changes: RadarCompanyChange[];
+  trends: RadarTrendDetail[];
+}
+
+export interface RadarHome {
+  generatedAt: string;
+  totalCompanies: number;
+  newSinceYesterday: number;
+  meaningfulChanges: number;
+  sections: RadarHomeSection[];
+}
+
+export interface RadarInterest {
+  label: string;
+  weight: number;
+  keywords: string[];
+}
+
+export interface RadarInterestProfile {
+  interests: RadarInterest[];
+  updatedAt: string | null;
+}
+
+export interface RadarInterestSaveResult {
+  profile: RadarInterestProfile;
+  companiesRescored: number;
+}
+
+export interface RadarRelevanceExplanation {
+  score: number;
+  matchedInterests: string[];
+  reasons: string[];
+}
+
+export interface RadarSimilarCompany {
+  companyId: number;
+  name: string;
+  score: number;
+  relationship: string;
+  reasons: string[];
+  categories: string[];
+  radarScore: number;
+  personalScore: number;
+}
+
+export type RadarInteractionSignal = 'WATCH' | 'IGNORE' | 'DEEP_DIVE' | 'VISIT';

@@ -17,6 +17,8 @@ import java.util.List;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
@@ -25,9 +27,12 @@ import org.xml.sax.InputSource;
 import com.startupvalidationbot.radar.ContentHash;
 import com.startupvalidationbot.radar.RadarDomain.Candidate;
 import com.startupvalidationbot.radar.RadarDomain.Source;
+import com.startupvalidationbot.radar.source.HeadlineCompanyName.Extraction;
 
 @Component
 public class RssStartupSourceAdapter implements StartupSourceAdapter {
+    private static final Logger log = LoggerFactory.getLogger(RssStartupSourceAdapter.class);
+
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .followRedirects(HttpClient.Redirect.NEVER)
@@ -94,6 +99,7 @@ public class RssStartupSourceAdapter implements StartupSourceAdapter {
             }
 
             List<Candidate> candidates = new ArrayList<>();
+            int skipped = 0;
             for (int index = 0; index < items.getLength() && candidates.size() < limit; index++) {
                 Element item = (Element) items.item(index);
                 String title = text(item, "title");
@@ -107,10 +113,30 @@ public class RssStartupSourceAdapter implements StartupSourceAdapter {
                 String externalId = firstNonBlank(text(item, "guid"), text(item, "id"), link,
                         ContentHash.sha256(title).substring(0, 24));
                 String rawText = String.join("\n", title, description, String.join(", ", categories));
-                candidates.add(new Candidate(source.sourceKey(), externalId, title, link, stripHtml(description),
+
+                // A headline is not a company name. Extract one deterministically, and skip company
+                // creation entirely when we cannot do so confidently: a junk identity is worse than a
+                // missed article, and the article itself stays available in the feed.
+                Extraction extraction = HeadlineCompanyName.extract(title);
+                if (!extraction.usable()) {
+                    skipped++;
+                    log.info("radar_headline_skipped source={} reason=no_confident_company_name title=\"{}\"",
+                            source.sourceKey(), title);
+                    continue;
+                }
+
+                // The feed link is the article, not the startup's own site. Passing it as websiteUrl
+                // would store a publisher host in the UNIQUE company domain column and merge every
+                // article from that feed into one company. Identity falls back to the company name.
+                candidates.add(new Candidate(source.sourceKey(), externalId, extraction.name(), null,
+                        stripHtml(description),
                         categories.isEmpty() ? "Unknown" : categories.get(0), categories, null, null, link,
                         parseDate(firstNonBlank(text(item, "pubDate"), text(item, "published"), text(item, "updated"))),
                         rawText));
+            }
+            if (skipped > 0) {
+                log.info("radar_headline_skipped_total source={} skipped={} accepted={}", source.sourceKey(),
+                        skipped, candidates.size());
             }
             return candidates;
         } catch (Exception error) {

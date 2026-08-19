@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import com.startupvalidationbot.radar.ContentHash;
 import com.startupvalidationbot.radar.RadarRequests.ManualDiscovery;
+import com.startupvalidationbot.radar.RadarIntelStore;
 import com.startupvalidationbot.radar.RadarStore;
 import com.startupvalidationbot.radar.RadarStore.CompanyUpsert;
 import com.startupvalidationbot.radar.RadarStore.DiscoverySaveResult;
@@ -25,14 +26,16 @@ import com.startupvalidationbot.radar.source.StartupSourceAdapter;
 @Service
 public class RadarDiscoveryService {
     private final RadarStore store;
+    private final RadarIntelStore intelStore;
     private final RadarAnalysisService analysisService;
     private final List<StartupSourceAdapter> adapters;
     private final int maxPerSource;
 
-    public RadarDiscoveryService(RadarStore store, RadarAnalysisService analysisService,
-            List<StartupSourceAdapter> adapters,
+    public RadarDiscoveryService(RadarStore store, RadarIntelStore intelStore,
+            RadarAnalysisService analysisService, List<StartupSourceAdapter> adapters,
             @Value("${radar.discovery-max-per-source:30}") int maxPerSource) {
         this.store = store;
+        this.intelStore = intelStore;
         this.analysisService = analysisService;
         this.adapters = adapters;
         this.maxPerSource = Math.max(1, Math.min(maxPerSource, 100));
@@ -122,6 +125,8 @@ public class RadarDiscoveryService {
     private IngestResult ingest(Source source, Candidate candidate) {
         CompanyUpsert upsert = store.upsertCompany(candidate);
         DiscoverySaveResult discovery = store.saveDiscoveryAndSnapshot(upsert.company().id(), source, candidate);
+        // Persist tiered changes so the watchlist and Radar Home can rank by what actually matters.
+        intelStore.recordChanges(upsert.company().id(), discovery.snapshotId(), discovery.changes());
         store.saveResearchSource(upsert.company().id(), source.sourceType(), source.name(), candidate.sourceUrl(),
                 candidate.description(), true);
         Company refreshed = store.findCompany(upsert.company().id()).orElseThrow();

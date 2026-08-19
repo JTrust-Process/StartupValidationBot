@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -27,6 +28,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.startupvalidationbot.radar.intel.SnapshotChangeDetector;
+import com.startupvalidationbot.radar.intel.SnapshotChangeDetector.DetectedChange;
 
 @Repository
 public class RadarStore {
@@ -125,8 +128,9 @@ public class RadarStore {
                 PreparedStatement statement = connection.prepareStatement("""
                         INSERT INTO radar_companies (
                             name, normalized_name, domain, website_url, description, sector, categories_json,
-                            headquarters, founded_year, aliases_json, first_seen_at, last_seen_at, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, ?)
+                            headquarters, founded_year, aliases_json, accelerator, accelerator_batch,
+                            first_seen_at, last_seen_at, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?)
                         """, Statement.RETURN_GENERATED_KEYS);
                 statement.setString(1, candidate.companyName().trim());
                 statement.setString(2, normalizedName);
@@ -141,10 +145,12 @@ public class RadarStore {
                 } else {
                     statement.setInt(9, candidate.foundedYear());
                 }
-                statement.setTimestamp(10, Timestamp.valueOf(now));
-                statement.setTimestamp(11, Timestamp.valueOf(now));
+                statement.setString(10, valueOrEmpty(candidate.accelerator()));
+                statement.setString(11, valueOrEmpty(candidate.acceleratorBatch()));
                 statement.setTimestamp(12, Timestamp.valueOf(now));
                 statement.setTimestamp(13, Timestamp.valueOf(now));
+                statement.setTimestamp(14, Timestamp.valueOf(now));
+                statement.setTimestamp(15, Timestamp.valueOf(now));
                 return statement;
             }, keys);
             companyId = keys.getKey().longValue();
@@ -158,8 +164,8 @@ public class RadarStore {
             jdbc.update("""
                     UPDATE radar_companies SET
                         name = ?, normalized_name = ?, domain = ?, website_url = ?, description = ?, sector = ?,
-                        categories_json = ?, headquarters = ?, founded_year = ?, aliases_json = ?, last_seen_at = ?,
-                        updated_at = ?
+                        categories_json = ?, headquarters = ?, founded_year = ?, aliases_json = ?,
+                        accelerator = ?, accelerator_batch = ?, last_seen_at = ?, updated_at = ?
                     WHERE id = ?
                     """,
                     candidate.companyName().trim(), normalizedName, domain != null ? domain : current.domain(),
@@ -169,7 +175,8 @@ public class RadarStore {
                     toJson(mergeLists(current.categories(), candidate.categories())),
                     prefer(candidate.headquarters(), current.headquarters()),
                     candidate.foundedYear() != null ? candidate.foundedYear() : current.foundedYear(),
-                    toJson(aliases), now, now, companyId);
+                    toJson(aliases), prefer(candidate.accelerator(), current.accelerator()),
+                    prefer(candidate.acceleratorBatch(), current.acceleratorBatch()), now, now, companyId);
         }
         return new CompanyUpsert(findCompany(companyId).orElseThrow(), created);
     }
@@ -208,23 +215,55 @@ public class RadarStore {
                 candidate.foundedYear(), candidate.sourceUrl(), candidate.publishedAt()));
         String inputHash = ContentHash.sha256(snapshotJson);
         boolean snapshotCreated = false;
+        Long snapshotId = null;
+        List<DetectedChange> detectedChanges = List.of();
         if (jdbc.queryForObject("SELECT COUNT(*) FROM radar_company_snapshots WHERE company_id = ? AND input_hash = ?",
                 Integer.class, companyId, inputHash) == 0) {
             List<String> priorSnapshots = jdbc.queryForList("""
                     SELECT snapshot_json FROM radar_company_snapshots
                     WHERE company_id = ? ORDER BY captured_at DESC LIMIT 1
                     """, String.class, companyId);
+
+            // Deterministic, tiered change detection. Comparing meaning rather than bytes means a
+            // reworded sentence no longer looks the same as a Series A.
+            detectedChanges = priorSnapshots.isEmpty()
+                    ? List.of()
+                    : SnapshotChangeDetector.detect(flattenSnapshot(readTree(priorSnapshots.get(0))),
+                            flattenSnapshot(readTree(snapshotJson)));
             List<String> changes = priorSnapshots.isEmpty()
                     ? List.of("First snapshot")
-                    : describeChanges(readTree(priorSnapshots.get(0)), readTree(snapshotJson));
+                    : detectedChanges.stream().map(DetectedChange::summary).toList();
             jdbc.update("""
                     INSERT INTO radar_company_snapshots (
                         company_id, source_id, captured_at, input_hash, snapshot_json, notable_changes_json
                     ) VALUES (?, ?, ?, ?, ?, ?)
                     """, companyId, source.id(), now, inputHash, snapshotJson, toJson(changes));
             snapshotCreated = true;
+            snapshotId = jdbc.queryForList(
+                    "SELECT id FROM radar_company_snapshots WHERE company_id = ? AND input_hash = ?",
+                    Long.class, companyId, inputHash).stream().findFirst().orElse(null);
         }
-        return new DiscoverySaveResult(created, snapshotCreated);
+        return new DiscoverySaveResult(created, snapshotCreated, snapshotId, detectedChanges);
+    }
+
+    /** Flattens a stored snapshot document into the plain field map the change detector consumes. */
+    private static Map<String, String> flattenSnapshot(JsonNode node) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("companyName", node.path("companyName").asText(""));
+        fields.put("websiteUrl", node.path("websiteUrl").asText(""));
+        fields.put("description", node.path("description").asText(""));
+        fields.put("sector", node.path("sector").asText(""));
+        fields.put("headquarters", node.path("headquarters").asText(""));
+        fields.put("sourceUrl", node.path("sourceUrl").asText(""));
+        JsonNode categories = node.path("categories");
+        if (categories.isArray()) {
+            List<String> values = new ArrayList<>();
+            categories.forEach(entry -> values.add(entry.asText("")));
+            fields.put("categories", String.join(", ", values));
+        } else {
+            fields.put("categories", "");
+        }
+        return fields;
     }
 
     public Optional<Analysis> findCachedAnalysis(long companyId, String analysisType, String inputHash,
@@ -520,9 +559,9 @@ public class RadarStore {
                 SELECT id, source_key, source_type, name, url, enabled, last_checked_at, last_status, last_error
                 FROM radar_sources ORDER BY id
                 """, (rs, row) -> new ExportSource(rs.getLong("id"), rs.getString("source_key"),
-                        rs.getString("source_type"), rs.getString("name"), rs.getString("url"),
+                        rs.getString("source_type"), rs.getString("name"), SafeUrl.redact(rs.getString("url")),
                         rs.getBoolean("enabled"), timestamp(rs, "last_checked_at"), rs.getString("last_status"),
-                        rs.getString("last_error")));
+                        SafeUrl.redactUrlsIn(rs.getString("last_error"))));
         List<ExportDiscovery> discoveries = jdbc.query("""
                 SELECT id, company_id, source_id, external_id, source_url, raw_text_hash, discovered_at, last_seen_at
                 FROM radar_discoveries ORDER BY id
@@ -642,7 +681,8 @@ public class RadarStore {
     public record CompanyUpsert(Company company, boolean created) {
     }
 
-    public record DiscoverySaveResult(boolean discoveryCreated, boolean snapshotCreated) {
+    public record DiscoverySaveResult(boolean discoveryCreated, boolean snapshotCreated, Long snapshotId,
+            List<DetectedChange> changes) {
     }
 
     public record JobStart(boolean acquired, boolean duplicate, String leaseToken) {
@@ -680,7 +720,8 @@ public class RadarStore {
                 (Integer) rs.getObject("founded_year"), readStringList(rs.getString("aliases_json")),
                 rs.getInt("radar_score"), rs.getInt("personal_score"), rs.getString("score_reasoning"),
                 rs.getInt("source_count"), timestamp(rs, "first_seen_at"), timestamp(rs, "last_seen_at"),
-                rs.getBoolean("ignored"), rs.getBoolean("watched"));
+                rs.getBoolean("ignored"), rs.getBoolean("watched"),
+                valueOrEmpty(rs.getString("accelerator")), valueOrEmpty(rs.getString("accelerator_batch")));
     }
 
     private RowMapper<Analysis> analysisMapper() {
@@ -724,22 +765,6 @@ public class RadarStore {
             return objectMapper.readTree(value);
         } catch (JsonProcessingException error) {
             throw new IllegalArgumentException("Stored Radar JSON is invalid", error);
-        }
-    }
-
-    private static List<String> describeChanges(JsonNode previous, JsonNode current) {
-        List<String> changes = new ArrayList<>();
-        compareField(previous, current, "websiteUrl", "Website changed", changes);
-        compareField(previous, current, "description", "Company description changed", changes);
-        compareField(previous, current, "sector", "Sector classification changed", changes);
-        compareField(previous, current, "categories", "Category tags changed", changes);
-        return changes.isEmpty() ? List.of("Source content changed") : changes;
-    }
-
-    private static void compareField(JsonNode previous, JsonNode current, String field, String label,
-            List<String> changes) {
-        if (!previous.path(field).equals(current.path(field))) {
-            changes.add(label);
         }
     }
 

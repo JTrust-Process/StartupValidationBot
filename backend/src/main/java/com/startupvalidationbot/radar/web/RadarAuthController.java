@@ -12,6 +12,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.startupvalidationbot.radar.auth.RadarBrowserAuthService;
 import com.startupvalidationbot.radar.auth.RadarBrowserAuthService.BrowserSession;
+import com.startupvalidationbot.radar.auth.RadarClientKeyResolver;
 import com.startupvalidationbot.radar.auth.RadarLoginThrottle;
 import com.startupvalidationbot.radar.auth.RadarOriginPolicy;
 
@@ -27,19 +28,21 @@ public class RadarAuthController {
     private final RadarBrowserAuthService auth;
     private final RadarLoginThrottle throttle;
     private final RadarOriginPolicy originPolicy;
+    private final RadarClientKeyResolver clientKeys;
 
     public RadarAuthController(RadarBrowserAuthService auth, RadarLoginThrottle throttle,
-            RadarOriginPolicy originPolicy) {
+            RadarOriginPolicy originPolicy, RadarClientKeyResolver clientKeys) {
         this.auth = auth;
         this.throttle = throttle;
         this.originPolicy = originPolicy;
+        this.clientKeys = clientKeys;
     }
 
     @PostMapping("/login")
     public ResponseEntity<BrowserSession> login(@Valid @RequestBody LoginRequest login,
             HttpServletRequest request, HttpServletResponse response) {
         originPolicy.requireAllowed(request);
-        String clientKey = request.getRemoteAddr() == null ? "unknown" : request.getRemoteAddr();
+        String clientKey = clientKeys.resolve(request);
         throttle.requireAllowed(clientKey);
         try {
             BrowserSession session = auth.login(login.password().toCharArray(), response);

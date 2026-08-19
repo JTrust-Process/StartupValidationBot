@@ -18,11 +18,12 @@ public final class RadarViews {
 
     public record PublicCompany(long id, String name, String domain, String websiteUrl, String description,
             String sector, List<String> categories, int radarScore, int sourceCount, LocalDateTime firstSeenAt,
-            LocalDateTime lastSeenAt) {
+            LocalDateTime lastSeenAt, String accelerator, String acceleratorBatch) {
         public static PublicCompany from(Company company) {
             return new PublicCompany(company.id(), company.name(), company.domain(), company.websiteUrl(),
                     company.description(), company.sector(), company.categories(), company.radarScore(),
-                    company.sourceCount(), company.firstSeenAt(), company.lastSeenAt());
+                    company.sourceCount(), company.firstSeenAt(), company.lastSeenAt(), company.accelerator(),
+                    company.acceleratorBatch());
         }
     }
 

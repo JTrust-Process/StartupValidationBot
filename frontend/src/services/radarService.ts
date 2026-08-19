@@ -1,5 +1,14 @@
 import type {
   RadarAnalysis,
+  RadarHome,
+  RadarInteractionSignal,
+  RadarInterest,
+  RadarInterestProfile,
+  RadarInterestSaveResult,
+  RadarRelevanceExplanation,
+  RadarSimilarCompany,
+  RadarCompanyChange,
+  RadarTrendDetail,
   RadarCompany,
   RadarAdminCompany,
   RadarAdminCompanyDetail,
@@ -191,4 +200,66 @@ export async function downloadRadarExport(): Promise<void> {
   link.download = 'startup-radar-export.json';
   link.click();
   URL.revokeObjectURL(link.href);
+}
+
+/* ------------------------------------------------------------------ Phase 2 intelligence layer */
+
+export function getRadarHome(): Promise<RadarHome> {
+  return request<RadarHome>('/home');
+}
+
+export function listRadarTrendDetails(): Promise<RadarTrendDetail[]> {
+  return request<RadarTrendDetail[]>('/trends/detailed');
+}
+
+export function getRadarInterests(): Promise<RadarInterestProfile> {
+  return request<RadarInterestProfile>('/admin/interests');
+}
+
+export function saveRadarInterests(interests: RadarInterest[]): Promise<RadarInterestSaveResult> {
+  return request<RadarInterestSaveResult>('/admin/interests', {
+    method: 'PUT',
+    body: JSON.stringify({ interests })
+  });
+}
+
+export function recomputeRadarRelevance(): Promise<{ companiesRescored: number }> {
+  return request<{ companiesRescored: number }>('/admin/interests/recompute', { method: 'POST', body: '{}' });
+}
+
+export function getRadarRelevance(companyId: number): Promise<RadarRelevanceExplanation> {
+  return request<RadarRelevanceExplanation>(`/companies/${companyId}/relevance`);
+}
+
+/**
+ * Records an interaction. Signals are persisted server-side for future personalisation; nothing
+ * about the user is stored in the browser.
+ */
+export function recordRadarSignal(
+  companyId: number,
+  signalType: RadarInteractionSignal
+): Promise<RadarRelevanceExplanation> {
+  return request<RadarRelevanceExplanation>(`/companies/${companyId}/signals`, {
+    method: 'POST',
+    body: JSON.stringify({ signalType })
+  });
+}
+
+export function listSimilarRadarCompanies(companyId: number, limit = 6): Promise<RadarSimilarCompany[]> {
+  return request<RadarSimilarCompany[]>(`/companies/${companyId}/similar?limit=${limit}`);
+}
+
+export function listRadarCompanyChanges(companyId: number, limit = 20): Promise<RadarCompanyChange[]> {
+  return request<RadarCompanyChange[]>(`/companies/${companyId}/changes?limit=${limit}`);
+}
+
+export function listRecentRadarChanges(
+  options: { watched?: boolean; minSignificance?: string; days?: number; limit?: number } = {}
+): Promise<RadarCompanyChange[]> {
+  const params = new URLSearchParams();
+  if (options.watched !== undefined) params.set('watched', String(options.watched));
+  if (options.minSignificance) params.set('minSignificance', options.minSignificance);
+  if (options.days !== undefined) params.set('days', String(options.days));
+  if (options.limit !== undefined) params.set('limit', String(options.limit));
+  return request<RadarCompanyChange[]>(`/changes${params.size ? `?${params.toString()}` : ''}`);
 }

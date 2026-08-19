@@ -57,14 +57,20 @@ class RadarStoreIntegrationTest {
     }
 
     @Test
-    void protectsRadarViewsAndKeepsSanitizedProjectionsSeparate() throws Exception {
+    void requiresAuthenticationForEveryRadarReadAndProtectsAdminJobs() throws Exception {
         var company = discoveryService.ingestManual(discovery("Public Radar Company", "https://public-radar.test"));
         mockMvc.perform(get("/api/radar/health")).andExpect(status().isOk());
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"))
                 .andExpect(jsonPath("$.components").doesNotExist());
+        // This is a private application: every Radar data read requires a credential.
         mockMvc.perform(get("/api/radar/companies")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/radar/companies/{id}", company.id())).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/radar/sources")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/radar/trends")).andExpect(status().isUnauthorized());
+
+        // The non-admin projection still withholds personal scoring and raw snapshot/source text.
         mockMvc.perform(get("/api/radar/companies").header("Authorization", "Bearer test-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].personalScore").doesNotExist())

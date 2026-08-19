@@ -14,13 +14,33 @@ public final class RadarDomain {
 
     public record Candidate(String sourceKey, String externalId, String companyName, String websiteUrl,
             String description, String sector, List<String> categories, String headquarters, Integer foundedYear,
-            String sourceUrl, LocalDateTime publishedAt, String rawText) {
+            String sourceUrl, LocalDateTime publishedAt, String rawText, String accelerator,
+            String acceleratorBatch) {
+
+        /** Most sources carry no accelerator provenance; this keeps their call sites unchanged in spirit. */
+        public Candidate(String sourceKey, String externalId, String companyName, String websiteUrl,
+                String description, String sector, List<String> categories, String headquarters,
+                Integer foundedYear, String sourceUrl, LocalDateTime publishedAt, String rawText) {
+            this(sourceKey, externalId, companyName, websiteUrl, description, sector, categories, headquarters,
+                    foundedYear, sourceUrl, publishedAt, rawText, "", "");
+        }
     }
 
     public record Company(Long id, String name, String domain, String websiteUrl, String description, String sector,
             List<String> categories, String headquarters, Integer foundedYear, List<String> aliases, int radarScore,
             int personalScore, String scoreReasoning, int sourceCount, LocalDateTime firstSeenAt,
-            LocalDateTime lastSeenAt, boolean ignored, boolean watched) {
+            LocalDateTime lastSeenAt, boolean ignored, boolean watched, String accelerator,
+            String acceleratorBatch) {
+
+        /** Compact constructor for callers that predate accelerator provenance (tests and fixtures). */
+        public Company(Long id, String name, String domain, String websiteUrl, String description, String sector,
+                List<String> categories, String headquarters, Integer foundedYear, List<String> aliases,
+                int radarScore, int personalScore, String scoreReasoning, int sourceCount,
+                LocalDateTime firstSeenAt, LocalDateTime lastSeenAt, boolean ignored, boolean watched) {
+            this(id, name, domain, websiteUrl, description, sector, categories, headquarters, foundedYear,
+                    aliases, radarScore, personalScore, scoreReasoning, sourceCount, firstSeenAt, lastSeenAt,
+                    ignored, watched, "", "");
+        }
     }
 
     public record Analysis(Long id, String analysisType, String analysisOrigin, String provider, String model,

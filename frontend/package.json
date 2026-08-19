@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "test": "node --test --test-isolation=none server/*.test.mjs",
+    "test": "node --test server/*.test.mjs",
     "lint": "eslint src server api",
     "dev": "vite",
     "build": "tsc && vite build",

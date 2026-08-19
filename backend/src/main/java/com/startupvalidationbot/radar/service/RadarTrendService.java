@@ -36,10 +36,9 @@ public class RadarTrendService {
         LocalDateTime periodEnd = LocalDateTime.now();
         LocalDateTime periodStart = periodEnd.minusDays(30);
         Map<String, List<Company>> groups = new LinkedHashMap<>();
+        Map<String, List<Company>> historicalGroups = new LinkedHashMap<>();
         for (Company company : store.listCompanies()) {
-            if (company.lastSeenAt().isBefore(periodStart) || company.ignored()) {
-                continue;
-            }
+            if (company.ignored()) continue;
             List<String> categories = company.categories().isEmpty() ? List.of(company.sector()) : company.categories();
             for (String category : categories) {
                 if (category == null || category.isBlank() || "Unknown".equalsIgnoreCase(category)) {
@@ -47,7 +46,10 @@ public class RadarTrendService {
                 }
                 String key = category.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-")
                         .replaceAll("(^-|-$)", "");
-                groups.computeIfAbsent(key, ignored -> new ArrayList<>()).add(company);
+                historicalGroups.computeIfAbsent(key, ignored -> new ArrayList<>()).add(company);
+                if (!company.lastSeenAt().isBefore(periodStart)) {
+                    groups.computeIfAbsent(key, ignored -> new ArrayList<>()).add(company);
+                }
             }
         }
         List<TrendDraft> trends = groups.entrySet().stream()
@@ -68,7 +70,7 @@ public class RadarTrendService {
                 .limit(20)
                 .toList();
         store.replaceTrends(trends, periodStart, periodEnd);
-        enrichTrendMetrics(trends, periodStart);
+        enrichTrendMetrics(trends, periodStart, historicalGroups);
         return trends.size();
     }
 
@@ -78,12 +80,15 @@ public class RadarTrendService {
      * A percentage is only produced when the earlier window holds enough companies to justify one;
      * otherwise the trend reports absolute counts and says why. No number here is invented.
      */
-    private void enrichTrendMetrics(List<TrendDraft> trends, LocalDateTime windowStart) {
+    private void enrichTrendMetrics(List<TrendDraft> trends, LocalDateTime windowStart,
+            Map<String, List<Company>> historicalGroups) {
         LocalDateTime priorStart = windowStart.minusDays(WINDOW_DAYS);
         boolean hasPriorWindow = intelStore.hasHistoryBefore(windowStart);
 
         for (TrendDraft trend : trends) {
-            var counts = intelStore.trendWindowCounts(trend.companyIds(), windowStart, priorStart);
+            List<Long> historicalCompanyIds = historicalGroups.getOrDefault(trend.key(), List.of()).stream()
+                    .map(Company::id).distinct().toList();
+            var counts = intelStore.trendWindowCounts(historicalCompanyIds, windowStart, priorStart);
             var velocity = TrendVelocity.compute(counts.recent(), counts.prior(), hasPriorWindow, WINDOW_DAYS);
             var confidence = TrendVelocity.confidence(trend.companyIds().size(), velocity.sufficientHistory(),
                     counts.distinctSources());

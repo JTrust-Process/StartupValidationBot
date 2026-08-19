@@ -14,7 +14,7 @@ import com.startupvalidationbot.radar.ai.PublicCompanyAnalysisInput.PublicSource
 
 @Component
 public class PublicRadarAnalysisInputFactory {
-    private static final Set<String> EXTERNAL_PUBLIC_SOURCE_TYPES = Set.of("RSS", "PRODUCT_HUNT");
+    private static final Set<String> EXTERNAL_PUBLIC_SOURCE_TYPES = Set.of("RSS", "PRODUCT_HUNT", "HACKER_NEWS");
     private final RadarStore store;
 
     public PublicRadarAnalysisInputFactory(RadarStore store) {

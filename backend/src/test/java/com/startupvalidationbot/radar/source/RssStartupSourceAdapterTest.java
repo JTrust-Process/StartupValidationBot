@@ -35,7 +35,7 @@ class RssStartupSourceAdapterTest {
     }
 
     @Test
-    void neverTreatsTheArticleLinkAsTheCompanyWebsite() {
+    void neverTreatsTheArticleLinkAsTheCompanyWebsite() throws SourceFetchException {
         String xml = """
                 <rss version="2.0"><channel>
                   <item><title>Acme Robotics raises $20M Series A</title>
@@ -60,7 +60,7 @@ class RssStartupSourceAdapterTest {
     }
 
     @Test
-    void skipsHeadlinesWithoutAConfidentCompanyName() {
+    void skipsHeadlinesWithoutAConfidentCompanyName() throws SourceFetchException {
         String xml = """
                 <rss version="2.0"><channel>
                   <item><title>Why every startup should rethink pricing</title>

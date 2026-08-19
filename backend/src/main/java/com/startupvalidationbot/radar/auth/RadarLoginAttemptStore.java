@@ -4,7 +4,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
-import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,9 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class RadarLoginAttemptStore {
     private final JdbcTemplate jdbc;
+    private final boolean postgres;
 
     public RadarLoginAttemptStore(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
+        this.postgres = Boolean.TRUE.equals(jdbc.execute((ConnectionCallback<Boolean>) connection ->
+                "PostgreSQL".equalsIgnoreCase(connection.getMetaData().getDatabaseProductName())));
     }
 
     public Optional<AttemptRecord> find(String clientKey) {
@@ -80,14 +83,22 @@ public class RadarLoginAttemptStore {
     }
 
     private void ensureRow(String clientKey, LocalDateTime now) {
-        try {
+        if (postgres) {
             jdbc.update("""
                     INSERT INTO radar_login_attempts (client_key, failures, window_started_at, updated_at)
                     VALUES (?, 0, ?, ?)
+                    ON CONFLICT (client_key) DO NOTHING
                     """, clientKey, now, now);
-        } catch (DuplicateKeyException ignored) {
-            // Another request created the row first; the FOR UPDATE read below serialises us.
+            return;
         }
+        jdbc.update("""
+                MERGE INTO radar_login_attempts AS target
+                USING (VALUES (?, ?, ?)) AS incoming (client_key, window_started_at, updated_at)
+                   ON target.client_key = incoming.client_key
+                WHEN NOT MATCHED THEN
+                    INSERT (client_key, failures, window_started_at, updated_at)
+                    VALUES (incoming.client_key, 0, incoming.window_started_at, incoming.updated_at)
+                """, clientKey, now, now);
     }
 
     public record AttemptRecord(String clientKey, int failures, LocalDateTime windowStartedAt,

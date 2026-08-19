@@ -2,11 +2,13 @@ package com.startupvalidationbot.radar;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -94,7 +96,9 @@ public class RadarIntelStore implements PersonalRelevanceInputs {
                 """, resultSet -> {
             counts.put(resultSet.getString("signal_type"), resultSet.getInt("total"));
         }, companyId);
-        return toSummary(counts);
+        Boolean currentlyIgnored = jdbc.queryForObject(
+                "SELECT ignored FROM radar_companies WHERE id = ?", Boolean.class, companyId);
+        return toSummary(counts, Boolean.TRUE.equals(currentlyIgnored));
     }
 
     /** Batched lookup so a feed of 50 companies does not issue 50 queries. */
@@ -110,9 +114,12 @@ public class RadarIntelStore implements PersonalRelevanceInputs {
                     raw.computeIfAbsent(resultSet.getLong("company_id"), ignored -> new LinkedHashMap<>())
                             .put(resultSet.getString("signal_type"), resultSet.getInt("total"));
                 }, companyIds.toArray());
+        Set<Long> ignoredCompanyIds = new HashSet<>(jdbc.queryForList("SELECT id FROM radar_companies WHERE id IN ("
+                + placeholders + ") AND ignored = TRUE", Long.class, companyIds.toArray()));
 
         for (Long companyId : companyIds) {
-            summaries.put(companyId, toSummary(raw.getOrDefault(companyId, Map.of())));
+            summaries.put(companyId, toSummary(raw.getOrDefault(companyId, Map.of()),
+                    ignoredCompanyIds.contains(companyId)));
         }
         return summaries;
     }
@@ -195,10 +202,11 @@ public class RadarIntelStore implements PersonalRelevanceInputs {
     /** Companies whose most recent funding-type change is recent. Powers "Recently Funded". */
     public List<Long> companiesWithRecentFunding(int sinceDays, int limit) {
         return jdbc.queryForList("""
-                SELECT DISTINCT ch.company_id FROM radar_company_changes ch
+                SELECT ch.company_id FROM radar_company_changes ch
                  WHERE ch.change_type IN ('FUNDING_ROUND', 'NEW_INVESTOR')
                    AND ch.detected_at >= ?
-                 ORDER BY ch.company_id DESC
+                 GROUP BY ch.company_id
+                 ORDER BY MAX(ch.detected_at) DESC
                  LIMIT ?
                 """, Long.class, LocalDateTime.now().minusDays(Math.max(1, sinceDays)), Math.max(1, limit));
     }
@@ -278,8 +286,9 @@ public class RadarIntelStore implements PersonalRelevanceInputs {
 
     // ---------------------------------------------------------------- helpers
 
-    private static Summary toSummary(Map<String, Integer> counts) {
-        return new Summary(counts.getOrDefault("WATCH", 0), counts.getOrDefault("IGNORE", 0),
+    private static Summary toSummary(Map<String, Integer> counts, boolean currentlyIgnored) {
+        return new Summary(counts.getOrDefault("WATCH", 0),
+                currentlyIgnored ? Math.max(1, counts.getOrDefault("IGNORE", 0)) : 0,
                 counts.getOrDefault("DEEP_DIVE", 0), counts.getOrDefault("VISIT", 0));
     }
 

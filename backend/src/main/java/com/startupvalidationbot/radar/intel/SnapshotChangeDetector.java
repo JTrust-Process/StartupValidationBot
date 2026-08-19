@@ -41,7 +41,12 @@ public final class SnapshotChangeDetector {
             Pattern.CASE_INSENSITIVE);
 
     private static final Pattern FUNDING_LANGUAGE = Pattern.compile(
-            "\\b(raised|raises|closed a|series [a-j]\\b|seed round|pre-seed|funding round|led by)\\b",
+            "\\b(?:(?:raised|raises)\\s+(?:\\$[0-9][0-9,.]*\\s*[kmb]?|(?:a\\s+)?"
+                    + "(?:pre-seed|seed|series [a-j])(?:\\s+round)?)"
+                    + "|closed\\s+(?:a\\s+)?(?:\\$[0-9][0-9,.]*\\s*[kmb]?(?:\\s+round)?"
+                    + "|(?:pre-seed|seed|series [a-j])(?:\\s+round)?)"
+                    + "|(?:pre-seed|seed|series [a-j])\\s+(?:funding\\s+)?round"
+                    + "|funding\\s+round|(?:pre-seed|seed|series [a-j])\\s+led\\s+by)\\b",
             Pattern.CASE_INSENSITIVE);
 
     private static final Pattern ACQUISITION_LANGUAGE = Pattern.compile(
@@ -217,7 +222,11 @@ public final class SnapshotChangeDetector {
         if (text == null || text.isBlank()) return found;
         String haystack = text.toLowerCase(Locale.ROOT);
         for (String investor : KNOWN_INVESTORS) {
-            if (haystack.contains(investor.toLowerCase(Locale.ROOT))) found.add(investor);
+            String phrase = investor.toLowerCase(Locale.ROOT);
+            if (Pattern.compile("(?<![a-z0-9])" + Pattern.quote(phrase) + "(?![a-z0-9])")
+                    .matcher(haystack).find()) {
+                found.add(investor);
+            }
         }
         // "Sequoia Capital" already implies "Sequoia"; keep the longer form only.
         found.removeIf(name -> found.stream()

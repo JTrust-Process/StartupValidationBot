@@ -28,12 +28,13 @@ import com.startupvalidationbot.radar.auth.RadarLoginThrottle;
 import com.startupvalidationbot.radar.service.RadarDiscoveryService;
 import com.startupvalidationbot.radar.service.RadarScoringService;
 import com.startupvalidationbot.radar.source.RssStartupSourceAdapter;
+import com.startupvalidationbot.radar.source.SourceFetchException;
 
 /**
  * Production-representative persistence coverage.
  *
  * The fast suite runs on H2, which cannot prove PostgreSQL behaviour for the things this system
- * actually depends on: Flyway V1-V5 applying in order, UNIQUE constraints on company identity and
+ * actually depends on: Flyway V1-V6 applying in order, UNIQUE constraints on company identity and
  * analysis cache keys, row-locked job leases, and durable login throttling. Those run here against
  * the real engine.
  *
@@ -92,7 +93,8 @@ class RadarPostgresIntegrationTest {
                 .anyMatch(script -> script.contains("V2__"))
                 .anyMatch(script -> script.contains("V3__"))
                 .anyMatch(script -> script.contains("V4__"))
-                .anyMatch(script -> script.contains("V5__"));
+                .anyMatch(script -> script.contains("V5__"))
+                .anyMatch(script -> script.contains("V6__"));
 
         // V4 brought the legacy diligence tables under Flyway. The context booting with
         // ddl-auto=validate is itself the assertion that the JPA mapping matches them.
@@ -119,7 +121,7 @@ class RadarPostgresIntegrationTest {
     }
 
     @Test
-    void ingestsRssCandidatesWithoutAdoptingThePublisherDomain() {
+    void ingestsRssCandidatesWithoutAdoptingThePublisherDomain() throws SourceFetchException {
         String xml = """
                 <rss version="2.0"><channel>
                   <item><title>Helio Grid raises $18M Series A</title>

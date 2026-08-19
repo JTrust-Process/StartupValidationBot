@@ -88,4 +88,15 @@ class SnapshotChangeDetectorTest {
         assertThat(SnapshotChangeDetector.investors("Round led by Sequoia Capital"))
                 .containsExactly("Sequoia Capital");
     }
+
+    @Test
+    void doesNotTreatOrdinaryRaisedLedOrAccelerationLanguageAsFunding() {
+        List<DetectedChange> changes = SnapshotChangeDetector.detect(
+                snapshot("The founder runs a product team."),
+                snapshot("The founder raised concerns about acceleration and led by example."));
+
+        assertThat(changes).extracting(DetectedChange::changeType)
+                .doesNotContain("FUNDING_ROUND", "NEW_INVESTOR");
+        assertThat(SnapshotChangeDetector.investors("Our acceleration engine is faster.")).isEmpty();
+    }
 }

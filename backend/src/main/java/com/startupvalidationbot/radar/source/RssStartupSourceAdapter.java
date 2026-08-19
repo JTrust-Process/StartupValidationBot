@@ -84,7 +84,7 @@ public class RssStartupSourceAdapter implements StartupSourceAdapter {
         return response;
     }
 
-    List<Candidate> parse(Source source, String xml, int limit) throws SourceFetchException {
+    public List<Candidate> parse(Source source, String xml, int limit) throws SourceFetchException {
         try {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);

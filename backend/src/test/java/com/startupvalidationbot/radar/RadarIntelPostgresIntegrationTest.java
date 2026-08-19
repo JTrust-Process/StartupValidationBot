@@ -121,6 +121,7 @@ class RadarIntelPostgresIntegrationTest {
         assertThat(after.reasons()).anyMatch(reason -> reason.contains("watchlist"));
 
         // Ignoring holds the company down no matter how well it matches.
+        store.ignoreCompany(company.id(), true);
         interestService.recordSignal(company.id(), "IGNORE");
         assertThat(interestService.explain(company.id()).score()).isLessThanOrEqualTo(12);
 

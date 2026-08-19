@@ -57,19 +57,21 @@ class RadarStoreIntegrationTest {
     }
 
     @Test
-    void exposesOnlyPublicRadarViewsAndProtectsAdminJobs() throws Exception {
+    void protectsRadarViewsAndKeepsSanitizedProjectionsSeparate() throws Exception {
         var company = discoveryService.ingestManual(discovery("Public Radar Company", "https://public-radar.test"));
         mockMvc.perform(get("/api/radar/health")).andExpect(status().isOk());
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"))
                 .andExpect(jsonPath("$.components").doesNotExist());
-        mockMvc.perform(get("/api/radar/companies"))
+        mockMvc.perform(get("/api/radar/companies")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/radar/companies").header("Authorization", "Bearer test-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].personalScore").doesNotExist())
                 .andExpect(jsonPath("$[0].watched").doesNotExist())
                 .andExpect(jsonPath("$[0].ignored").doesNotExist());
-        mockMvc.perform(get("/api/radar/companies/{id}", company.id()))
+        mockMvc.perform(get("/api/radar/companies/{id}", company.id())
+                .header("Authorization", "Bearer test-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.latestAnalysis.personalScore").doesNotExist())
                 .andExpect(jsonPath("$.snapshots[0].snapshotJson").doesNotExist())

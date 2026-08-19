@@ -26,4 +26,27 @@ class RadarScoringServiceTest {
         assertThat(result.whyInteresting()).anyMatch(value -> value.contains("Radar score"));
         assertThat(result.inferences()).anyMatch(value -> value.contains("not verified"));
     }
+
+    @Test
+    void matchesConfiguredInterestsAsWholeWordsOrPhrases() {
+        RadarScoringService service = new RadarScoringService("erp,ai");
+        Company falsePositive = company("Perpetual Systems",
+                "Retail email tools maintain a perpetuals trading chain.");
+        Company realMatch = company("Workflow AI", "AI infrastructure for ERP teams.");
+
+        var falsePositiveResult = service.score(falsePositive);
+        var realMatchResult = service.score(realMatch);
+
+        assertThat(falsePositiveResult.personalScore()).isEqualTo(30);
+        assertThat(falsePositiveResult.personalScoreInputs())
+                .containsExactly("No configured interest match in current public text.");
+        assertThat(realMatchResult.personalScore()).isEqualTo(66);
+        assertThat(realMatchResult.personalScoreInputs())
+                .containsExactly("Matches configured interest: erp", "Matches configured interest: ai");
+    }
+
+    private static Company company(String name, String description) {
+        return new Company(2L, name, null, null, description, "Unknown", List.of(), null, null, List.of(),
+                0, 0, "", 1, LocalDateTime.now(), LocalDateTime.now(), false, false);
+    }
 }

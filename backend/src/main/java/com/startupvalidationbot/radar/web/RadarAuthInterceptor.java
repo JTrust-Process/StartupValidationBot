@@ -43,10 +43,6 @@ public class RadarAuthInterceptor implements HandlerInterceptor {
         String path = request.getRequestURI();
         if ("GET".equalsIgnoreCase(method)) {
             return path.equals("/api/radar/health")
-                    || path.equals("/api/radar/companies")
-                    || path.matches("/api/radar/companies/\\d+")
-                    || path.equals("/api/radar/sources")
-                    || path.equals("/api/radar/trends")
                     || path.equals("/api/radar/auth/session");
         }
         return "POST".equalsIgnoreCase(method)

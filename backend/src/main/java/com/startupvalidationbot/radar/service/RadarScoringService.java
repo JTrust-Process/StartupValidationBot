@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -57,7 +58,7 @@ public class RadarScoringService {
                 .orElse(0)));
 
         List<String> themeMatches = preferredThemes.stream()
-                .filter(theme -> corpus.contains(theme.toLowerCase(Locale.ROOT)))
+                .filter(theme -> containsWholePhrase(corpus, theme))
                 .toList();
         int personalScore = clamp(25 + themeMatches.size() * 18 + Math.min(20, company.sourceCount() * 5));
 
@@ -116,6 +117,14 @@ public class RadarScoringService {
     private static int keywordPoints(String corpus, Map<String, Integer> keywords) {
         return keywords.entrySet().stream().filter(entry -> corpus.contains(entry.getKey()))
                 .mapToInt(Map.Entry::getValue).sum();
+    }
+
+    private static boolean containsWholePhrase(String corpus, String phrase) {
+        String normalized = phrase == null ? "" : phrase.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) return false;
+        Pattern pattern = Pattern.compile("(?<![\\p{L}\\p{N}])" + Pattern.quote(normalized)
+                + "(?![\\p{L}\\p{N}])");
+        return pattern.matcher(corpus).find();
     }
 
     private static String value(String value) {

@@ -112,7 +112,10 @@ public class RssStartupSourceAdapter implements StartupSourceAdapter {
                 List<String> categories = categories(item);
                 String externalId = firstNonBlank(text(item, "guid"), text(item, "id"), link,
                         ContentHash.sha256(title).substring(0, 24));
-                String rawText = String.join("\n", title, description, String.join(", ", categories));
+                String cleanDescription = stripHtml(description);
+                // Categories classify the item but are not prose evidence. Keeping them out of raw
+                // text prevents a tag such as "Thrive Capital" from becoming a claimed investor.
+                String rawText = String.join("\n", title, cleanDescription);
 
                 // A headline is not a company name. Extract one deterministically, and skip company
                 // creation entirely when we cannot do so confidently: a junk identity is worse than a
@@ -129,7 +132,7 @@ public class RssStartupSourceAdapter implements StartupSourceAdapter {
                 // would store a publisher host in the UNIQUE company domain column and merge every
                 // article from that feed into one company. Identity falls back to the company name.
                 candidates.add(new Candidate(source.sourceKey(), externalId, extraction.name(), null,
-                        stripHtml(description),
+                        cleanDescription,
                         categories.isEmpty() ? "Unknown" : categories.get(0), categories, null, null, link,
                         parseDate(firstNonBlank(text(item, "pubDate"), text(item, "published"), text(item, "updated"))),
                         rawText));

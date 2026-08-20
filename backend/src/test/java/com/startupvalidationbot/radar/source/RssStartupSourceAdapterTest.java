@@ -32,6 +32,8 @@ class RssStartupSourceAdapterTest {
         assertThat(candidates.get(0).categories()).containsExactly("Space", "Developer Tools");
         assertThat(candidates.get(0).externalId()).isEqualTo("orbit-1");
         assertThat(candidates.get(0).sourceUrl()).isEqualTo("https://orbitforge.test/launch");
+        assertThat(candidates.get(0).rawText())
+                .isEqualTo("Orbit Forge raises $4M seed round\nDeveloper infrastructure for satellite operations.");
     }
 
     @Test

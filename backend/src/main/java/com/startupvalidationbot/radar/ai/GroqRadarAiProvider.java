@@ -9,6 +9,7 @@ import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -101,9 +102,11 @@ public class GroqRadarAiProvider implements RadarAiProvider {
                         HttpResponse.BodyHandlers.ofString());
                 long latencyMs = elapsedMs(started);
                 if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                    RadarAiException error = httpError(response.statusCode(), attempt + 1);
-                    log.warn("radar_ai_call companyId={} provider={} model={} cache=miss latencyMs={} success=false retry={} errorType={}",
-                            input.companyId(), providerId(), model, latencyMs, attempt, error.errorType());
+                    RadarAiException error = httpError(response.statusCode(), response.body(), attempt + 1);
+                    log.warn("radar_ai_call companyId={} provider={} model={} cache=miss latencyMs={} success=false retry={} errorType={} httpStatus={} providerErrorType={} providerErrorCode={} providerMessage={}",
+                            input.companyId(), providerId(), model, latencyMs, attempt, error.errorType(),
+                            error.httpStatus(), error.providerErrorType(), error.providerErrorCode(),
+                            error.getMessage());
                     if (!error.retryable() || attempt == maxRetries) {
                         throw error;
                     }
@@ -124,8 +127,9 @@ public class GroqRadarAiProvider implements RadarAiProvider {
                 if (!error.retryable() || attempt == maxRetries) {
                     throw lastError;
                 }
-                log.warn("radar_ai_call companyId={} provider={} model={} cache=miss latencyMs={} success=false retry={} errorType={}",
-                        input.companyId(), providerId(), model, elapsedMs(started), attempt, error.errorType());
+                log.warn("radar_ai_call companyId={} provider={} model={} cache=miss latencyMs={} success=false retry={} errorType={} httpStatus={} providerErrorType={} providerErrorCode={}",
+                        input.companyId(), providerId(), model, elapsedMs(started), attempt, error.errorType(),
+                        error.httpStatus(), error.providerErrorType(), error.providerErrorCode());
                 sleepBeforeRetry(null, attempt);
             } catch (JsonProcessingException error) {
                 lastError = new RadarAiException("MALFORMED_RESPONSE", "Groq returned malformed response JSON",
@@ -205,21 +209,76 @@ public class GroqRadarAiProvider implements RadarAiProvider {
         return payload;
     }
 
-    private static RadarAiException httpError(int status, int attempts) {
-        return switch (status) {
-            case 401, 403 -> new RadarAiException("INVALID_CREDENTIALS", "Groq credentials were rejected", false,
-                    attempts);
-            case 404 -> new RadarAiException("MODEL_UNAVAILABLE", "Groq model or endpoint was not found", false,
-                    attempts);
-            case 408, 409, 422, 429, 498 -> new RadarAiException(status == 429 ? "RATE_LIMITED" : "RETRYABLE_HTTP",
-                    "Groq returned HTTP " + status, true, attempts);
-            default -> new RadarAiException(status >= 500 ? "PROVIDER_UNAVAILABLE" : "PROVIDER_REQUEST_REJECTED",
-                    "Groq returned HTTP " + status, status >= 500, attempts);
-        };
+    private RadarAiException httpError(int status, String responseBody, int attempts) {
+        ProviderError providerError = parseProviderError(status, responseBody);
+        String fingerprint = String.join(" ", providerError.type(), providerError.code(), providerError.message())
+                .toLowerCase(Locale.ROOT);
+        boolean structuredOutputRejection = fingerprint.contains("json_validate")
+                || fingerprint.contains("json schema")
+                || fingerprint.contains("structured output")
+                || fingerprint.contains("failed_generation")
+                || fingerprint.contains("expected schema");
+        String errorType;
+        boolean retryable;
+        if (status == 400 && structuredOutputRejection) {
+            errorType = "STRUCTURED_OUTPUT_REJECTED";
+            retryable = true;
+        } else {
+            errorType = switch (status) {
+                case 401, 403 -> "INVALID_CREDENTIALS";
+                case 404 -> "MODEL_UNAVAILABLE";
+                case 429 -> "RATE_LIMITED";
+                case 408, 409, 422, 498 -> "RETRYABLE_HTTP";
+                default -> status >= 500 ? "PROVIDER_UNAVAILABLE" : "PROVIDER_REQUEST_REJECTED";
+            };
+            retryable = switch (status) {
+                case 408, 409, 422, 429, 498 -> true;
+                default -> status >= 500;
+            };
+        }
+        return new RadarAiException(errorType, providerError.message(), retryable, attempts, status,
+                providerError.type(), providerError.code());
+    }
+
+    private ProviderError parseProviderError(int status, String responseBody) {
+        try {
+            JsonNode error = mapper.readTree(responseBody).path("error");
+            String type = safeToken(error.path("type").asText("unknown"));
+            String code = safeToken(error.path("code").asText("unknown"));
+            String message = sanitizeProviderMessage(error.path("message").asText(""));
+            if (message.isBlank()) message = "Groq returned HTTP " + status + ".";
+            return new ProviderError(type, code, message);
+        } catch (JsonProcessingException | RuntimeException error) {
+            return new ProviderError("unknown", "unknown",
+                    "Groq returned HTTP " + status + " with an unreadable error body.");
+        }
+    }
+
+    private static String sanitizeProviderMessage(String value) {
+        if (value == null) return "";
+        String sanitized = value.replaceAll("(?i)bearer\\s+\\S+", "Bearer <redacted>")
+                .replaceAll("(?i)gsk_[a-z0-9_-]+", "<redacted-key>")
+                .replaceAll("[\\p{Cntrl}&&[^\\r\\n\\t]]", " ")
+                .replaceAll("\\s+", " ").trim();
+        return sanitized.length() > 500 ? sanitized.substring(0, 500) : sanitized;
+    }
+
+    private static String safeToken(String value) {
+        if (value == null || value.isBlank()) return "unknown";
+        String sanitized = value.replaceAll("[^A-Za-z0-9._-]", "_");
+        return sanitized.length() > 160 ? sanitized.substring(0, 160) : sanitized;
+    }
+
+    /*
+     * The provider's status/type/code/message are safe diagnostics. The request body,
+     * Authorization header, and failed generation are deliberately not retained.
+     */
+    private record ProviderError(String type, String code, String message) {
     }
 
     private static RadarAiException withAttempts(RadarAiException error, int attempts) {
-        return new RadarAiException(error.errorType(), error.getMessage(), error.retryable(), attempts, error);
+        return new RadarAiException(error.errorType(), error.getMessage(), error.retryable(), attempts,
+                error.httpStatus(), error.providerErrorType(), error.providerErrorCode());
     }
 
     private static void sleepBeforeRetry(HttpResponse<?> response, int attempt) {

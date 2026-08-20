@@ -159,7 +159,7 @@ RADAR_DEEP_DIVE_MODEL=openai/gpt-oss-120b
 RADAR_AI_MAX_ITEMS_PER_RUN=25
 RADAR_AI_MAX_RETRIES=2
 RADAR_AI_PROMPT_VERSION=radar-v2
-RADAR_AI_SCHEMA_VERSION=radar-analysis-v1
+RADAR_AI_SCHEMA_VERSION=radar-analysis-v2
 ```
 
 Never prefix `GROQ_API_KEY` or `RADAR_RUN_TOKEN` with `VITE_`. The provider receives only company name/domain/website, externally sourced public description, sector/categories, headquarters/founding year, public accelerator/launch/funding/investor/traction text, eligible public RSS/Product Hunt/Hacker News source URLs/excerpts, and source count. Manual Radar excerpts are excluded from provider text. Deal Scout pasted text, Form C contents, offering documents, user notes, evidence records, localStorage, email addresses, keys, tokens, and private investment research are never joined into the provider payload.
@@ -426,7 +426,7 @@ Tunable via `RADAR_AUTH_MAX_LOGIN_ATTEMPTS`, `RADAR_AUTH_LOGIN_WINDOW_MINUTES`,
 
 ## Database Schema Ownership
 
-Flyway is the single schema authority. Migrations `V1`-`V6` live in
+Flyway is the single schema authority. Migrations `V1`-`V7` live in
 `backend/src/main/resources/db/migration`:
 
 | Migration | Contents |

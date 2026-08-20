@@ -12,17 +12,50 @@ public final class RadarDomain {
             String configJson, boolean enabled, LocalDateTime lastCheckedAt, String lastStatus, String lastError) {
     }
 
+    public enum EvidenceClassification {
+        PUBLIC_OFFICIAL,
+        PUBLIC_NEWS,
+        PRIVATE_USER,
+        UNKNOWN;
+
+        public boolean eligibleForExternalAnalysis() {
+            return this == PUBLIC_OFFICIAL || this == PUBLIC_NEWS;
+        }
+    }
+
     public record Candidate(String sourceKey, String externalId, String companyName, String websiteUrl,
             String description, String sector, List<String> categories, String headquarters, Integer foundedYear,
             String sourceUrl, LocalDateTime publishedAt, String rawText, String accelerator,
-            String acceleratorBatch) {
+            String acceleratorBatch, EvidenceClassification evidenceClassification) {
+
+        public Candidate {
+            evidenceClassification = evidenceClassification == null ? EvidenceClassification.UNKNOWN
+                    : evidenceClassification;
+        }
+
+        public Candidate(String sourceKey, String externalId, String companyName, String websiteUrl,
+                String description, String sector, List<String> categories, String headquarters,
+                Integer foundedYear, String sourceUrl, LocalDateTime publishedAt, String rawText,
+                String accelerator, String acceleratorBatch) {
+            this(sourceKey, externalId, companyName, websiteUrl, description, sector, categories, headquarters,
+                    foundedYear, sourceUrl, publishedAt, rawText, accelerator, acceleratorBatch,
+                    EvidenceClassification.UNKNOWN);
+        }
 
         /** Most sources carry no accelerator provenance; this keeps their call sites unchanged in spirit. */
         public Candidate(String sourceKey, String externalId, String companyName, String websiteUrl,
                 String description, String sector, List<String> categories, String headquarters,
                 Integer foundedYear, String sourceUrl, LocalDateTime publishedAt, String rawText) {
             this(sourceKey, externalId, companyName, websiteUrl, description, sector, categories, headquarters,
-                    foundedYear, sourceUrl, publishedAt, rawText, "", "");
+                    foundedYear, sourceUrl, publishedAt, rawText, "", "", EvidenceClassification.UNKNOWN);
+        }
+
+        public Candidate(String sourceKey, String externalId, String companyName, String websiteUrl,
+                String description, String sector, List<String> categories, String headquarters,
+                Integer foundedYear, String sourceUrl, LocalDateTime publishedAt, String rawText,
+                EvidenceClassification evidenceClassification) {
+            this(sourceKey, externalId, companyName, websiteUrl, description, sector, categories, headquarters,
+                    foundedYear, sourceUrl, publishedAt, rawText, "", "", evidenceClassification);
         }
     }
 
@@ -44,8 +77,8 @@ public final class RadarDomain {
     }
 
     public record Analysis(Long id, String analysisType, String analysisOrigin, String provider, String model,
-            String promptVersion, String schemaVersion, String summary, String problem, String solution,
-            String businessModel, String stage, List<String> founders, String fundingSummary,
+            String promptVersion, String schemaVersion, String summary, String sector, String problem,
+            String solution, String businessModel, String stage, List<String> founders, String fundingSummary,
             List<String> likelyInvestors, List<String> trendTags, List<String> monitoringTriggers,
             List<String> facts, List<String> inferences, List<String> whyInteresting, List<String> momentumSignals,
             List<String> tractionSignals, List<String> technicalDifferentiation, List<String> marketSignals,
@@ -60,7 +93,8 @@ public final class RadarDomain {
     }
 
     public record ResearchSource(Long id, String sourceType, String title, String url,
-            LocalDateTime sourceDate, String excerpt, boolean fact) {
+            LocalDateTime sourceDate, String excerpt, boolean fact,
+            EvidenceClassification evidenceClassification) {
     }
 
     public record CompanyDetail(Company company, Analysis latestAnalysis, List<Snapshot> snapshots,

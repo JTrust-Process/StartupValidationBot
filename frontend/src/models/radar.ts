@@ -41,6 +41,7 @@ export interface RadarAnalysis {
   provider: string;
   model: string;
   summary: string;
+  sector: string;
   problem: string;
   solution: string;
   businessModel: string;
@@ -80,6 +81,7 @@ export interface RadarResearchSource {
   title: string;
   url: string | null;
   sourceDate: string | null;
+  evidenceClassification?: 'PUBLIC_OFFICIAL' | 'PUBLIC_NEWS' | 'PRIVATE_USER' | 'UNKNOWN';
 }
 
 export interface RadarCompanyDetail {

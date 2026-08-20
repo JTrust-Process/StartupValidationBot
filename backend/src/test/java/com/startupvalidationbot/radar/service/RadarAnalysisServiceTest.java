@@ -15,10 +15,14 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -80,10 +84,51 @@ class RadarAnalysisServiceTest {
         verify(store).saveAnalysis(eq(company.id()), eq("RADAR"), anyString(), eq("prompt-v2"), eq("schema-v1"),
                 eq("HYBRID"), eq("groq"), eq("openai/gpt-oss-20b"), payload.capture());
         assertThat(payload.getValue().summary()).isEqualTo("Structured public summary");
+        assertThat(payload.getValue().sector()).isEqualTo("Enterprise Software");
         assertThat(payload.getValue().radarScore()).isEqualTo(scoringService.score(company).radarScore());
         verify(store).recordAiAttempt(eq(company.id()), eq("RADAR"), eq("groq"),
                 eq("openai/gpt-oss-20b"), anyString(), eq("prompt-v2"), eq("schema-v1"), eq("SUCCESS"),
                 eq(null), eq(null), eq(0), eq(120L), eq(100L), eq(40L));
+    }
+
+    @Test
+    void sparseAiOutputCannotEraseMeaningfulDeterministicFieldsOrLists() {
+        configureProvider();
+        when(store.findCachedAnalysis(anyLong(), anyString(), anyString(), anyString(), anyString(), anyString(),
+                anyString())).thenReturn(Optional.empty());
+        when(provider.analyzeCompany(input)).thenReturn(new RadarAiResponse(sparseOutput(),
+                "openai/gpt-oss-20b", 0, 50, 20L, 10L));
+
+        service(true, 25).analyze(company, "RADAR");
+
+        ArgumentCaptor<AnalysisPayload> payload = ArgumentCaptor.forClass(AnalysisPayload.class);
+        verify(store).saveAnalysis(eq(company.id()), eq("RADAR"), anyString(), eq("prompt-v2"), eq("schema-v1"),
+                eq("HYBRID"), eq("groq"), eq("openai/gpt-oss-20b"), payload.capture());
+        assertThat(payload.getValue().summary()).isEqualTo("Public startup description");
+        assertThat(payload.getValue().sector()).isEqualTo("Software");
+        assertThat(payload.getValue().businessModel()).isEqualTo("Unknown from current sources");
+        assertThat(payload.getValue().trendTags()).containsExactly("Developer Tools");
+        assertThat(payload.getValue().monitoringTriggers()).isNotEmpty();
+        assertThat(payload.getValue().risks()).isNotEmpty();
+    }
+
+    @Test
+    void meaningfulAiListsAreAddedWithoutRemovingExistingEvidence() {
+        configureProvider();
+        when(store.findCachedAnalysis(anyLong(), anyString(), anyString(), anyString(), anyString(), anyString(),
+                anyString())).thenReturn(Optional.empty());
+        when(provider.analyzeCompany(input)).thenReturn(response("openai/gpt-oss-20b"));
+
+        service(true, 25).analyze(company, "RADAR");
+
+        ArgumentCaptor<AnalysisPayload> payload = ArgumentCaptor.forClass(AnalysisPayload.class);
+        verify(store).saveAnalysis(eq(company.id()), eq("RADAR"), anyString(), eq("prompt-v2"), eq("schema-v1"),
+                eq("HYBRID"), eq("groq"), eq("openai/gpt-oss-20b"), payload.capture());
+        assertThat(payload.getValue().trendTags()).contains("Developer Tools");
+        assertThat(payload.getValue().monitoringTriggers())
+                .contains("New independent source", "Verified customer update");
+        assertThat(payload.getValue().risks())
+                .contains("Only one discovery source is currently captured.", "Early-stage evidence");
     }
 
     @Test
@@ -116,21 +161,37 @@ class RadarAnalysisServiceTest {
         verify(provider).analyzeCompany(changed);
     }
 
-    @Test
-    void providerFailureIsRecordedAndFallsBackWithoutFailingCompany() {
+    @ParameterizedTest
+    @MethodSource("providerFailures")
+    void providerFailureIsRecordedAndFallsBackWithoutFailingCompany(String errorType, String message,
+            int attempts, Integer httpStatus, String providerErrorType, String providerErrorCode) {
         configureProvider();
         when(store.findCachedAnalysis(anyLong(), anyString(), anyString(), anyString(), anyString(), anyString(),
                 anyString())).thenReturn(Optional.empty());
-        when(provider.analyzeCompany(input)).thenThrow(
-                new RadarAiException("RATE_LIMITED", "Groq returned HTTP 429", true, 3));
+        when(provider.analyzeCompany(input)).thenThrow(new RadarAiException(errorType, message, attempts > 1,
+                attempts, httpStatus, providerErrorType, providerErrorCode));
 
         service(true, 25).analyze(company, "RADAR");
 
         verify(store).recordAiAttempt(eq(company.id()), eq("RADAR"), eq("groq"),
                 eq("openai/gpt-oss-20b"), anyString(), eq("prompt-v2"), eq("schema-v1"), eq("FAILED"),
-                eq("RATE_LIMITED"), eq("Groq returned HTTP 429"), eq(2), eq(null), eq(null), eq(null));
+                eq(errorType), eq(message), eq(Math.max(0, attempts - 1)), eq(null), eq(null), eq(null),
+                eq(httpStatus), eq(providerErrorType), eq(providerErrorCode));
         verify(store).saveAnalysis(eq(company.id()), eq("RADAR"), anyString(), eq("prompt-v2"), eq("schema-v1"),
                 eq("DETERMINISTIC"), eq("deterministic"), eq("deterministic-radar-v1"), any());
+    }
+
+    private static Stream<Arguments> providerFailures() {
+        return Stream.of(
+                Arguments.of("PROVIDER_REQUEST_REJECTED", "Groq rejected the request", 1, 400,
+                        "invalid_request_error", "unsupported_parameter"),
+                Arguments.of("RATE_LIMITED", "Groq returned HTTP 429", 3, 429, null, null),
+                Arguments.of("PROVIDER_UNAVAILABLE", "Groq returned HTTP 503", 2, 503,
+                        "server_error", null),
+                Arguments.of("TIMEOUT", "Groq request timed out", 2, null, null, null),
+                Arguments.of("MALFORMED_RESPONSE", "Groq returned malformed JSON", 2, 200, null, null),
+                Arguments.of("STRUCTURED_OUTPUT_REJECTED", "Generated JSON did not match the schema", 2, 400,
+                        "invalid_request_error", "json_validate_failed"));
     }
 
     @Test
@@ -183,7 +244,7 @@ class RadarAnalysisServiceTest {
     }
 
     private static RadarAiOutput output() {
-        return new RadarAiOutput("Structured public summary", "A costly workflow", "Automation software",
+        return new RadarAiOutput("Structured public summary", "Enterprise Software", "A costly workflow", "Automation software",
                 "Subscription", List.of("Developer Tools"), "Seed", List.of(), "Unknown", List.of(),
                 List.of("Public launch"), List.of("Technical workflow"), List.of("Growing category"),
                 List.of("Matches developer tools"), List.of("Early-stage evidence"),
@@ -193,6 +254,13 @@ class RadarAnalysisServiceTest {
                 List.of("Developer tools match"), "Unknown", "Potential software research overlap",
                 List.of("What traction is verified?"), "MEDIUM", List.of("Public source describes the product."),
                 List.of("Market fit remains an inference."), List.of("https://example.com/source"));
+    }
+
+    private static RadarAiOutput sparseOutput() {
+        return new RadarAiOutput("Unknown", "N/A", "Unknown", "Unknown", "Unknown", List.of(), "Unknown",
+                List.of(), "Unknown", List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(), "Unknown", "Unknown", List.of(), List.of(), List.of(), "Unknown", "Unknown", List.of(),
+                "LOW", List.of(), List.of(), List.of());
     }
 
     private static Company company(String description) {

@@ -1,7 +1,11 @@
 package com.startupvalidationbot.radar.ai;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -11,9 +15,9 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public final class RadarAiSchema {
-    public static final String VERSION = "radar-analysis-v1";
+    public static final String VERSION = "radar-analysis-v2";
     private static final List<String> STRING_FIELDS = List.of(
-            "summary", "problem", "solution", "businessModel", "stage", "fundingSummary",
+            "summary", "sector", "problem", "solution", "businessModel", "stage", "fundingSummary",
             "whyItMatters", "whyIShouldCare", "investmentAccessibility", "careerAngle", "confidence");
     private static final List<String> LIST_FIELDS = List.of(
             "categories", "founders", "investors", "tractionSignals", "technicalDifferentiation",
@@ -89,19 +93,36 @@ public final class RadarAiSchema {
             if (!Set.of("HIGH", "MEDIUM", "LOW").contains(output.confidence())) {
                 throw schemaViolation("confidence");
             }
-            if (!input.suppliedSourceUrls().containsAll(output.sourceUrls())) {
+            Set<String> suppliedUrls = input.suppliedSourceUrls().stream()
+                    .map(RadarAiSchema::canonicalizeUrl).collect(java.util.stream.Collectors.toSet());
+            List<String> unsupportedUrls = output.sourceUrls().stream()
+                    .filter(url -> !suppliedUrls.contains(canonicalizeUrl(url))).toList();
+            if (!unsupportedUrls.isEmpty()) {
                 throw new RadarAiException("SOURCE_PROVENANCE_VIOLATION",
-                        "AI response cited a URL that was not supplied to the provider", true, 1);
+                        "AI cited URL(s) outside the supplied public evidence: " + safeValues(unsupportedUrls),
+                        true, 1);
             }
             if (!output.facts().isEmpty() && output.sourceUrls().isEmpty()) {
                 throw new RadarAiException("SOURCE_PROVENANCE_VIOLATION",
-                        "AI facts require at least one supplied public source URL", true, 1);
+                        "AI returned facts without a supplied public citation: " + safeValues(output.facts()),
+                        true, 1);
             }
             if (input.sources().isEmpty() && (!output.founders().isEmpty() || !output.investors().isEmpty()
                     || !output.tractionSignals().isEmpty() || !output.facts().isEmpty()
                     || !"Unknown".equalsIgnoreCase(output.fundingSummary()))) {
+                List<String> unsupported = new ArrayList<>();
+                if (!output.founders().isEmpty()) unsupported.add("founders=" + safeValues(output.founders()));
+                if (!output.investors().isEmpty()) unsupported.add("investors=" + safeValues(output.investors()));
+                if (!output.tractionSignals().isEmpty()) {
+                    unsupported.add("traction=" + safeValues(output.tractionSignals()));
+                }
+                if (!output.facts().isEmpty()) unsupported.add("facts=" + safeValues(output.facts()));
+                if (!"Unknown".equalsIgnoreCase(output.fundingSummary())) {
+                    unsupported.add("funding=" + safeValue(output.fundingSummary()));
+                }
                 throw new RadarAiException("UNSUPPORTED_FACT_VIOLATION",
-                        "AI claimed unsupported facts for a company without public source evidence", true, 1);
+                        "AI claimed unsupported facts without public evidence: " + String.join("; ", unsupported),
+                        true, 1);
             }
             return output;
         } catch (RadarAiException error) {
@@ -115,5 +136,35 @@ public final class RadarAiSchema {
     private static RadarAiException schemaViolation(String field) {
         return new RadarAiException("SCHEMA_VIOLATION",
                 "AI response field failed validation: " + field, true, 1);
+    }
+
+    static String canonicalizeUrl(String value) {
+        if (value == null || value.isBlank()) return "";
+        try {
+            URI parsed = URI.create(value.trim()).normalize();
+            String scheme = parsed.getScheme() == null ? "" : parsed.getScheme().toLowerCase(Locale.ROOT);
+            String host = parsed.getHost() == null ? "" : parsed.getHost().toLowerCase(Locale.ROOT);
+            if (scheme.isBlank() || host.isBlank()) return value.trim();
+            int port = parsed.getPort();
+            if (("https".equals(scheme) && port == 443) || ("http".equals(scheme) && port == 80)) port = -1;
+            String path = parsed.getPath() == null || parsed.getPath().isBlank() ? "/" : parsed.getPath();
+            if (path.length() > 1 && path.endsWith("/")) path = path.substring(0, path.length() - 1);
+            return new URI(scheme, parsed.getUserInfo(), host, port, path, parsed.getQuery(), null).toASCIIString();
+        } catch (IllegalArgumentException | URISyntaxException error) {
+            return value.trim();
+        }
+    }
+
+    private static String safeValues(List<String> values) {
+        return values.stream().limit(3).map(RadarAiSchema::safeValue)
+                .collect(java.util.stream.Collectors.joining(" | "));
+    }
+
+    private static String safeValue(String value) {
+        if (value == null) return "";
+        String sanitized = value.replaceAll("(?i)gsk_[a-z0-9_-]+", "<redacted-key>")
+                .replaceAll("(?i)bearer\\s+\\S+", "Bearer <redacted>")
+                .replaceAll("\\s+", " ").trim();
+        return sanitized.length() > 300 ? sanitized.substring(0, 300) : sanitized;
     }
 }

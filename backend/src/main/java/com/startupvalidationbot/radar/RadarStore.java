@@ -345,14 +345,24 @@ public class RadarStore {
     public void recordAiAttempt(long companyId, String analysisType, String provider, String model,
             String inputHash, String promptVersion, String schemaVersion, String status, String errorType,
             String errorMessage, int retryCount, Long latencyMs, Long inputTokens, Long outputTokens) {
+        recordAiAttempt(companyId, analysisType, provider, model, inputHash, promptVersion, schemaVersion, status,
+                errorType, errorMessage, retryCount, latencyMs, inputTokens, outputTokens, null, null, null);
+    }
+
+    public void recordAiAttempt(long companyId, String analysisType, String provider, String model,
+            String inputHash, String promptVersion, String schemaVersion, String status, String errorType,
+            String errorMessage, int retryCount, Long latencyMs, Long inputTokens, Long outputTokens,
+            Integer httpStatus, String providerErrorType, String providerErrorCode) {
         jdbc.update("""
                 INSERT INTO radar_ai_attempts (
                     company_id, analysis_type, provider, model, input_hash, prompt_version, schema_version,
-                    status, error_type, error_message, retry_count, latency_ms, input_tokens, output_tokens, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, error_type, error_message, retry_count, latency_ms, input_tokens, output_tokens,
+                    http_status, provider_error_type, provider_error_code, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, companyId, analysisType, provider, model, inputHash, promptVersion, schemaVersion, status,
                 blankToNull(errorType), blankToNull(truncate(errorMessage, 1_000)), retryCount, latencyMs,
-                inputTokens, outputTokens, LocalDateTime.now());
+                inputTokens, outputTokens, httpStatus, blankToNull(truncate(providerErrorType, 160)),
+                blankToNull(truncate(providerErrorCode, 160)), LocalDateTime.now());
     }
 
     private void syncInvestors(long companyId, List<String> investorNames) {
@@ -394,20 +404,27 @@ public class RadarStore {
     }
 
     public void saveResearchSource(long companyId, String sourceType, String title, String url, String excerpt,
-            boolean fact) {
-        Integer existing = jdbc.queryForObject("""
-                SELECT COUNT(*) FROM radar_research_sources
+            boolean fact, EvidenceClassification evidenceClassification) {
+        List<Long> existing = jdbc.queryForList("""
+                SELECT id FROM radar_research_sources
                 WHERE company_id = ? AND source_type = ? AND title = ? AND COALESCE(url, '') = COALESCE(?, '')
-                """, Integer.class, companyId, sourceType, title, blankToNull(url));
-        if (existing != null && existing > 0) {
+                """, Long.class, companyId, sourceType, title, blankToNull(url));
+        EvidenceClassification classification = evidenceClassification == null ? EvidenceClassification.UNKNOWN
+                : evidenceClassification;
+        if (!existing.isEmpty()) {
+            jdbc.update("""
+                    UPDATE radar_research_sources
+                    SET excerpt = ?, is_fact = ?, evidence_classification = ?
+                    WHERE id = ?
+                    """, valueOrEmpty(excerpt), fact, classification.name(), existing.get(0));
             return;
         }
         jdbc.update("""
                 INSERT INTO radar_research_sources (
-                    company_id, source_type, title, url, excerpt, is_fact, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    company_id, source_type, title, url, excerpt, is_fact, evidence_classification, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, companyId, sourceType, title, blankToNull(url), valueOrEmpty(excerpt), fact,
-                LocalDateTime.now());
+                classification.name(), LocalDateTime.now());
     }
 
     public CompanyDetail getCompanyDetail(long companyId) {
@@ -434,7 +451,8 @@ public class RadarStore {
                 SELECT * FROM radar_research_sources WHERE company_id = ? ORDER BY created_at DESC
                 """, (rs, row) -> new ResearchSource(rs.getLong("id"), rs.getString("source_type"),
                         rs.getString("title"), rs.getString("url"), timestamp(rs, "source_date"),
-                        rs.getString("excerpt"), rs.getBoolean("is_fact")), companyId);
+                        rs.getString("excerpt"), rs.getBoolean("is_fact"),
+                        EvidenceClassification.valueOf(rs.getString("evidence_classification"))), companyId);
     }
 
     @Transactional
@@ -613,11 +631,13 @@ public class RadarStore {
                         timestamp(rs, "created_at"),
                         timestamp(rs, "updated_at")));
         List<ExportResearchSource> research = jdbc.query("""
-                SELECT id, company_id, source_type, title, url, source_date, is_fact, created_at
+                SELECT id, company_id, source_type, title, url, source_date, is_fact,
+                       evidence_classification, created_at
                 FROM radar_research_sources ORDER BY id
                 """, (rs, row) -> new ExportResearchSource(rs.getLong("id"), rs.getLong("company_id"),
                         rs.getString("source_type"), rs.getString("title"), SafeUrl.redact(rs.getString("url")),
-                        timestamp(rs, "source_date"), rs.getBoolean("is_fact"), timestamp(rs, "created_at")));
+                        timestamp(rs, "source_date"), rs.getBoolean("is_fact"),
+                        rs.getString("evidence_classification"), timestamp(rs, "created_at")));
         List<Company> companies = listCompanies().stream()
                 .map(company -> redactUrls(company, Company.class)).toList();
         List<Trend> trends = listTrends().stream().map(trend -> redactUrls(trend, Trend.class)).toList();
@@ -737,7 +757,7 @@ public class RadarStore {
     public record TrendDraft(String key, String name, String summary, int momentumScore, List<Long> companyIds) {
     }
 
-    public record AnalysisPayload(String summary, String problem, String solution, String businessModel,
+    public record AnalysisPayload(String summary, String sector, String problem, String solution, String businessModel,
             String stage, List<String> founders, String fundingSummary, List<String> likelyInvestors,
             List<String> trendTags, List<String> monitoringTriggers, List<String> facts, List<String> inferences,
             List<String> whyInteresting, List<String> momentumSignals, List<String> tractionSignals,
@@ -771,9 +791,10 @@ public class RadarStore {
             return new Analysis(rs.getLong("id"), rs.getString("analysis_type"),
                     rs.getString("analysis_origin"), rs.getString("provider"), rs.getString("model"),
                     rs.getString("prompt_version"), rs.getString("schema_version"),
-                    node.path("summary").asText(""), node.path("problem").asText("Unknown"),
-                    node.path("solution").asText("Unknown"), node.path("businessModel").asText("Unknown"),
-                    node.path("stage").asText("Unknown"), readNodeList(node.path("founders")),
+                    node.path("summary").asText(""), node.path("sector").asText("Unknown"),
+                    node.path("problem").asText("Unknown"), node.path("solution").asText("Unknown"),
+                    node.path("businessModel").asText("Unknown"), node.path("stage").asText("Unknown"),
+                    readNodeList(node.path("founders")),
                     node.path("fundingSummary").asText("Unknown"), readNodeList(node.path("likelyInvestors")),
                     readNodeList(node.path("trendTags")), readNodeList(node.path("monitoringTriggers")),
                     readNodeList(node.path("facts")),

@@ -14,7 +14,8 @@ import com.startupvalidationbot.radar.ai.PublicCompanyAnalysisInput.PublicSource
 
 @Component
 public class PublicRadarAnalysisInputFactory {
-    private static final Set<String> EXTERNAL_PUBLIC_SOURCE_TYPES = Set.of("RSS", "PRODUCT_HUNT", "HACKER_NEWS");
+    private static final Set<String> ALLOWED_PUBLIC_SOURCE_TYPES = Set.of(
+            "RSS", "PRODUCT_HUNT", "HACKER_NEWS", "MANUAL");
     private final RadarStore store;
 
     public PublicRadarAnalysisInputFactory(RadarStore store) {
@@ -24,7 +25,8 @@ public class PublicRadarAnalysisInputFactory {
     public PublicCompanyAnalysisInput create(Company company) {
         List<ResearchSource> researchSources = store.listResearchSources(company.id()).stream()
                 .filter(ResearchSource::fact)
-                .filter(source -> EXTERNAL_PUBLIC_SOURCE_TYPES.contains(source.sourceType().toUpperCase(Locale.ROOT)))
+                .filter(source -> source.evidenceClassification().eligibleForExternalAnalysis())
+                .filter(source -> ALLOWED_PUBLIC_SOURCE_TYPES.contains(source.sourceType().toUpperCase(Locale.ROOT)))
                 .filter(source -> isPublicWebUrl(source.url()))
                 .toList();
         List<PublicSourceEvidence> sources = researchSources.stream()

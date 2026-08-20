@@ -166,6 +166,7 @@ export function addManualRadarCompany(input: {
   description: string;
   sector: string;
   sourceUrl: string;
+  evidenceClassification: 'PUBLIC_OFFICIAL';
 }): Promise<RadarAdminCompany> {
   return request<RadarAdminCompany>('/companies/manual', { method: 'POST', body: JSON.stringify(input) });
 }

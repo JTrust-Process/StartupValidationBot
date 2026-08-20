@@ -186,7 +186,8 @@ class RadarStoreIntegrationTest {
         long companyId = store.upsertCompany(candidate).company().id();
         store.saveDiscoveryAndSnapshot(companyId, source, candidate);
         store.saveResearchSource(companyId, "RSS", "Public source",
-                "https://research.test/item?key=RESEARCH-SECRET", "Public excerpt", true);
+                "https://research.test/item?key=RESEARCH-SECRET", "Public excerpt", true,
+                RadarDomain.EvidenceClassification.PUBLIC_NEWS);
         store.watchCompany(companyId, "See https://notes.test/item?key=NOTES-SECRET", null);
 
         String json = objectMapper.writeValueAsString(store.exportRadar());
@@ -194,6 +195,24 @@ class RadarStoreIntegrationTest {
         assertThat(json).doesNotContain("SOURCE-SECRET", "WEBSITE-SECRET", "DISCOVERY-SECRET",
                 "RESEARCH-SECRET", "NOTES-SECRET");
         assertThat(json).contains("<redacted>");
+    }
+
+    @Test
+    void reclassifiesExistingManualEvidenceWithoutCreatingADuplicate() {
+        var company = discoveryService.ingestManual(discovery("Public Evidence Company",
+                "https://public-evidence.test"));
+        String sourceUrl = "https://public-evidence.test/source";
+
+        store.saveResearchSource(company.id(), "MANUAL", "Manual startup discovery", sourceUrl,
+                "Initial excerpt", true, RadarDomain.EvidenceClassification.UNKNOWN);
+        store.saveResearchSource(company.id(), "MANUAL", "Manual startup discovery", sourceUrl,
+                "Confirmed public excerpt", true, RadarDomain.EvidenceClassification.PUBLIC_OFFICIAL);
+
+        assertThat(store.listResearchSources(company.id())).singleElement().satisfies(source -> {
+            assertThat(source.excerpt()).isEqualTo("Confirmed public excerpt");
+            assertThat(source.evidenceClassification())
+                    .isEqualTo(RadarDomain.EvidenceClassification.PUBLIC_OFFICIAL);
+        });
     }
 
     @Test

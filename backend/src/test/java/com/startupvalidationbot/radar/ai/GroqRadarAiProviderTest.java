@@ -80,6 +80,114 @@ class GroqRadarAiProviderTest {
     }
 
     @Test
+    void ordinaryHttp400IsClassifiedAndNotRetriedOrLeaked() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/chat/completions", exchange -> {
+            requests.incrementAndGet();
+            respond(exchange, 400, """
+                    {"error":{"message":"Unsupported request gsk_should_not_leak Bearer secret-token",
+                    "type":"invalid_request_error","code":"unsupported_parameter"}}
+                    """);
+        });
+        server.start();
+
+        assertThatThrownBy(() -> provider(2).analyzeCompany(input()))
+                .isInstanceOf(RadarAiException.class)
+                .satisfies(error -> {
+                    RadarAiException aiError = (RadarAiException) error;
+                    assertThat(aiError.errorType()).isEqualTo("PROVIDER_REQUEST_REJECTED");
+                    assertThat(aiError.httpStatus()).isEqualTo(400);
+                    assertThat(aiError.providerErrorType()).isEqualTo("invalid_request_error");
+                    assertThat(aiError.providerErrorCode()).isEqualTo("unsupported_parameter");
+                    assertThat(aiError.getMessage()).contains("<redacted-key>", "Bearer <redacted>")
+                            .doesNotContain("gsk_should_not_leak", "secret-token");
+                });
+        assertThat(requests).hasValue(1);
+    }
+
+    @Test
+    void structuredOutputHttp400RetriesWithinConfiguredBound() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/chat/completions", exchange -> {
+            requests.incrementAndGet();
+            respond(exchange, 400, """
+                    {"error":{"message":"Generated JSON does not match the expected schema.",
+                    "type":"invalid_request_error","code":"json_validate_failed"}}
+                    """);
+        });
+        server.start();
+
+        assertThatThrownBy(() -> provider(1).analyzeCompany(input()))
+                .isInstanceOf(RadarAiException.class)
+                .satisfies(error -> {
+                    RadarAiException aiError = (RadarAiException) error;
+                    assertThat(aiError.errorType()).isEqualTo("STRUCTURED_OUTPUT_REJECTED");
+                    assertThat(aiError.httpStatus()).isEqualTo(400);
+                    assertThat(aiError.attempts()).isEqualTo(2);
+                });
+        assertThat(requests).hasValue(2);
+    }
+
+    @Test
+    void serverErrorsRetryWithinConfiguredBound() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/chat/completions", exchange -> {
+            requests.incrementAndGet();
+            respond(exchange, 503, "{\"error\":{\"message\":\"temporarily unavailable\",\"type\":\"server_error\"}}");
+        });
+        server.start();
+
+        assertThatThrownBy(() -> provider(1).analyzeCompany(input()))
+                .isInstanceOf(RadarAiException.class)
+                .satisfies(error -> assertThat(((RadarAiException) error).errorType())
+                        .isEqualTo("PROVIDER_UNAVAILABLE"));
+        assertThat(requests).hasValue(2);
+    }
+
+    @Test
+    void malformedProviderBodyRetriesWithinConfiguredBound() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/chat/completions", exchange -> {
+            requests.incrementAndGet();
+            respond(exchange, 200, "not-json");
+        });
+        server.start();
+
+        assertThatThrownBy(() -> provider(1).analyzeCompany(input()))
+                .isInstanceOf(RadarAiException.class)
+                .satisfies(error -> assertThat(((RadarAiException) error).errorType())
+                        .isEqualTo("MALFORMED_RESPONSE"));
+        assertThat(requests).hasValue(2);
+    }
+
+    @Test
+    void requestTimeoutRetriesWithinConfiguredBound() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/chat/completions", exchange -> {
+            requests.incrementAndGet();
+            try {
+                Thread.sleep(250);
+                respond(exchange, 200, "{}");
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+            } catch (IOException ignored) {
+                exchange.close();
+            }
+        });
+        server.start();
+
+        assertThatThrownBy(() -> provider(1, Duration.ofMillis(50)).analyzeCompany(input()))
+                .isInstanceOf(RadarAiException.class)
+                .satisfies(error -> assertThat(((RadarAiException) error).errorType()).isEqualTo("TIMEOUT"));
+        assertThat(requests.get()).isBetween(1, 2);
+    }
+
+    @Test
     void rejectsUnsupportedFactsWhenNoPublicSourceEvidenceExists() throws Exception {
         Map<String, Object> output = validOutput();
         output.put("sourceUrls", List.of());
@@ -96,9 +204,13 @@ class GroqRadarAiProviderTest {
     }
 
     private GroqRadarAiProvider provider(int retries) {
+        return provider(retries, Duration.ofSeconds(5));
+    }
+
+    private GroqRadarAiProvider provider(int retries, Duration timeout) {
         URI endpoint = URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/chat/completions");
         return new GroqRadarAiProvider(mapper, HttpClient.newHttpClient(), endpoint, "test-server-key",
-                "openai/gpt-oss-20b", "openai/gpt-oss-120b", retries, Duration.ofSeconds(5));
+                "openai/gpt-oss-20b", "openai/gpt-oss-120b", retries, timeout);
     }
 
     private static PublicCompanyAnalysisInput input() {
@@ -112,6 +224,7 @@ class GroqRadarAiProviderTest {
     private static Map<String, Object> validOutput() {
         Map<String, Object> output = new LinkedHashMap<>();
         output.put("summary", "Public summary");
+        output.put("sector", "Software");
         output.put("problem", "Unknown");
         output.put("solution", "Automation");
         output.put("businessModel", "Unknown");

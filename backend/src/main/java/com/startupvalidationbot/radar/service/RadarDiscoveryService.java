@@ -116,7 +116,8 @@ public class RadarDiscoveryService {
                 request.companyName(), request.websiteUrl(), request.description(),
                 request.sector() == null || request.sector().isBlank() ? "Unknown" : request.sector(),
                 request.categories() == null ? List.of() : request.categories(), request.headquarters(),
-                request.foundedYear(), request.sourceUrl(), LocalDateTime.now(), rawText);
+                request.foundedYear(), request.sourceUrl(), LocalDateTime.now(), rawText,
+                request.evidenceClassification());
         IngestResult result = ingest(source, candidate);
         analysisService.analyze(result.company(), "RADAR", analysisService.newRunBudget());
         return store.findCompany(result.company().id()).orElseThrow();
@@ -128,9 +129,17 @@ public class RadarDiscoveryService {
         // Persist tiered changes so the watchlist and Radar Home can rank by what actually matters.
         intelStore.recordChanges(upsert.company().id(), discovery.snapshotId(), discovery.changes());
         store.saveResearchSource(upsert.company().id(), source.sourceType(), source.name(), candidate.sourceUrl(),
-                candidate.description(), true);
+                candidate.description(), true, evidenceClassification(source, candidate));
         Company refreshed = store.findCompany(upsert.company().id()).orElseThrow();
         return new IngestResult(upsert, refreshed, discovery);
+    }
+
+    private static EvidenceClassification evidenceClassification(Source source, Candidate candidate) {
+        return switch (source.sourceType().toUpperCase()) {
+            case "RSS", "PRODUCT_HUNT", "HACKER_NEWS" -> EvidenceClassification.PUBLIC_NEWS;
+            case "MANUAL" -> candidate.evidenceClassification();
+            default -> EvidenceClassification.UNKNOWN;
+        };
     }
 
     private static String defaultExternalId(String requested, String companyName, String sourceUrl) {

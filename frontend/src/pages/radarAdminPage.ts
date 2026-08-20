@@ -113,6 +113,7 @@ function adminHtml(status: RadarSystemStatus, sources: Awaited<ReturnType<typeof
         <div class="form-field"><label for="manual-company-sector">Sector</label><input id="manual-company-sector" name="sector" maxlength="160" /></div>
         <div class="form-field"><label for="manual-company-source">Public source URL</label><input id="manual-company-source" name="sourceUrl" type="url" maxlength="1200" required /></div>
         <div class="form-field radar-form-span"><label for="manual-company-description">Public description</label><textarea id="manual-company-description" name="description" maxlength="8000" required></textarea></div>
+        <label class="checkbox-row radar-form-span"><input name="publicEvidence" type="checkbox" required /> I confirm this description and source are official public evidence.</label>
         <button class="button button--primary" type="submit">Add discovery</button>
       </form>
     </section>
@@ -263,7 +264,8 @@ export function bindRadarAdminPageEvents(root: HTMLElement): void {
           websiteUrl: String(data.get('websiteUrl') || '').trim(),
           description: String(data.get('description') || '').trim(),
           sector: String(data.get('sector') || '').trim(),
-          sourceUrl: String(data.get('sourceUrl') || '').trim()
+          sourceUrl: String(data.get('sourceUrl') || '').trim(),
+          evidenceClassification: 'PUBLIC_OFFICIAL'
         });
         companyForm.reset();
         showMessage('Company added to Radar.');

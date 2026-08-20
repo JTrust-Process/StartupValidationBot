@@ -34,7 +34,7 @@ import com.startupvalidationbot.radar.source.SourceFetchException;
  * Production-representative persistence coverage.
  *
  * The fast suite runs on H2, which cannot prove PostgreSQL behaviour for the things this system
- * actually depends on: Flyway V1-V6 applying in order, UNIQUE constraints on company identity and
+ * actually depends on: Flyway V1-V7 applying in order, UNIQUE constraints on company identity and
  * analysis cache keys, row-locked job leases, and durable login throttling. Those run here against
  * the real engine.
  *

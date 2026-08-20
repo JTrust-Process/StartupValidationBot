@@ -114,7 +114,7 @@ public class RadarScoringService {
         String whyCare = relevance.matchedInterests().isEmpty()
                 ? "No configured interest matched. Track it only if the market or product becomes relevant."
                 : "It overlaps with your interests: " + String.join(", ", relevance.matchedInterests()) + ".";
-        return new AnalysisPayload(summary, "Unknown from current sources", "Unknown from current sources",
+        return new AnalysisPayload(summary, company.sector(), "Unknown from current sources", "Unknown from current sources",
                 "Unknown from current sources", "Unknown", List.of(), "Unknown from current sources", List.of(),
                 company.categories(), List.of("New independent source", "Verified traction update", "Funding event"),
                 facts, inferences, whyInteresting,

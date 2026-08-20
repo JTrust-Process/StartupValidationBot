@@ -55,7 +55,7 @@ public final class RadarAdminViews {
     }
 
     public record ExportResearchSource(long id, long companyId, String sourceType, String title, String url,
-            LocalDateTime sourceDate, boolean fact, LocalDateTime createdAt) {
+            LocalDateTime sourceDate, boolean fact, String evidenceClassification, LocalDateTime createdAt) {
     }
 
     public record RadarExport(String schemaVersion, LocalDateTime exportedAt, List<Company> companies,

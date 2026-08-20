@@ -136,19 +136,45 @@ public class RadarAnalysisService {
     }
 
     private AnalysisPayload merge(AnalysisPayload deterministic, RadarAiOutput ai) {
-        return new AnalysisPayload(ai.summary(), ai.problem(), ai.solution(), ai.businessModel(), ai.stage(),
-                ai.founders(), ai.fundingSummary(), ai.investors(), ai.categories(), ai.watchTriggers(), ai.facts(),
-                ai.inferences(), ai.interestingSignals(), combine(ai.tractionSignals(), ai.marketSignals()),
-                ai.tractionSignals(), ai.technicalDifferentiation(), ai.marketSignals(), ai.risks(), ai.bullCase(),
-                ai.bearCase(), ai.unansweredQuestions(), ai.whyItMatters(), deterministic.whyYouShouldCare(),
-                ai.investmentAccessibility(), deterministic.careerAngle(), ai.sourceUrls(), ai.confidence(),
-                ai.radarScoreInputs(), deterministic.personalScoreInputs(), deterministic.radarDimensions(),
-                deterministic.radarScore(), deterministic.personalScore());
+        List<String> traction = additive(deterministic.tractionSignals(), ai.tractionSignals());
+        List<String> market = additive(deterministic.marketSignals(), ai.marketSignals());
+        return new AnalysisPayload(
+                preferMeaningful(ai.summary(), deterministic.summary()),
+                preferMeaningful(ai.sector(), deterministic.sector()),
+                preferMeaningful(ai.problem(), deterministic.problem()),
+                preferMeaningful(ai.solution(), deterministic.solution()),
+                preferMeaningful(ai.businessModel(), deterministic.businessModel()),
+                preferMeaningful(ai.stage(), deterministic.stage()),
+                additive(deterministic.founders(), ai.founders()),
+                preferMeaningful(ai.fundingSummary(), deterministic.fundingSummary()),
+                additive(deterministic.likelyInvestors(), ai.investors()),
+                additive(deterministic.trendTags(), ai.categories()),
+                additive(deterministic.monitoringTriggers(), ai.watchTriggers()),
+                additive(deterministic.facts(), ai.facts()),
+                additive(deterministic.inferences(), ai.inferences()),
+                additive(deterministic.whyInteresting(), ai.interestingSignals()),
+                additive(deterministic.momentumSignals(), combine(ai.tractionSignals(), ai.marketSignals())),
+                traction,
+                additive(deterministic.technicalDifferentiation(), ai.technicalDifferentiation()),
+                market,
+                additive(deterministic.risks(), ai.risks()),
+                additive(deterministic.bullCase(), ai.bullCase()),
+                additive(deterministic.bearCase(), ai.bearCase()),
+                additive(deterministic.unansweredQuestions(), ai.unansweredQuestions()),
+                preferMeaningful(ai.whyItMatters(), deterministic.whyItMatters()),
+                deterministic.whyYouShouldCare(),
+                preferMeaningful(ai.investmentAccessibility(), deterministic.investmentAccessibility()),
+                deterministic.careerAngle(),
+                additive(deterministic.sourceUrls(), ai.sourceUrls()),
+                preferMeaningful(ai.confidence(), deterministic.confidence()),
+                additive(deterministic.radarScoreInputs(), ai.radarScoreInputs()),
+                deterministic.personalScoreInputs(), deterministic.radarDimensions(), deterministic.radarScore(),
+                deterministic.personalScore());
     }
 
     private AnalysisPayload withSourceUrls(AnalysisPayload payload, List<String> sourceUrls) {
-        return new AnalysisPayload(payload.summary(), payload.problem(), payload.solution(), payload.businessModel(),
-                payload.stage(), payload.founders(), payload.fundingSummary(), payload.likelyInvestors(),
+        return new AnalysisPayload(payload.summary(), payload.sector(), payload.problem(), payload.solution(),
+                payload.businessModel(), payload.stage(), payload.founders(), payload.fundingSummary(), payload.likelyInvestors(),
                 payload.trendTags(), payload.monitoringTriggers(), payload.facts(), payload.inferences(),
                 payload.whyInteresting(), payload.momentumSignals(), payload.tractionSignals(),
                 payload.technicalDifferentiation(), payload.marketSignals(), payload.risks(), payload.bullCase(),
@@ -156,6 +182,30 @@ public class RadarAnalysisService {
                 payload.investmentAccessibility(), payload.careerAngle(), sourceUrls, payload.confidence(),
                 payload.radarScoreInputs(), payload.personalScoreInputs(), payload.radarDimensions(),
                 payload.radarScore(), payload.personalScore());
+    }
+
+    private static String preferMeaningful(String candidate, String fallback) {
+        return meaningful(candidate) ? candidate.trim() : fallback;
+    }
+
+    private static boolean meaningful(String value) {
+        if (value == null || value.isBlank()) return false;
+        String normalized = value.trim().toLowerCase(Locale.ROOT).replaceAll("[\\s._-]+", " ");
+        return !normalized.equals("unknown")
+                && !normalized.startsWith("unknown from")
+                && !normalized.equals("n/a")
+                && !normalized.equals("na")
+                && !normalized.equals("none")
+                && !normalized.equals("not available")
+                && !normalized.equals("not provided")
+                && !normalized.equals("insufficient information");
+    }
+
+    private static List<String> additive(List<String> existing, List<String> candidate) {
+        List<String> values = new ArrayList<>();
+        if (existing != null) values.addAll(existing);
+        if (candidate != null) values.addAll(candidate.stream().filter(RadarAnalysisService::meaningful).toList());
+        return values.stream().filter(RadarAnalysisService::meaningful).map(String::trim).distinct().toList();
     }
 
     private void recordConfigurationFailure(Company company, String analysisType, PublicCompanyAnalysisInput input,
@@ -170,7 +220,7 @@ public class RadarAnalysisService {
             String inputHash, RadarAiException error) {
         store.recordAiAttempt(companyId, analysisType, provider, model, inputHash, promptVersion, schemaVersion,
                 "FAILED", error.errorType(), error.getMessage(), Math.max(0, error.attempts() - 1), null, null,
-                null);
+                null, error.httpStatus(), error.providerErrorType(), error.providerErrorCode());
         log.warn("radar_ai_fallback companyId={} provider={} model={} success=false retryCount={} errorType={}",
                 companyId, provider, model, Math.max(0, error.attempts() - 1), error.errorType());
     }

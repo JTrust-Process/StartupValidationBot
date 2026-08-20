@@ -4,6 +4,7 @@ import java.util.List;
 
 public record RadarAiOutput(
         String summary,
+        String sector,
         String problem,
         String solution,
         String businessModel,

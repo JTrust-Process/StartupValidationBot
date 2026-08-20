@@ -1,0 +1,43 @@
+app = "startup-validation-bot-radar"
+primary_region = "iad"
+kill_signal = "SIGTERM"
+# Must exceed spring.lifecycle.timeout-per-shutdown-phase (60s) so a job that uses its full grace
+# period finishes instead of being SIGKILLed at the boundary.
+kill_timeout = "90s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  release_command = "java -jar /app/backend.jar --spring.main.web-application-type=none --spring.jpa.hibernate.ddl-auto=none --radar.migrate-only=true"
+
+[processes]
+  web = "env JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=70 java -jar /app/backend.jar"
+  worker = "java -jar /app/backend.jar --spring.profiles.active=worker --spring.main.web-application-type=none"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["web"]
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "45s"
+    method = "GET"
+    path = "/actuator/health/readiness"
+
+[[vm]]
+  processes = ["web"]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[[vm]]
+  processes = ["worker"]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

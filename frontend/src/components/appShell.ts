@@ -4,6 +4,12 @@ import { bindDealsPageEvents, renderDealsPage } from '../pages/dealsPage';
 import { bindNewDealPageEvents, renderNewDealPage } from '../pages/newDealPage';
 import { bindScoutPageEvents, renderScoutPage } from '../pages/scoutPage';
 import { bindTextImportPageEvents, renderTextImportPage } from '../pages/textImportPage';
+import { bindRadarHomePageEvents, renderRadarHomePage } from '../pages/radarHomePage';
+import { bindRadarPageEvents, renderRadarPage } from '../pages/radarPage';
+import { bindWatchlistPageEvents, renderWatchlistPage } from '../pages/watchlistPage';
+import { bindTrendsPageEvents, renderTrendsPage } from '../pages/trendsPage';
+import { bindRadarCompanyPageEvents, renderRadarCompanyPage } from '../pages/radarCompanyPage';
+import { bindRadarAdminPageEvents, renderRadarAdminPage } from '../pages/radarAdminPage';
 import {
   bindDealWorkspacePageEvents,
   renderDealWorkspacePage
@@ -11,6 +17,12 @@ import {
 import { getDealById, loadDealById } from '../services/dealService';
 
 function getPageHtml(path: string): string {
+  if (path === '/radar') return renderRadarHomePage();
+  if (path === '/radar/all') return renderRadarPage();
+  if (path === '/watchlist') return renderWatchlistPage();
+  if (path === '/trends') return renderTrendsPage();
+  if (path.startsWith('/radar/company/')) return renderRadarCompanyPage();
+  if (path === '/radar-admin') return renderRadarAdminPage();
   if (path === '/dashboard') return renderDashboardPage();
   if (path === '/deals') return renderDealsPage();
   if (path === '/deals/new') return renderNewDealPage();
@@ -42,6 +54,8 @@ function updateActiveNav(root: HTMLDivElement, path: string): void {
     const route = link.dataset.route;
     const isActive =
       route === path ||
+      (route === '/radar' && path.startsWith('/radar/company/')) ||
+      (route === '/radar/all' && path === '/radar/all') ||
       (route === '/deals' && path.startsWith('/deals/') && path !== '/deals/new');
 
     link.classList.toggle('active', Boolean(isActive));
@@ -51,6 +65,36 @@ function updateActiveNav(root: HTMLDivElement, path: string): void {
 function bindPageEvents(root: HTMLDivElement, path: string): void {
   const pageContent = root.querySelector<HTMLElement>('#page-content');
   if (!pageContent) return;
+
+  if (path === '/radar') {
+    bindRadarHomePageEvents(pageContent);
+    return;
+  }
+
+  if (path === '/radar/all') {
+    bindRadarPageEvents(pageContent);
+    return;
+  }
+
+  if (path === '/watchlist') {
+    bindWatchlistPageEvents(pageContent);
+    return;
+  }
+
+  if (path === '/trends') {
+    bindTrendsPageEvents(pageContent);
+    return;
+  }
+
+  if (path.startsWith('/radar/company/')) {
+    bindRadarCompanyPageEvents(pageContent, path);
+    return;
+  }
+
+  if (path === '/radar-admin') {
+    bindRadarAdminPageEvents(pageContent);
+    return;
+  }
 
   if (path === '/dashboard') {
     bindDashboardPageEvents();
@@ -99,9 +143,16 @@ function renderPageError(root: HTMLDivElement, message: string): void {
   root.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar__brand">Startup Validation Bot</div>
+        <div class="sidebar__brand">Startup Intelligence</div>
 
         <nav class="sidebar__nav">
+          <span class="nav-section-label">Intelligence</span>
+          <a href="#/radar" class="nav-link" data-route="/radar">Radar Home</a>
+          <a href="#/radar/all" class="nav-link" data-route="/radar/all">All Companies</a>
+          <a href="#/watchlist" class="nav-link" data-route="/watchlist">Watchlist</a>
+          <a href="#/trends" class="nav-link" data-route="/trends">Trends</a>
+          <a href="#/radar-admin" class="nav-link" data-route="/radar-admin">Admin</a>
+          <span class="nav-section-label">Deal workflow</span>
           <a href="#/dashboard" class="nav-link active" data-route="/dashboard">Dashboard</a>
           <a href="#/deals" class="nav-link" data-route="/deals">Deals</a>
           <a href="#/deals/new" class="nav-link" data-route="/deals/new">New Deal</a>
@@ -113,9 +164,9 @@ function renderPageError(root: HTMLDivElement, message: string): void {
       <main class="main-content">
         <header class="topbar">
           <div>
-            <h1 class="topbar__title">Deal Diligence Workstation</h1>
+            <h1 class="topbar__title">Startup Intelligence / Venture Radar</h1>
             <p class="topbar__subtitle">
-              Local-first diligence for risky startup and private-market deals.
+              Discover startups, monitor changes, and preserve disciplined private-market diligence.
             </p>
           </div>
         </header>
@@ -155,9 +206,16 @@ async function renderLayout(root: HTMLDivElement): Promise<void> {
   root.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar__brand">Startup Validation Bot</div>
+        <div class="sidebar__brand">Startup Intelligence</div>
 
         <nav class="sidebar__nav">
+          <span class="nav-section-label">Intelligence</span>
+          <a href="#/radar" class="nav-link" data-route="/radar">Radar Home</a>
+          <a href="#/radar/all" class="nav-link" data-route="/radar/all">All Companies</a>
+          <a href="#/watchlist" class="nav-link" data-route="/watchlist">Watchlist</a>
+          <a href="#/trends" class="nav-link" data-route="/trends">Trends</a>
+          <a href="#/radar-admin" class="nav-link" data-route="/radar-admin">Admin</a>
+          <span class="nav-section-label">Deal workflow</span>
           <a href="#/dashboard" class="nav-link" data-route="/dashboard">Dashboard</a>
           <a href="#/deals" class="nav-link" data-route="/deals">Deals</a>
           <a href="#/deals/new" class="nav-link" data-route="/deals/new">New Deal</a>
@@ -169,9 +227,9 @@ async function renderLayout(root: HTMLDivElement): Promise<void> {
       <main class="main-content">
         <header class="topbar">
           <div>
-            <h1 class="topbar__title">Deal Diligence Workstation</h1>
+            <h1 class="topbar__title">Startup Intelligence / Venture Radar</h1>
             <p class="topbar__subtitle">
-              Local-first diligence for risky startup and private-market deals.
+              Discover startups, monitor changes, and preserve disciplined private-market diligence.
             </p>
           </div>
         </header>

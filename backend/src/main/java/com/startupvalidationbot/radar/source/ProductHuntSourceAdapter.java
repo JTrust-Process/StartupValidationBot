@@ -6,6 +6,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +17,7 @@ import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.startupvalidationbot.radar.CompanyIdentity;
 import com.startupvalidationbot.radar.RadarDomain.Candidate;
 import com.startupvalidationbot.radar.RadarDomain.Source;
 
@@ -24,7 +27,7 @@ public class ProductHuntSourceAdapter implements StartupSourceAdapter {
     private static final String QUERY = """
             query RadarPosts($first: Int!) {
               posts(first: $first, order: NEWEST) {
-                edges { node { id name tagline description website url topics { edges { node { name } } } } }
+                edges { node { id name tagline description website url createdAt topics { edges { node { name } } } } }
               }
             }
             """;
@@ -100,11 +103,11 @@ public class ProductHuntSourceAdapter implements StartupSourceAdapter {
                 }
                 String description = firstNonBlank(node.path("description").asText(""),
                         node.path("tagline").asText(""));
-                String website = node.path("website").asText("");
-                String sourceUrl = node.path("url").asText(website);
+                String website = officialWebsite(node.path("website").asText(""));
+                String sourceUrl = canonicalSourceUrl(node.path("url").asText(""));
                 candidates.add(new Candidate(source.sourceKey(), node.path("id").asText(name), name, website,
                         description, categories.isEmpty() ? "Unknown" : categories.get(0), categories, null, null,
-                        sourceUrl, LocalDateTime.now(), name + "\n" + description));
+                        sourceUrl, publishedAt(node.path("createdAt").asText("")), name + "\n" + description));
             }
             return candidates;
         } catch (SourceFetchException error) {
@@ -116,5 +119,35 @@ public class ProductHuntSourceAdapter implements StartupSourceAdapter {
 
     private static String firstNonBlank(String first, String second) {
         return first == null || first.isBlank() ? second : first;
+    }
+
+    private static String officialWebsite(String value) {
+        if (value == null || value.isBlank() || CompanyIdentity.normalizeDomain(value) == null) {
+            return "";
+        }
+        return value.trim();
+    }
+
+    private static String canonicalSourceUrl(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        try {
+            URI uri = URI.create(value.trim());
+            return new URI(uri.getScheme(), uri.getAuthority(), uri.getPath(), null, null).toString();
+        } catch (Exception ignored) {
+            return value.trim();
+        }
+    }
+
+    private static LocalDateTime publishedAt(String value) {
+        if (value == null || value.isBlank()) {
+            return LocalDateTime.now();
+        }
+        try {
+            return OffsetDateTime.parse(value).withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime();
+        } catch (RuntimeException ignored) {
+            return LocalDateTime.now();
+        }
     }
 }

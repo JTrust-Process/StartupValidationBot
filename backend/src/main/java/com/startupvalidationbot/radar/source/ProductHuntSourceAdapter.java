@@ -9,9 +9,11 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -24,9 +26,11 @@ import com.startupvalidationbot.radar.RadarDomain.Source;
 @Component
 public class ProductHuntSourceAdapter implements StartupSourceAdapter {
     private static final URI PRODUCT_HUNT_API = URI.create("https://api.producthunt.com/v2/api/graphql");
+    private static final int PAGE_SIZE = 20;
     private static final String QUERY = """
-            query RadarPosts($first: Int!) {
-              posts(first: $first, order: NEWEST) {
+            query RadarPosts($first: Int!, $after: String) {
+              posts(first: $first, after: $after, order: NEWEST) {
+                pageInfo { endCursor hasNextPage }
                 edges { node { id name tagline description website url createdAt topics { edges { node { name } } } } }
               }
             }
@@ -34,14 +38,18 @@ public class ProductHuntSourceAdapter implements StartupSourceAdapter {
 
     private final ObjectMapper objectMapper;
     private final String token;
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .build();
+    private final HttpClient httpClient;
 
+    @Autowired
     public ProductHuntSourceAdapter(ObjectMapper objectMapper,
             @Value("${radar.product-hunt-token:}") String token) {
+        this(objectMapper, token, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
+    }
+
+    ProductHuntSourceAdapter(ObjectMapper objectMapper, String token, HttpClient httpClient) {
         this.objectMapper = objectMapper;
         this.token = token;
+        this.httpClient = httpClient;
     }
 
     @Override
@@ -55,21 +63,36 @@ public class ProductHuntSourceAdapter implements StartupSourceAdapter {
             throw new SourceFetchException("PRODUCT_HUNT_TOKEN is missing");
         }
         try {
-            String payload = objectMapper.writeValueAsString(Map.of(
-                    "query", QUERY,
-                    "variables", Map.of("first", Math.max(1, Math.min(limit, 50)))));
-            HttpRequest request = HttpRequest.newBuilder(PRODUCT_HUNT_API)
-                    .timeout(Duration.ofSeconds(25))
-                    .header("Authorization", "Bearer " + token)
-                    .header("Content-Type", "application/json")
-                    .header("User-Agent", "StartupValidationBot-Radar/1.0")
-                    .POST(HttpRequest.BodyPublishers.ofString(payload))
-                    .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new SourceFetchException("Product Hunt returned HTTP " + response.statusCode());
+            int target = Math.max(1, Math.min(limit, 50));
+            List<Candidate> candidates = new ArrayList<>();
+            String cursor = null;
+            while (candidates.size() < target) {
+                int pageSize = Math.min(PAGE_SIZE, target - candidates.size());
+                Map<String, Object> variables = new LinkedHashMap<>();
+                variables.put("first", pageSize);
+                if (cursor != null && !cursor.isBlank()) {
+                    variables.put("after", cursor);
+                }
+                String payload = objectMapper.writeValueAsString(Map.of("query", QUERY, "variables", variables));
+                HttpRequest request = HttpRequest.newBuilder(PRODUCT_HUNT_API)
+                        .timeout(Duration.ofSeconds(25))
+                        .header("Authorization", "Bearer " + token)
+                        .header("Content-Type", "application/json")
+                        .header("User-Agent", "StartupValidationBot-Radar/1.0")
+                        .POST(HttpRequest.BodyPublishers.ofString(payload))
+                        .build();
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    throw new SourceFetchException("Product Hunt returned HTTP " + response.statusCode());
+                }
+                ParsedPage page = parsePage(source, response.body());
+                candidates.addAll(page.candidates());
+                if (!page.hasNextPage() || page.endCursor().isBlank() || page.candidates().isEmpty()) {
+                    break;
+                }
+                cursor = page.endCursor();
             }
-            return parse(source, response.body());
+            return candidates.stream().limit(target).toList();
         } catch (SourceFetchException error) {
             throw error;
         } catch (InterruptedException error) {
@@ -81,6 +104,10 @@ public class ProductHuntSourceAdapter implements StartupSourceAdapter {
     }
 
     List<Candidate> parse(Source source, String responseBody) throws SourceFetchException {
+        return parsePage(source, responseBody).candidates();
+    }
+
+    private ParsedPage parsePage(Source source, String responseBody) throws SourceFetchException {
         try {
             JsonNode root = objectMapper.readTree(responseBody);
             if (root.path("errors").isArray() && !root.path("errors").isEmpty()) {
@@ -109,7 +136,9 @@ public class ProductHuntSourceAdapter implements StartupSourceAdapter {
                         description, categories.isEmpty() ? "Unknown" : categories.get(0), categories, null, null,
                         sourceUrl, publishedAt(node.path("createdAt").asText("")), name + "\n" + description));
             }
-            return candidates;
+            JsonNode pageInfo = root.path("data").path("posts").path("pageInfo");
+            return new ParsedPage(List.copyOf(candidates), pageInfo.path("hasNextPage").asBoolean(false),
+                    pageInfo.path("endCursor").asText(""));
         } catch (SourceFetchException error) {
             throw error;
         } catch (Exception error) {
@@ -149,5 +178,8 @@ public class ProductHuntSourceAdapter implements StartupSourceAdapter {
         } catch (RuntimeException ignored) {
             return LocalDateTime.now();
         }
+    }
+
+    private record ParsedPage(List<Candidate> candidates, boolean hasNextPage, String endCursor) {
     }
 }

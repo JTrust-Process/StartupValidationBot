@@ -233,12 +233,14 @@ public class RadarStore {
             // Deterministic, tiered change detection. Comparing meaning rather than bytes means a
             // reworded sentence no longer looks the same as a Series A.
             detectedChanges = priorSnapshots.isEmpty()
-                    ? List.of()
+                    ? initialPublicEvents(source, rawText)
                     : SnapshotChangeDetector.detect(flattenSnapshot(readTree(priorSnapshots.get(0))),
                             flattenSnapshot(readTree(snapshotJson)));
-            List<String> changes = priorSnapshots.isEmpty()
-                    ? List.of("First snapshot")
-                    : detectedChanges.stream().map(DetectedChange::summary).toList();
+            List<String> changes = new ArrayList<>();
+            if (priorSnapshots.isEmpty()) {
+                changes.add("First snapshot");
+            }
+            changes.addAll(detectedChanges.stream().map(DetectedChange::summary).toList());
             jdbc.update("""
                     INSERT INTO radar_company_snapshots (
                         company_id, source_id, captured_at, input_hash, snapshot_json, notable_changes_json
@@ -250,6 +252,12 @@ public class RadarStore {
                     Long.class, companyId, inputHash).stream().findFirst().orElse(null);
         }
         return new DiscoverySaveResult(created, snapshotCreated, snapshotId, detectedChanges);
+    }
+
+    private static List<DetectedChange> initialPublicEvents(Source source, String rawText) {
+        return "RSS".equalsIgnoreCase(source.sourceType())
+                ? SnapshotChangeDetector.detectInitialPublicEvent(rawText)
+                : List.of();
     }
 
     /** Flattens a stored snapshot document into the plain field map the change detector consumes. */

@@ -80,6 +80,25 @@ class RssStartupSourceAdapterTest {
     }
 
     @Test
+    void skipsInvestmentFundAnnouncementsAndCleansBackingModifiers() throws SourceFetchException {
+        String xml = """
+                <rss version="2.0"><channel>
+                  <item><title>Reach Capital raises $265M Fund V to back AI founders</title>
+                    <link>https://techcrunch.com/reach</link><guid>tc-reach</guid></item>
+                  <item><title>Accel closes oversubscribed $550M India fund within weeks</title>
+                    <link>https://techcrunch.com/accel</link><guid>tc-accel</guid></item>
+                  <item><title>OpenAI-backed Thrive Holdings raises $2B to bring AI to the enterprise</title>
+                    <link>https://techcrunch.com/thrive</link><guid>tc-thrive</guid></item>
+                </channel></rss>
+                """;
+
+        var candidates = new RssStartupSourceAdapter().parse(feed(), xml, 10);
+
+        assertThat(candidates).singleElement()
+                .satisfies(candidate -> assertThat(candidate.companyName()).isEqualTo("Thrive Holdings"));
+    }
+
+    @Test
     void blocksPrivateNetworkFeedTargets() {
         assertThatThrownBy(() -> PublicSourceUrlPolicy.requirePublicHttpUrl("http://127.0.0.1/private-feed"))
                 .isInstanceOf(SourceFetchException.class)

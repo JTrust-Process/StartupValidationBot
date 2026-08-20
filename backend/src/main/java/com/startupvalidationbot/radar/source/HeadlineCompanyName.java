@@ -33,6 +33,16 @@ public final class HeadlineCompanyName {
             "^\\s*(exclusive|breaking|scoop|report|update|opinion|analysis|first look)\\s*[:\\-]\\s*",
             Pattern.CASE_INSENSITIVE);
 
+    /** Source attribution attached to a name, for example "OpenAI-backed Thrive Holdings". */
+    private static final Pattern BACKING_MODIFIER = Pattern.compile(
+            "^(?:[\\p{L}\\p{N}.&'\\u2019+]+-backed\\s+)+", Pattern.CASE_INSENSITIVE);
+
+    /** A VC announcing its own fund is not a startup funding event. */
+    private static final Pattern INVESTMENT_FUND_RAISE = Pattern.compile(
+            "\\b(?:raises|raised|closes|closed|secures|secured)\\b.{0,80}"
+                    + "\\$\\s*[0-9][0-9,.]*\\s*[kmb]?.{0,40}\\bfund(?:\\s+[ivx]+)?\\b",
+            Pattern.CASE_INSENSITIVE);
+
     /**
      * Descriptor nouns. Anything up to and including the last one is scene-setting, and the company
      * name follows: "Fintech startup Acme" -> "Acme".
@@ -78,12 +88,14 @@ public final class HeadlineCompanyName {
         cleaned = PUBLISHER_SUFFIX.matcher(cleaned).replaceAll("");
         cleaned = LEAD_LABEL.matcher(cleaned).replaceAll("");
         if (cleaned.isEmpty()) return Extraction.none();
+        if (INVESTMENT_FUND_RAISE.matcher(cleaned).find()) return Extraction.none();
 
         Matcher action = ACTION.matcher(cleaned);
         if (!action.find() || action.start() == 0) return Extraction.none();
 
         String prefix = cleaned.substring(0, action.start()).trim();
         prefix = stripTrailingPunctuation(prefix);
+        prefix = BACKING_MODIFIER.matcher(prefix).replaceFirst("").trim();
         if (prefix.isEmpty()) return Extraction.none();
 
         boolean descriptorRemoved = false;

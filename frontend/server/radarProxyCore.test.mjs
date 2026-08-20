@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildForwardedHeaders, buildRadarTarget, proxyRadarRequest } from './radarProxyCore.mjs';
+import {
+  buildForwardedHeaders,
+  buildRadarTarget,
+  proxyRadarRequest,
+  resolveRadarProxyRequestUrl
+} from './radarProxyCore.mjs';
 
 test('builds only HTTPS Radar backend targets', () => {
   assert.equal(
@@ -10,6 +15,18 @@ test('builds only HTTPS Radar backend targets', () => {
   );
   assert.throws(() => buildRadarTarget('/api/deals', 'https://radar-backend.example'), /Only Radar API/);
   assert.throws(() => buildRadarTarget('/api/radar/status', 'http://radar-backend.example'), /must use HTTPS/);
+});
+
+test('restores nested Radar paths from Vercel rewrites', () => {
+  assert.equal(
+    resolveRadarProxyRequestUrl('/api/radar/proxy?__radar_path=auth%2Fsession&fresh=true'),
+    '/api/radar/auth/session?fresh=true'
+  );
+  assert.equal(resolveRadarProxyRequestUrl('/api/radar/health'), '/api/radar/health');
+  assert.throws(
+    () => resolveRadarProxyRequestUrl('/api/radar/proxy?__radar_path=..%2F..%2Fdeals'),
+    /Invalid Radar proxy path/
+  );
 });
 
 test('never forwards browser-supplied worker credentials', () => {

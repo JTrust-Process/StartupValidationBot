@@ -22,6 +22,19 @@ export function buildRadarTarget(requestUrl, backendOrigin) {
   return new URL(`${incoming.pathname}${incoming.search}`, backend).toString();
 }
 
+export function resolveRadarProxyRequestUrl(requestUrl) {
+  const incoming = new URL(requestUrl, 'https://radar-proxy.invalid');
+  const rewrittenPath = incoming.searchParams.get('__radar_path');
+  if (rewrittenPath === null) return requestUrl;
+
+  incoming.searchParams.delete('__radar_path');
+  const resolved = new URL(`/api/radar/${rewrittenPath}`, incoming.origin);
+  if (!resolved.pathname.startsWith('/api/radar/')) {
+    throw new Error('Invalid Radar proxy path');
+  }
+  return `${resolved.pathname}${incoming.search}`;
+}
+
 function headerValue(headers, name) {
   const value = typeof headers.get === 'function' ? headers.get(name) : headers[name];
   if (!value) return '';
@@ -76,7 +89,10 @@ async function requestBody(request) {
 
 export async function proxyRadarRequest(request, response, options = {}) {
   try {
-    const target = buildRadarTarget(request.url, options.backendOrigin ?? process.env.RADAR_BACKEND_ORIGIN);
+    const target = buildRadarTarget(
+      resolveRadarProxyRequestUrl(request.url),
+      options.backendOrigin ?? process.env.RADAR_BACKEND_ORIGIN
+    );
     const upstream = await (options.fetchImpl ?? fetch)(target, {
       method: request.method,
       headers: buildForwardedHeaders(request.headers),

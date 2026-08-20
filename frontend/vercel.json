@@ -8,6 +8,12 @@
       "maxDuration": 30
     }
   },
+  "rewrites": [
+    {
+      "source": "/api/radar/:path*",
+      "destination": "/api/radar/proxy?__radar_path=:path*"
+    }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",

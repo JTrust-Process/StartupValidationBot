@@ -3,13 +3,24 @@ package com.startupvalidationbot.radar;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.DefaultBootstrapContext;
 import org.springframework.boot.SpringApplication;
+import org.springframework.boot.env.EnvironmentPostProcessorsFactory;
+import org.springframework.boot.logging.DeferredLogs;
 import org.springframework.mock.env.MockEnvironment;
 
 import com.startupvalidationbot.BackendApplication;
 import com.startupvalidationbot.config.DatabaseUrlEnvironmentPostProcessor;
 
 class DatabaseUrlEnvironmentPostProcessorTest {
+    @Test
+    void isRegisteredWithSpringBootFactoryLoader() {
+        assertThat(EnvironmentPostProcessorsFactory
+                .fromSpringFactories(DatabaseUrlEnvironmentPostProcessorTest.class.getClassLoader())
+                .getEnvironmentPostProcessors(new DeferredLogs(), new DefaultBootstrapContext()))
+                .anyMatch(DatabaseUrlEnvironmentPostProcessor.class::isInstance);
+    }
+
     @Test
     void convertsFlyStylePostgresUrlToJdbcProperties() {
         MockEnvironment environment = new MockEnvironment()

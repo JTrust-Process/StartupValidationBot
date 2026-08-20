@@ -18,6 +18,7 @@ public final class RadarPasswordHashTool {
             if (password.length < 12) throw new IllegalArgumentException("Use at least 12 characters");
             if (!Arrays.equals(password, confirmation)) throw new IllegalArgumentException("Passwords do not match");
             console.writer().println(RadarPasswordHasher.hash(password));
+            console.writer().flush();
         } finally {
             Arrays.fill(password, '\0');
             Arrays.fill(confirmation, '\0');

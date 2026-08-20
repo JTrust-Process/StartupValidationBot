@@ -158,6 +158,24 @@ class RadarStoreIntegrationTest {
     }
 
     @Test
+    void recordsExplicitFundingFromAnInitialRssDiscovery() {
+        var source = store.upsertSource("funding-feed", "RSS", "Funding feed",
+                "https://fixture.test/feed", true);
+        var candidate = new RadarDomain.Candidate(source.sourceKey(), "acme-series-a", "Acme",
+                null, "Acme builds developer infrastructure.", "Software", List.of("DevTools"),
+                null, null, "https://fixture.test/acme-series-a", LocalDateTime.now(),
+                "Acme raises $20M Series A led by Sequoia Capital.\nAcme builds developer infrastructure.");
+        long companyId = store.upsertCompany(candidate).company().id();
+
+        var saved = store.saveDiscoveryAndSnapshot(companyId, source, candidate);
+        intelStore.recordChanges(companyId, saved.snapshotId(), saved.changes());
+
+        assertThat(saved.changes()).extracting(DetectedChange::changeType)
+                .contains("FUNDING_ROUND", "NEW_INVESTOR");
+        assertThat(intelStore.companiesWithRecentFunding(7, 10)).contains(companyId);
+    }
+
+    @Test
     void ordersRecentlyFundedCompaniesByEventTimeRatherThanCompanyId() {
         var newer = discoveryService.ingestManual(discovery("Newer Funding", "https://newer-funding.test"));
         var older = discoveryService.ingestManual(discovery("Older Funding", "https://older-funding.test"));

@@ -127,6 +127,28 @@ public final class SnapshotChangeDetector {
         return List.copyOf(changes);
     }
 
+    /**
+     * Extracts explicit events from a newly discovered public-news item. A first company snapshot is
+     * normally baseline enrichment, but an RSS headline that says a round closed or a product
+     * launched is itself dated evidence of an event.
+     */
+    public static List<DetectedChange> detectInitialPublicEvent(String text) {
+        if (text == null || text.isBlank()) return List.of();
+        List<DetectedChange> changes = new ArrayList<>();
+        addIfPresent(changes, FUNDING_LANGUAGE, text, ChangeSignificance.FUNDING_ROUND,
+                "Public source reports a funding round");
+        addIfPresent(changes, ACQUISITION_LANGUAGE, text, ChangeSignificance.ACQUISITION,
+                "Public source reports an acquisition");
+        addIfPresent(changes, CUSTOMER_LANGUAGE, text, ChangeSignificance.MAJOR_CUSTOMER,
+                "Public source reports a new customer");
+        addIfPresent(changes, PRODUCT_LAUNCH_LANGUAGE, text, ChangeSignificance.PRODUCT_LAUNCH,
+                "Public source reports a product launch");
+        addIfPresent(changes, PARTNERSHIP_LANGUAGE, text, ChangeSignificance.PARTNERSHIP,
+                "Public source reports a partnership");
+        changes.addAll(investorChanges("", text));
+        return List.copyOf(changes);
+    }
+
     /** Convenience for callers that only care whether anything worth surfacing happened. */
     public static boolean hasMeaningfulChange(List<DetectedChange> changes) {
         return changes.stream().anyMatch(change -> change.significance().atLeast(Tier.IMPORTANT));
@@ -190,6 +212,13 @@ public final class SnapshotChangeDetector {
             String after, String changeType, String label) {
         if (pattern.matcher(after).find() && !pattern.matcher(before).find()) {
             changes.add(build(changeType, Double.NaN, after, label, "Not previously mentioned", truncate(after)));
+        }
+    }
+
+    private static void addIfPresent(List<DetectedChange> changes, Pattern pattern, String text,
+            String changeType, String label) {
+        if (pattern.matcher(text).find()) {
+            changes.add(build(changeType, Double.NaN, text, label, "Not previously observed", truncate(text)));
         }
     }
 

@@ -68,6 +68,19 @@ class SnapshotChangeDetectorTest {
     }
 
     @Test
+    void extractsExplicitEventsFromAnInitialPublicNewsItem() {
+        List<DetectedChange> changes = SnapshotChangeDetector.detectInitialPublicEvent(
+                "Acme raises $20M Series A led by Sequoia Capital and launches its enterprise product.");
+
+        assertThat(changes).extracting(DetectedChange::changeType)
+                .contains("FUNDING_ROUND", "NEW_INVESTOR", "PRODUCT_LAUNCH");
+        assertThat(changes).filteredOn(change -> change.changeType().equals("FUNDING_ROUND"))
+                .allMatch(change -> change.significance() == Tier.MAJOR);
+        assertThat(changes).filteredOn(change -> change.changeType().equals("NEW_INVESTOR"))
+                .allMatch(change -> change.significance() == Tier.MAJOR);
+    }
+
+    @Test
     void treatsNewlyCapturedFieldsAsEnrichmentRatherThanChange() {
         Map<String, String> before = snapshot("Steady description.");
         before.put("headquarters", "");

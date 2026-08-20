@@ -34,6 +34,7 @@ class HeadlineCompanyNameTest {
             "AI coding startup Cursor raises $100M;Cursor",
             "Israeli cybersecurity company Wiz secures new funding;Wiz",
             "Robotics firm Figure lands a major partnership;Figure",
+            "OpenAI-backed Thrive Holdings raises $2B;Thrive Holdings",
 
             // Editorial prefixes and publisher suffixes.
             "Exclusive: Acme Robotics raises $20M Series A;Acme Robotics",
@@ -59,7 +60,9 @@ class HeadlineCompanyNameTest {
             "Investors closed a record number of deals",
             "Startup raises $5M",
             "raises $20M",
-            "Orbit Forge"
+            "Orbit Forge",
+            "Reach Capital raises $265M Fund V to back AI founders",
+            "Accel closes oversubscribed $550M India fund within weeks"
     })
     void refusesHeadlinesWithoutAConfidentCompanyName(String headline) {
         var extraction = HeadlineCompanyName.extract(headline);

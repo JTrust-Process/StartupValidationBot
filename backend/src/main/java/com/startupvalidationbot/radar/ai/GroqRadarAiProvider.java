@@ -127,9 +127,9 @@ public class GroqRadarAiProvider implements RadarAiProvider {
                 if (!error.retryable() || attempt == maxRetries) {
                     throw lastError;
                 }
-                log.warn("radar_ai_call companyId={} provider={} model={} cache=miss latencyMs={} success=false retry={} errorType={} httpStatus={} providerErrorType={} providerErrorCode={}",
+                log.warn("radar_ai_call companyId={} provider={} model={} cache=miss latencyMs={} success=false retry={} errorType={} httpStatus={} providerErrorType={} providerErrorCode={} providerMessage={}",
                         input.companyId(), providerId(), model, elapsedMs(started), attempt, error.errorType(),
-                        error.httpStatus(), error.providerErrorType(), error.providerErrorCode());
+                        error.httpStatus(), error.providerErrorType(), error.providerErrorCode(), error.getMessage());
                 sleepBeforeRetry(null, attempt);
             } catch (JsonProcessingException error) {
                 lastError = new RadarAiException("MALFORMED_RESPONSE", "Groq returned malformed response JSON",

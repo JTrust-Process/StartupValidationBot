@@ -110,6 +110,7 @@ function renderProfile(detail: RadarCompanyDetail | RadarAdminCompanyDetail): st
     <div class="form-actions form-actions--start radar-profile-actions">
       ${companyUrl ? `<a id="radar-visit-link" class="button button--secondary"
           href="${escapeAttribute(companyUrl)}" target="_blank" rel="noreferrer">Visit site</a>` : ''}
+      <a class="button button--secondary" href="#/deals/new">Evaluate an Offering</a>
       ${admin ? `
         <button id="radar-deep-dive-button" class="button button--primary" type="button">Run Deep Dive</button>
         <button id="radar-watch-button" class="button button--secondary" type="button">
@@ -120,6 +121,7 @@ function renderProfile(detail: RadarCompanyDetail | RadarAdminCompanyDetail): st
           ${admin.company.ignored ? 'Restore' : 'Ignore'}</button>
       ` : ''}
     </div>
+    <p class="radar-muted">Use Deal Scout only after identifying an accessible investment offering.</p>
     <div id="radar-company-status" aria-live="polite"></div>
 
     <div class="radar-profile-grid">

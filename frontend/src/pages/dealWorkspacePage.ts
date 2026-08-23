@@ -1125,6 +1125,18 @@ export function renderDealWorkspacePage(path: string): string {
       ${renderLegalWarning(deal)}
       ${renderRiskLanguageWarning(deal)}
 
+      <nav class="deal-section-nav" aria-label="Deal workspace sections">
+        <button type="button" data-deal-section="deal-overview" aria-controls="deal-overview">Overview</button>
+        <button type="button" data-deal-section="deal-risk" aria-controls="deal-risk">Risk</button>
+        <button type="button" data-deal-section="deal-evidence" aria-controls="deal-evidence">Evidence</button>
+        <button type="button" data-deal-section="deal-documents" aria-controls="deal-documents">Documents</button>
+        <button type="button" data-deal-section="deal-memo" aria-controls="deal-memo">Memo</button>
+        <button type="button" data-deal-section="deal-scoring" aria-controls="deal-scoring">Scoring</button>
+        <button type="button" data-deal-section="deal-decision" aria-controls="deal-decision">Decision</button>
+        <button type="button" data-deal-section="deal-review" aria-controls="deal-review">Review</button>
+      </nav>
+
+      <section id="deal-overview" class="deal-workspace-section">
       ${deal.radarCompanyId ? `
         <div class="card">
           <h3>Origin</h3>
@@ -1140,16 +1152,31 @@ export function renderDealWorkspacePage(path: string): string {
 
       ${renderOverviewSection(deal)}
       ${renderScoreCards(deal)}
+      </section>
+      <section id="deal-risk" class="deal-workspace-section">
       ${renderRedFlagsSection(deal)}
       ${renderSuggestedRedFlagsSection(deal)}
+      </section>
+      <section id="deal-evidence" class="deal-workspace-section">
       ${renderEvidenceSection(deal)}
+      </section>
+      <section id="deal-documents" class="deal-workspace-section">
       ${renderDocumentLibrarySection(deal)}
+      </section>
+      <section id="deal-memo" class="deal-workspace-section">
       ${renderDealMemoSection(deal)}
       ${renderDetailForm(deal)}
+      </section>
+      <section id="deal-scoring" class="deal-workspace-section">
       ${renderQuickScreenSection(deal)}
+      </section>
+      <section id="deal-decision" class="deal-workspace-section">
       ${renderDecisionSection(deal)}
       ${renderDeepDiligenceSection(deal)}
+      </section>
+      <section id="deal-review" class="deal-workspace-section">
       ${renderReviewSection(deal)}
+      </section>
     </div>
   `;
 }
@@ -1174,6 +1201,14 @@ export function bindDealWorkspacePageEvents(root: HTMLElement, path: string): vo
   const decisionForm = root.querySelector<HTMLFormElement>('#decision-form');
   const deepDiligenceForm = root.querySelector<HTMLFormElement>('#deep-diligence-form');
   const reviewForm = root.querySelector<HTMLFormElement>('#review-form');
+
+  root.querySelectorAll<HTMLButtonElement>('[data-deal-section]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const sectionId = button.dataset.dealSection;
+      if (!sectionId) return;
+      root.querySelector<HTMLElement>(`#${sectionId}`)?.scrollIntoView({ block: 'start' });
+    });
+  });
 
   if (editDealForm && dealId) {
     editDealForm.addEventListener('submit', async (event) => {

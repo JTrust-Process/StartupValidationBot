@@ -23,7 +23,7 @@ export function renderRadarPage(): string {
     <div class="page radar-page">
       <div class="page-header page-header--row">
         <div>
-          <h2>Startup Radar</h2>
+          <h2>All Companies</h2>
           <p>Discover important startups. Scores measure research importance and personal relevance, not investment quality.</p>
         </div>
       </div>

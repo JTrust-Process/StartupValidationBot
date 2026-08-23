@@ -4,6 +4,7 @@
 const FORWARDED_REQUEST_HEADERS = ['accept', 'content-type', 'cookie', 'origin', 'user-agent'];
 const CLIENT_IP_HEADER = 'x-radar-client-ip';
 const FORWARDED_RESPONSE_HEADERS = ['content-type', 'content-disposition'];
+const ALLOWED_API_ROOTS = ['/api/radar', '/api/deal-workspaces', '/api/deals'];
 
 export function buildRadarTarget(requestUrl, backendOrigin) {
   if (!backendOrigin) throw new Error('RADAR_BACKEND_ORIGIN is not configured');
@@ -16,22 +17,36 @@ export function buildRadarTarget(requestUrl, backendOrigin) {
     throw new Error('RADAR_BACKEND_ORIGIN must be an origin without a path or credentials');
   }
   const incoming = new URL(requestUrl, 'https://radar-proxy.invalid');
-  if (incoming.pathname !== '/api/radar' && !incoming.pathname.startsWith('/api/radar/')) {
-    throw new Error('Only Radar API paths may be proxied');
+  if (!ALLOWED_API_ROOTS.some((root) => incoming.pathname === root || incoming.pathname.startsWith(`${root}/`))) {
+    throw new Error('Only explicitly allowed API paths may be proxied');
   }
   return new URL(`${incoming.pathname}${incoming.search}`, backend).toString();
 }
 
 export function resolveRadarProxyRequestUrl(requestUrl) {
   const incoming = new URL(requestUrl, 'https://radar-proxy.invalid');
-  const rewrittenPath = incoming.searchParams.get('__radar_path');
-  if (rewrittenPath === null) return requestUrl;
+  const rewrites = [
+    ['__radar_path', '/api/radar'],
+    ['__deal_workspace_path', '/api/deal-workspaces'],
+    ['__deals_path', '/api/deals']
+  ];
+  const rewrite = rewrites.find(([parameter]) => incoming.searchParams.has(parameter));
+  if (!rewrite) return requestUrl;
+  const [parameter, root] = rewrite;
+  const rewrittenPath = incoming.searchParams.get(parameter) ?? '';
 
-  incoming.searchParams.delete('__radar_path');
-  const resolved = new URL(`/api/radar/${rewrittenPath}`, incoming.origin);
-  if (!resolved.pathname.startsWith('/api/radar/')) {
-    throw new Error('Invalid Radar proxy path');
+  incoming.searchParams.delete(parameter);
+  let decodedPath;
+  try {
+    decodedPath = decodeURIComponent(rewrittenPath);
+  } catch {
+    throw new Error('Invalid API proxy path');
   }
+  if (decodedPath.includes('\\') || decodedPath.split('/').some((segment) => segment === '.' || segment === '..')) {
+    throw new Error('Invalid API proxy path');
+  }
+  const resolved = new URL(decodedPath ? `${root}/${decodedPath}` : root, incoming.origin);
+  if (resolved.pathname !== root && !resolved.pathname.startsWith(`${root}/`)) throw new Error('Invalid API proxy path');
   return `${resolved.pathname}${incoming.search}`;
 }
 
@@ -113,10 +128,10 @@ export async function proxyRadarRequest(request, response, options = {}) {
   } catch (error) {
     // Internal configuration detail stays in the platform log; the browser gets a generic message so
     // deployment state is not disclosed to anonymous callers.
-    console.error('radar_proxy_error', error instanceof Error ? error.message : 'unknown proxy failure');
+    console.error('private_api_proxy_error', error instanceof Error ? error.message : 'unknown proxy failure');
     response.statusCode = 502;
     response.setHeader('Content-Type', 'application/json');
     response.setHeader('Cache-Control', 'no-store');
-    response.end(JSON.stringify({ ok: false, error: 'Radar backend is unavailable.' }));
+    response.end(JSON.stringify({ ok: false, error: 'Application backend is unavailable.' }));
   }
 }

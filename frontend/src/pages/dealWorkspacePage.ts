@@ -1125,6 +1125,14 @@ export function renderDealWorkspacePage(path: string): string {
       ${renderLegalWarning(deal)}
       ${renderRiskLanguageWarning(deal)}
 
+      ${deal.radarCompanyId ? `
+        <div class="card">
+          <h3>Origin</h3>
+          <p>Startup Radar</p>
+          <a class="table-link" href="#/radar/company/${deal.radarCompanyId}">${escapeHtml(deal.companyName)}</a>
+        </div>
+      ` : ''}
+
       <div class="card">
         <h3>Description</h3>
         <p>${escapeHtml(deal.shortDescription)}</p>

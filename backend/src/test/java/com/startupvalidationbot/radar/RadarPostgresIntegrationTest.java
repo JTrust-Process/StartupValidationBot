@@ -1,6 +1,7 @@
 package com.startupvalidationbot.radar;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -29,12 +31,14 @@ import com.startupvalidationbot.radar.service.RadarDiscoveryService;
 import com.startupvalidationbot.radar.service.RadarScoringService;
 import com.startupvalidationbot.radar.source.RssStartupSourceAdapter;
 import com.startupvalidationbot.radar.source.SourceFetchException;
+import com.startupvalidationbot.dealworkspace.DealWorkspaceStore;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Production-representative persistence coverage.
  *
  * The fast suite runs on H2, which cannot prove PostgreSQL behaviour for the things this system
- * actually depends on: Flyway V1-V7 applying in order, UNIQUE constraints on company identity and
+ * actually depends on: Flyway V1-V9 applying in order, UNIQUE constraints on company identity and
  * analysis cache keys, row-locked job leases, and durable login throttling. Those run here against
  * the real engine.
  *
@@ -83,6 +87,12 @@ class RadarPostgresIntegrationTest {
     @Autowired
     private RadarLoginAttemptStore loginAttempts;
 
+    @Autowired
+    private DealWorkspaceStore dealWorkspaces;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @Test
     void appliesEveryMigrationAndValidatesTheJpaMappingAgainstIt() {
         List<String> applied = jdbc.queryForList(
@@ -95,6 +105,7 @@ class RadarPostgresIntegrationTest {
                 .anyMatch(script -> script.contains("V4__"))
                 .anyMatch(script -> script.contains("V5__"))
                 .anyMatch(script -> script.contains("V6__"));
+        assertThat(applied).anyMatch(script -> script.contains("V9__"));
 
         // V4 brought the legacy diligence tables under Flyway. The context booting with
         // ddl-auto=validate is itself the assertion that the JPA mapping matches them.
@@ -104,6 +115,64 @@ class RadarPostgresIntegrationTest {
         assertThat(tableExists("deep_diligence")).isTrue();
         assertThat(tableExists("reviews")).isTrue();
         assertThat(tableExists("radar_login_attempts")).isTrue();
+        assertThat(tableExists("deal_workspaces")).isTrue();
+    }
+
+    @Test
+    void roundTripsCompleteDealWorkspaceJsonAndSupportsCrud() throws Exception {
+        var request = objectMapper.readTree("""
+                {
+                  "id": 999,
+                  "createdAt": "2000-01-01T00:00:00Z",
+                  "updatedAt": "2000-01-01T00:00:00Z",
+                  "companyName": "GridCool Systems",
+                  "platform": "Republic",
+                  "offeringUrl": "https://republic.example/gridcool",
+                  "radarCompanyId": 42,
+                  "documents": [{"id": 1, "title": "Form C", "pastedText": "Nested text"}],
+                  "evidenceClaims": [{"id": 1, "claim": "Revenue", "verified": true}],
+                  "redFlags": {"illiquidityNotDisclosed": true},
+                  "dealMemo": {"content": "Editable memo"},
+                  "importRecords": [{"id": 1, "dealId": 999, "rawText": "Campaign copy"}]
+                }
+                """);
+
+        var created = dealWorkspaces.create(request);
+        long id = created.get("id").asLong();
+        assertThat(id).isPositive().isNotEqualTo(999);
+        assertThat(created.get("createdAt").asText()).isNotEqualTo("2000-01-01T00:00:00Z");
+        assertThat(created.at("/importRecords/0/dealId").asLong()).isEqualTo(id);
+        assertThat(created.at("/documents/0/pastedText").asText()).isEqualTo("Nested text");
+        assertThat(created.get("radarCompanyId").asLong()).isEqualTo(42);
+
+        var loaded = dealWorkspaces.find(id).orElseThrow();
+        assertThat(loaded.at("/evidenceClaims/0/verified").asBoolean()).isTrue();
+        assertThat(dealWorkspaces.list()).extracting(node -> node.get("id").asLong()).contains(id);
+
+        ((com.fasterxml.jackson.databind.node.ObjectNode) loaded).put("platform", "Wefunder");
+        var updated = dealWorkspaces.update(id, loaded);
+        assertThat(updated.get("platform").asText()).isEqualTo("Wefunder");
+        assertThat(updated.get("createdAt").asText()).isEqualTo(created.get("createdAt").asText());
+        assertThat(updated.get("updatedAt").asText()).isNotEqualTo("2000-01-01T00:00:00Z");
+
+        dealWorkspaces.delete(id);
+        assertThat(dealWorkspaces.find(id)).isEmpty();
+    }
+
+    @Test
+    void rejectsInvalidAndOversizedDealWorkspacePayloads() throws Exception {
+        assertThatThrownBy(() -> dealWorkspaces.create(objectMapper.readTree("[]")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("JSON object");
+        assertThatThrownBy(() -> dealWorkspaces.create(objectMapper.readTree("{\"companyName\":\"Acme\"}")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("platform is required");
+        String huge = "x".repeat(1_048_576);
+        var oversized = objectMapper.createObjectNode().put("companyName", "Acme").put("platform", "Republic")
+                .put("rawDealText", huge);
+        assertThatThrownBy(() -> dealWorkspaces.create(oversized))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("1 MB");
     }
 
     @Test

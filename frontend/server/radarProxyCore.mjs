@@ -45,7 +45,7 @@ export function resolveRadarProxyRequestUrl(requestUrl) {
   if (decodedPath.includes('\\') || decodedPath.split('/').some((segment) => segment === '.' || segment === '..')) {
     throw new Error('Invalid API proxy path');
   }
-  const resolved = new URL(`${root}/${decodedPath}`, incoming.origin);
+  const resolved = new URL(decodedPath ? `${root}/${decodedPath}` : root, incoming.origin);
   if (resolved.pathname !== root && !resolved.pathname.startsWith(`${root}/`)) throw new Error('Invalid API proxy path');
   return `${resolved.pathname}${incoming.search}`;
 }

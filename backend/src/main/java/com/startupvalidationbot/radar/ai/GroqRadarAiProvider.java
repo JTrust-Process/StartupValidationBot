@@ -7,7 +7,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -159,20 +158,11 @@ public class GroqRadarAiProvider implements RadarAiProvider {
     private HttpRequest buildRequest(PublicCompanyAnalysisInput input, String model, boolean deepDive) {
         try {
             Map<String, Object> publicPayload = publicPayload(input);
-            String task = deepDive
-                    ? "Generate a detailed startup research memo from only the supplied public Radar evidence."
-                    : "Enrich this startup record from only the supplied public Radar evidence.";
-            String system = "You are a startup research analyst. " + task
-                    + " Separate facts from inferences. Use 'Unknown' or an empty array whenever evidence is absent."
-                    + " Do not invent founders, funding, investors, revenue, customers, users, traction, or access terms."
-                    + " Do not make investment recommendations or use external knowledge. Cite only supplied source URLs."
-                    + " Personal preferences are not supplied: use 'Unknown' for whyIShouldCare and careerAngle,"
-                    + " and return an empty personalScoreInputs array.";
             Map<String, Object> body = Map.of(
                     "model", model,
                     "reasoning_effort", deepDive ? "medium" : "low",
                     "messages", List.of(
-                            Map.of("role", "system", "content", system),
+                            Map.of("role", "system", "content", RadarAiPrompt.instructions(deepDive)),
                             Map.of("role", "user", "content",
                                     "Public Radar data:\n" + mapper.writeValueAsString(publicPayload))),
                     "response_format", Map.of(
@@ -190,23 +180,7 @@ public class GroqRadarAiProvider implements RadarAiProvider {
     }
 
     static Map<String, Object> publicPayload(PublicCompanyAnalysisInput input) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("companyName", value(input.companyName()));
-        payload.put("domain", value(input.domain()));
-        payload.put("websiteUrl", value(input.websiteUrl()));
-        payload.put("publicDescription", value(input.publicDescription()));
-        payload.put("sector", value(input.sector()));
-        payload.put("categories", input.categories());
-        payload.put("headquarters", value(input.headquarters()));
-        payload.put("foundedYear", input.foundedYear() == null ? "Unknown" : input.foundedYear());
-        payload.put("acceleratorBatch", value(input.acceleratorBatch()));
-        payload.put("publicLaunchInformation", input.publicLaunchInformation());
-        payload.put("publicFundingInformation", input.publicFundingInformation());
-        payload.put("publicInvestorInformation", input.publicInvestorInformation());
-        payload.put("publicTractionInformation", input.publicTractionInformation());
-        payload.put("sources", input.sources());
-        payload.put("sourceCount", input.sourceCount());
-        return payload;
+        return PublicRadarPayload.from(input);
     }
 
     private RadarAiException httpError(int status, String responseBody, int attempts) {
@@ -308,7 +282,4 @@ public class GroqRadarAiProvider implements RadarAiProvider {
         return node.isNumber() ? node.longValue() : null;
     }
 
-    private static String value(Object value) {
-        return value == null || value.toString().isBlank() ? "Unknown" : value.toString();
-    }
 }

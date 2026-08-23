@@ -29,7 +29,10 @@ public class RadarSystemStatusService {
             @Value("${radar.ai.provider:groq}") String provider,
             @Value("${radar.ai.model:openai/gpt-oss-20b}") String routineModel,
             @Value("${radar.ai.deep-dive-model:openai/gpt-oss-120b}") String deepDiveModel,
-            @Value("${radar.ai.groq-api-key:}") String aiCredential,
+            @Value("${radar.ai.groq-api-key:}") String groqCredential,
+            @Value("${radar.ai.router-api-key:}") String routerCredential,
+            @Value("${radar.ai.router-routine-model:}") String routerRoutineModel,
+            @Value("${radar.ai.router-deep-dive-model:}") String routerDeepDiveModel,
             @Value("${radar.product-hunt-token:}") String productHuntToken,
             @Value("${radar.deal-scout-run-url:}") String dealScoutRunUrl,
             @Value("${radar.email-send-url:}") String emailSendUrl,
@@ -39,10 +42,11 @@ public class RadarSystemStatusService {
             @Value("${radar.run-token:}") String runToken) {
         this.store = store;
         this.aiEnabled = aiEnabled;
-        this.provider = provider;
-        this.routineModel = routineModel;
-        this.deepDiveModel = deepDiveModel;
-        this.aiCredentialConfigured = present(aiCredential);
+        this.provider = provider == null ? "" : provider.trim().toLowerCase(java.util.Locale.ROOT);
+        boolean router = "router".equals(this.provider);
+        this.routineModel = router ? routerRoutineModel : routineModel;
+        this.deepDiveModel = router ? routerDeepDiveModel : deepDiveModel;
+        this.aiCredentialConfigured = present(router ? routerCredential : groqCredential);
         this.productHuntConfigured = present(productHuntToken);
         this.dealScoutConfigured = present(dealScoutRunUrl);
         this.emailConfigured = present(emailSendUrl);
@@ -66,7 +70,7 @@ public class RadarSystemStatusService {
                 store.recentJobFailures(10).stream().map(RadarSystemStatusService::sanitize).toList(),
                 store.discoveryCount(), store.aiCallCount(), store.aiAttemptCount("CACHE_HIT"),
                 store.aiAttemptCount("FAILED"), aiEnabled, provider, routineModel, deepDiveModel,
-                Map.copyOf(integrations));
+                Map.copyOf(integrations), store.aiProviderComparisons());
     }
 
     private static boolean present(String value) {

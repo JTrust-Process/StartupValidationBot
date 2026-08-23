@@ -82,56 +82,79 @@ function renderProfile(detail: RadarCompanyDetail | RadarAdminCompanyDetail): st
   const analysis = detail.latestAnalysis;
   const companyUrl = safeExternalUrl(company.websiteUrl);
   const admin = 'watchlistNotes' in detail ? detail : null;
+  const batch = [company.accelerator, company.acceleratorBatch].filter(Boolean).join(' ');
+  const initial = company.name.trim().charAt(0).toUpperCase() || '?';
 
   return `
-    <div class="radar-deep-header">
-      <div>
-        <a class="radar-back-link" href="#/radar">Back to Radar Home</a>
-        <h2>${escapeHtml(company.name)}${[company.accelerator, company.acceleratorBatch]
-          .filter(Boolean).join(' ')
-          ? `<span class="radar-badge">${escapeHtml([company.accelerator, company.acceleratorBatch]
-              .filter(Boolean).join(' '))}</span>` : ''}</h2>
-        <p class="radar-one-liner">${escapeHtml(analysis?.summary || company.description
-          || 'No source summary captured yet.')}</p>
-        <div class="radar-tags">
-          ${company.sector && company.sector !== 'Unknown'
-            ? `<span class="radar-tag">${escapeHtml(company.sector)}</span>` : ''}
-          ${company.categories.map((category) => `<span class="radar-tag">${escapeHtml(category)}</span>`).join('')}
-          <span class="radar-meta">${company.sourceCount} source${company.sourceCount === 1 ? '' : 's'}</span>
-          <span class="radar-meta">First seen ${escapeHtml(formatRadarDate(company.firstSeenAt))}</span>
+    <a class="radar-back-link" href="#/radar">&larr; Intelligence Feed</a>
+    <header class="radar-deep-header radar-profile-identity">
+      <div class="radar-profile-identity__main">
+        <span class="radar-company-initial radar-company-initial--large" aria-hidden="true">${escapeHtml(initial)}</span>
+        <div>
+          <div class="radar-profile-title-row">
+            <h2>${escapeHtml(company.name)}</h2>
+            ${batch ? `<span class="radar-badge">${escapeHtml(batch)}</span>` : ''}
+            ${admin?.company.watched ? '<span class="radar-badge radar-badge--watch">Watching</span>' : ''}
+          </div>
+          <p class="radar-one-liner">${escapeHtml(analysis?.summary || company.description
+            || 'No source summary captured yet.')}</p>
+          <div class="radar-tags">
+            ${company.sector && company.sector !== 'Unknown'
+              ? `<span class="radar-tag">${escapeHtml(company.sector)}</span>` : ''}
+            ${company.categories.map((category) => `<span class="radar-tag">${escapeHtml(category)}</span>`).join('')}
+            ${admin?.company.headquarters ? `<span class="radar-meta">${escapeHtml(admin.company.headquarters)}</span>` : ''}
+            ${admin?.company.foundedYear ? `<span class="radar-meta">Founded ${admin.company.foundedYear}</span>` : ''}
+            <span class="radar-meta">${company.sourceCount} source${company.sourceCount === 1 ? '' : 's'}</span>
+            <span class="radar-meta">First seen ${escapeHtml(formatRadarDate(company.firstSeenAt))}</span>
+          </div>
         </div>
       </div>
       <div class="radar-deep-scores">
         ${renderScore('Radar', company.radarScore)}
         ${admin ? renderScore('Personal', admin.company.personalScore) : ''}
       </div>
-    </div>
+    </header>
 
-    <div class="form-actions form-actions--start radar-profile-actions">
-      ${companyUrl ? `<a id="radar-visit-link" class="button button--secondary"
-          href="${escapeAttribute(companyUrl)}" target="_blank" rel="noreferrer">Visit site</a>` : ''}
-      <a class="button button--secondary" href="#/deals/new?radarCompanyId=${company.id}">Evaluate an Offering</a>
+    <div class="radar-profile-action-bar">
+      <div class="form-actions form-actions--start radar-profile-actions">
       ${admin ? `
-        <button id="radar-deep-dive-button" class="button button--primary" type="button">Run Deep Dive</button>
         <button id="radar-watch-button" class="button button--secondary" type="button">
           ${admin.company.watched ? 'Update watch' : 'Watch'}</button>
         ${admin.company.watched
           ? '<button id="radar-unwatch-button" class="button button--secondary" type="button">Unwatch</button>' : ''}
+        <button id="radar-deep-dive-button" class="button button--primary" type="button">Run Deep Dive</button>
+      ` : ''}
+        <a class="button button--offering" href="#/deals/new?radarCompanyId=${company.id}">Evaluate an Offering</a>
+        ${companyUrl ? `<a id="radar-visit-link" class="button button--secondary"
+            href="${escapeAttribute(companyUrl)}" target="_blank" rel="noreferrer">Visit site</a>` : ''}
+      ${admin ? `
         <button id="radar-ignore-button" class="button button--secondary" type="button">
           ${admin.company.ignored ? 'Restore' : 'Ignore'}</button>
       ` : ''}
+      </div>
+      <p class="radar-muted">Use Deal Scout only after identifying an accessible investment offering.</p>
     </div>
-    <p class="radar-muted">Use Deal Scout only after identifying an accessible investment offering.</p>
     <div id="radar-company-status" aria-live="polite"></div>
+
+    <section class="radar-panel radar-profile-overview">
+      <div class="radar-section-heading"><p class="page-eyebrow">Company research</p><h3>Overview</h3></div>
+      <p>${escapeHtml(company.description || 'No source summary captured yet.')}</p>
+      <div class="radar-overview-grid">
+        <div><span>Problem</span><strong>${escapeHtml(analysis?.problem || 'Unknown')}</strong></div>
+        <div><span>Solution</span><strong>${escapeHtml(analysis?.solution || 'Unknown')}</strong></div>
+        <div><span>Business model</span><strong>${escapeHtml(analysis?.businessModel || 'Unknown')}</strong></div>
+        <div><span>Stage</span><strong>${escapeHtml(analysis?.stage || 'Unknown')}</strong></div>
+      </div>
+    </section>
 
     <div class="radar-profile-grid">
       <section class="radar-panel">
-        <h3>Why it matters</h3>
+        <h3>Why It Matters</h3>
         ${list(analysis?.whyInteresting ?? [], 'No importance thesis captured yet.')}
         ${analysis?.whyItMatters ? `<p>${escapeHtml(analysis.whyItMatters)}</p>` : ''}
       </section>
       <section class="radar-panel">
-        <h3>Why I care</h3>
+        <h3>Why You Might Care</h3>
         <div id="radar-relevance-block"><p class="radar-muted">Loading relevance...</p></div>
       </section>
     </div>
@@ -140,33 +163,36 @@ function renderProfile(detail: RadarCompanyDetail | RadarAdminCompanyDetail): st
       <section class="radar-panel">
         <h3>Traction</h3>
         ${list(analysis?.tractionSignals ?? [], 'No source-supported traction captured.')}
+        ${list(analysis?.marketSignals ?? [], 'No additional market signals captured.')}
       </section>
       <section class="radar-panel">
-        <h3>Funding and investors</h3>
+        <h3>Funding / Investors</h3>
         <p>${escapeHtml(analysis?.fundingSummary || 'Unknown from current sources.')}</p>
         ${list(analysis?.likelyInvestors ?? [], 'No source-supported investors captured.')}
       </section>
     </div>
 
     <div class="radar-profile-grid">
-      <section class="radar-panel">
-        <h3>Risks</h3>
+      <section class="radar-panel radar-risk-panel">
+        <h3>Risks / Unknowns</h3>
         ${list(analysis?.risks ?? [], 'No risks captured yet.')}
+        <h4>Unanswered questions</h4>
+        ${list(analysis?.unansweredQuestions ?? [], 'No unanswered questions captured yet.')}
       </section>
       <section class="radar-panel">
-        <h3>Watch for</h3>
+        <h3>Monitoring Triggers</h3>
         ${list(analysis?.monitoringTriggers ?? [], 'No watch triggers captured yet.')}
       </section>
     </div>
 
     <section class="radar-panel">
-      <div class="page-header page-header--row"><div><h3>Recent changes</h3>
+      <div class="page-header page-header--row"><div><h3>Recent Changes</h3>
         <p>Detected deterministically from stored snapshots and tiered by significance.</p></div></div>
       <div id="radar-change-block"><p class="radar-muted">Loading changes...</p></div>
     </section>
 
     <section class="radar-panel">
-      <div class="page-header page-header--row"><div><h3>Similar startups</h3>
+      <div class="page-header page-header--row"><div><h3>Similar Companies</h3>
         <p>Ranked from shared categories, trends, sector and business model. No AI call is made.</p></div></div>
       <div id="radar-similar-block"><p class="radar-muted">Loading similar startups...</p></div>
     </section>

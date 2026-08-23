@@ -47,7 +47,7 @@ export function renderNewDealPage(): string {
     <div class="page">
       <div class="page-header">
         <h2>New Deal</h2>
-        <p>Add a startup or private-market deal to your local diligence workspace.</p>
+        <p>Add a startup or private-market offering to your private diligence workspace.</p>
       </div>
 
       <div class="notice notice--neutral">

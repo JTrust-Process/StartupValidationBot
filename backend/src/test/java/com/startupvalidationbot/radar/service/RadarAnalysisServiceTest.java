@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -225,6 +226,30 @@ class RadarAnalysisServiceTest {
         verify(provider, never()).analyzeCompany(any());
         verify(store).saveAnalysis(eq(company.id()), eq("DEEP_DIVE"), anyString(), eq("prompt-v2"),
                 eq("schema-v1"), eq("HYBRID"), eq("groq"), eq("openai/gpt-oss-120b"), any());
+    }
+
+    @Test
+    void configuredRouterFailureDoesNotFallBackToGroq() {
+        RadarAiProvider groq = mock(RadarAiProvider.class);
+        RadarAiProvider router = mock(RadarAiProvider.class);
+        when(groq.providerId()).thenReturn("groq");
+        when(router.providerId()).thenReturn("router");
+        when(router.isConfigured()).thenReturn(true);
+        when(router.routineModel()).thenReturn("router/benchmark-alias");
+        when(store.findCachedAnalysis(anyLong(), anyString(), anyString(), anyString(), anyString(), anyString(),
+                anyString())).thenReturn(Optional.empty());
+        when(router.analyzeCompany(input)).thenThrow(
+                new RadarAiException("PROVIDER_UNAVAILABLE", "Router unavailable", false, 1));
+        RadarAnalysisService service = new RadarAnalysisService(store, scoringService, inputFactory,
+                List.of(groq, router), true, "router", "prompt-v2", "schema-v1", 25);
+
+        service.analyze(company, "RADAR");
+
+        verify(router).analyzeCompany(input);
+        verify(groq, never()).analyzeCompany(any());
+        verify(groq, never()).generateDeepDive(any());
+        verify(store).saveAnalysis(eq(company.id()), eq("RADAR"), anyString(), eq("prompt-v2"), eq("schema-v1"),
+                eq("DETERMINISTIC"), eq("deterministic"), eq("deterministic-radar-v1"), any());
     }
 
     private RadarAnalysisService service(boolean enabled, int maxItems) {

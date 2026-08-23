@@ -47,3 +47,11 @@ appear in Local Storage.
 
 After logout, confirm Deal pages no longer display cached private workspaces and protected requests
 return `401`. Do not promote staging until every failed step has an attached browser/API log.
+
+## Router Provider Experiment
+
+Router is not part of the default Stage 7A configuration. Before a separate Router experiment, disable
+content recording in the Router account, keep all credentials server-side, and obtain both configured model
+IDs from Router's authenticated model catalog. Use a Router-supported routing/benchmark alias for routine
+enrichment and a pinned model for Deep Dive. Do not enable Router on stable staging until the experiment
+branch has been reviewed. A Router failure must remain visible in provider telemetry and must not call Groq.

@@ -38,7 +38,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * Production-representative persistence coverage.
  *
  * The fast suite runs on H2, which cannot prove PostgreSQL behaviour for the things this system
- * actually depends on: Flyway V1-V9 applying in order, UNIQUE constraints on company identity and
+ * actually depends on: Flyway V1-V10 applying in order, UNIQUE constraints on company identity and
  * analysis cache keys, row-locked job leases, and durable login throttling. Those run here against
  * the real engine.
  *
@@ -106,6 +106,7 @@ class RadarPostgresIntegrationTest {
                 .anyMatch(script -> script.contains("V5__"))
                 .anyMatch(script -> script.contains("V6__"));
         assertThat(applied).anyMatch(script -> script.contains("V9__"));
+        assertThat(applied).anyMatch(script -> script.contains("V10__"));
 
         // V4 brought the legacy diligence tables under Flyway. The context booting with
         // ddl-auto=validate is itself the assertion that the JPA mapping matches them.

@@ -39,7 +39,11 @@ test('restores nested Radar paths from Vercel rewrites', () => {
     resolveRadarProxyRequestUrl('/api/deal-workspaces/proxy?__deal_workspace_path=12'),
     '/api/deal-workspaces/12'
   );
-  assert.equal(resolveRadarProxyRequestUrl('/api/deals/proxy?__deals_path='), '/api/deals/');
+  assert.equal(
+    resolveRadarProxyRequestUrl('/api/deal-workspaces/proxy?__deal_workspace_path='),
+    '/api/deal-workspaces'
+  );
+  assert.equal(resolveRadarProxyRequestUrl('/api/deals/proxy?__deals_path='), '/api/deals');
   assert.throws(
     () => resolveRadarProxyRequestUrl('/api/deals/proxy?__deals_path=..%252F..%252Fradar'),
     /Invalid API proxy path/

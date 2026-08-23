@@ -6,12 +6,26 @@
   "functions": {
     "api/radar/[...path].mjs": {
       "maxDuration": 30
+    },
+    "api/deal-workspaces/[...path].mjs": {
+      "maxDuration": 30
+    },
+    "api/deals/[...path].mjs": {
+      "maxDuration": 30
     }
   },
   "rewrites": [
     {
       "source": "/api/radar/:path*",
       "destination": "/api/radar/proxy?__radar_path=:path*"
+    },
+    {
+      "source": "/api/deal-workspaces/:path*",
+      "destination": "/api/deal-workspaces/proxy?__deal_workspace_path=:path*"
+    },
+    {
+      "source": "/api/deals/:path*",
+      "destination": "/api/deals/proxy?__deals_path=:path*"
     }
   ],
   "headers": [

@@ -4,7 +4,13 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - claude/startup-radar-phase2
+      - main
+      - staging
+      - codex/**
+  pull_request:
+    branches:
+      - main
+      - staging
 
 permissions:
   contents: read

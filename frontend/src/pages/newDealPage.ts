@@ -1,5 +1,8 @@
 import type { DealInput } from '../models/deal';
 import { createDeal } from '../services/dealService';
+import { getDeals } from '../services/dealService';
+import { getRadarCompany } from '../services/radarService';
+import { escapeHtml } from '../utils/html';
 import { navigateTo } from '../utils/router';
 
 function getString(formData: FormData, key: keyof DealInput): string {
@@ -16,6 +19,7 @@ function getNumber(formData: FormData, key: keyof DealInput): number | undefined
 
 function getDealInput(formData: FormData): DealInput {
   return {
+    radarCompanyId: getNumber(formData, 'radarCompanyId'),
     companyName: getString(formData, 'companyName'),
     platform: getString(formData, 'platform'),
     sector: getString(formData, 'sector'),
@@ -50,8 +54,11 @@ export function renderNewDealPage(): string {
         This tool is for research organization only and is not financial advice.
       </div>
 
+      <div id="radar-deal-origin-status"></div>
+
       <div class="card">
         <form class="form-grid" id="new-deal-form">
+          <input id="radarCompanyId" name="radarCompanyId" type="hidden" />
           <div class="form-field">
             <label for="companyName">Company Name</label>
             <input id="companyName" name="companyName" type="text" placeholder="Acme Robotics" required />
@@ -189,10 +196,16 @@ export function renderNewDealPage(): string {
   `;
 }
 
-export function bindNewDealPageEvents(root: HTMLElement): void {
+export function bindNewDealPageEvents(root: HTMLElement, path: string): void {
   const form = root.querySelector<HTMLFormElement>('#new-deal-form');
 
   if (!form) return;
+
+  const query = path.includes('?') ? path.slice(path.indexOf('?') + 1) : '';
+  const radarCompanyId = Number(new URLSearchParams(query).get('radarCompanyId'));
+  if (Number.isInteger(radarCompanyId) && radarCompanyId > 0) {
+    void prefillFromRadar(root, form, radarCompanyId);
+  }
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -212,4 +225,39 @@ export function bindNewDealPageEvents(root: HTMLElement): void {
       window.alert('Failed to create deal.');
     }
   });
+}
+
+async function prefillFromRadar(root: HTMLElement, form: HTMLFormElement, radarCompanyId: number): Promise<void> {
+  const status = root.querySelector<HTMLElement>('#radar-deal-origin-status');
+  const duplicate = getDeals().find((deal) => deal.radarCompanyId === radarCompanyId);
+  if (duplicate) {
+    if (status) status.innerHTML = `
+      <div class="notice notice--warning">
+        A Deal Scout workspace already links to this Radar company.
+        <a href="#/deals/${duplicate.id}">Open ${escapeHtml(duplicate.companyName)}</a> before creating another.
+      </div>`;
+    return;
+  }
+
+  try {
+    const detail = await getRadarCompany(radarCompanyId);
+    const fields: Record<string, string> = {
+      radarCompanyId: String(radarCompanyId),
+      companyName: detail.company.name,
+      sector: detail.company.sector,
+      shortDescription: detail.company.description,
+      offeringUrl: detail.company.websiteUrl ?? ''
+    };
+    Object.entries(fields).forEach(([name, value]) => {
+      const field = form.elements.namedItem(name);
+      if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.value = value;
+    });
+    if (status) status.innerHTML = `
+      <div class="notice notice--neutral">
+        Prefilled public company facts from <a href="#/radar/company/${radarCompanyId}">Startup Radar</a>.
+        Add the actual investment platform and offering terms before saving.
+      </div>`;
+  } catch (error) {
+    if (status) status.innerHTML = `<div class="notice notice--warning">Could not load the linked Radar company. ${escapeHtml(error instanceof Error ? error.message : '')}</div>`;
+  }
 }

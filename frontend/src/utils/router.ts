@@ -3,7 +3,7 @@ export interface RouteInfo {
 }
 
 export function getCurrentRoute(): RouteInfo {
-  const hash = window.location.hash.replace('#', '') || '/dashboard';
+  const hash = window.location.hash.replace('#', '') || '/radar';
   return { path: hash };
 }
 

@@ -347,7 +347,7 @@ function normalizeImportRecords(value: unknown): DealImportRecord[] {
     .filter((record): record is DealImportRecord => Boolean(record));
 }
 
-function normalizeDeal(value: unknown, fallbackId: number): Deal | null {
+export function normalizeDeal(value: unknown, fallbackId: number): Deal | null {
   if (!isRecord(value)) return null;
 
   const now = new Date().toISOString();
@@ -359,6 +359,7 @@ function normalizeDeal(value: unknown, fallbackId: number): Deal | null {
 
   return {
     id,
+    radarCompanyId: asNumber(value.radarCompanyId),
     companyName: asString(value.companyName, 'Untitled Deal'),
     platform: asString(value.platform),
     sector: asString(value.sector),
@@ -585,6 +586,12 @@ export function exportStoredDeals(): DealExportPayload {
 }
 
 export function importStoredDeals(json: string): Deal[] {
+  const importedDeals = parseStoredDealsJson(json);
+  saveStoredDeals(importedDeals);
+  return importedDeals;
+}
+
+export function parseStoredDealsJson(json: string): Deal[] {
   const payload = JSON.parse(json) as unknown;
   const rawDeals = Array.isArray(payload)
     ? payload
@@ -596,7 +603,7 @@ export function importStoredDeals(json: string): Deal[] {
     throw new Error('JSON must be an array of deals or an exported Startup Deal OS payload.');
   }
 
-  const importedDeals = rawDeals
+  return rawDeals
     .map((value, index) => normalizeDeal(value, index + 1))
     .filter((deal): deal is Deal => Boolean(deal))
     .map((deal, index) => ({
@@ -605,6 +612,4 @@ export function importStoredDeals(json: string): Deal[] {
       updatedAt: deal.updatedAt || new Date().toISOString()
     }));
 
-  saveStoredDeals(importedDeals);
-  return importedDeals;
 }

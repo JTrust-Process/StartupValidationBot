@@ -1,10 +1,14 @@
 import type { Deal } from '../models/deal';
 import {
   getDeals,
+  dismissLegacyDealMigration,
+  exportLegacyDealsAsJson,
   getFinalRecommendation,
   getFinalScore,
   getRedFlagCount,
-  getRiskStatus
+  getRiskStatus,
+  getLegacyDealMigrationState,
+  migrateLegacyDealsToServer
 } from '../services/dealService';
 import {
   getDataConfidenceLabel,
@@ -147,6 +151,7 @@ function getFollowUpReasons(deal: Deal, today: string): string[] {
 
 export function renderDashboardPage(): string {
   const deals = getDeals();
+  const legacyMigration = getLegacyDealMigrationState();
   const scoutSummary = getScoutDashboardSummary();
   const today = new Date().toISOString().slice(0, 10);
   const finalScores = deals.map((deal) => getFinalScore(deal));
@@ -213,18 +218,31 @@ export function renderDashboardPage(): string {
     <div class="page">
       <div class="page-header">
         <h2>Dashboard</h2>
-        <p>Local-first startup deal diligence for non-accredited private-market research.</p>
+        <p>Private startup deal diligence backed by your authenticated server workspace.</p>
       </div>
 
       <div class="notice notice--neutral">
         This is a personal research workflow, not financial, legal, or tax advice.
       </div>
 
+      ${legacyMigration.showNotice ? `
+        <div class="notice notice--warning" id="legacy-deal-migration-notice">
+          <strong>Local Deal Scout data found</strong>
+          <p>${legacyMigration.found} local deal${legacyMigration.found === 1 ? '' : 's'} can be copied to the server. The local backup will be retained.</p>
+          <div class="form-actions form-actions--start">
+            <button class="button button--primary" id="migrate-local-deals-button" type="button">Migrate to server</button>
+            <button class="button button--secondary" id="export-local-deals-button" type="button">Export backup</button>
+            <button class="button button--secondary" id="dismiss-local-deals-button" type="button">Dismiss</button>
+          </div>
+          <div id="legacy-deal-migration-status" aria-live="polite"></div>
+        </div>
+      ` : ''}
+
       <div class="card-grid">
         <div class="card">
           <h3>Total Reviewed</h3>
           <p class="metric">${totalDeals}</p>
-          <p class="metric-subtext">Deals saved locally</p>
+          <p class="metric-subtext">Server-backed workspaces</p>
         </div>
 
         <div class="card">
@@ -581,6 +599,38 @@ export function renderDashboardPage(): string {
   `;
 }
 
-export function bindDashboardPageEvents(): void {
-  // Static local dashboard for now.
+export function bindDashboardPageEvents(root: HTMLElement): void {
+  const downloadBackup = () => {
+    const blob = new Blob([exportLegacyDealsAsJson()], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `startup-deal-os-local-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  root.querySelector<HTMLButtonElement>('#export-local-deals-button')
+    ?.addEventListener('click', downloadBackup);
+  root.querySelector<HTMLButtonElement>('#dismiss-local-deals-button')
+    ?.addEventListener('click', () => {
+      dismissLegacyDealMigration();
+      root.querySelector('#legacy-deal-migration-notice')?.remove();
+    });
+  const migrate = root.querySelector<HTMLButtonElement>('#migrate-local-deals-button');
+  migrate?.addEventListener('click', async () => {
+    const status = root.querySelector<HTMLElement>('#legacy-deal-migration-status');
+    migrate.disabled = true;
+    downloadBackup();
+    try {
+      const result = await migrateLegacyDealsToServer();
+      if (status) status.textContent = `Migration complete: ${result.migrated} copied, ${result.skipped} duplicates skipped.`;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (error) {
+      if (status) status.textContent = error instanceof Error ? error.message : 'Migration failed.';
+      migrate.disabled = false;
+    }
+  });
 }

@@ -103,12 +103,15 @@ export function getRadarAdminSession(): Promise<RadarAdminSession> {
   return request<RadarAdminSession>('/auth/session');
 }
 
-export function loginRadarAdmin(password: string): Promise<RadarAdminSession> {
-  return request<RadarAdminSession>('/auth/login', { method: 'POST', body: JSON.stringify({ password }) });
+export async function loginRadarAdmin(password: string): Promise<RadarAdminSession> {
+  const session = await request<RadarAdminSession>('/auth/login', { method: 'POST', body: JSON.stringify({ password }) });
+  window.dispatchEvent(new CustomEvent('radar-authenticated'));
+  return session;
 }
 
-export function logoutRadarAdmin(): Promise<void> {
-  return request<void>('/auth/logout', { method: 'POST' });
+export async function logoutRadarAdmin(): Promise<void> {
+  await request<void>('/auth/logout', { method: 'POST' });
+  window.dispatchEvent(new CustomEvent('radar-logged-out'));
 }
 
 export function listRadarAdminCompanies(filters: RadarCompanyFilters & { watched?: boolean } = {}): Promise<RadarAdminCompany[]> {

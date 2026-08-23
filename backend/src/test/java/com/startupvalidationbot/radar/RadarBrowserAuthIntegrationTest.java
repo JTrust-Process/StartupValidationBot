@@ -141,10 +141,11 @@ class RadarBrowserAuthIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.authenticated").value(true))
                 .andExpect(header().string("Set-Cookie", containsString("HttpOnly")))
+                .andExpect(header().stringValues("Set-Cookie", org.hamcrest.Matchers.hasItem(containsString("Path=/api"))))
+                .andExpect(header().stringValues("Set-Cookie", org.hamcrest.Matchers.hasItem(containsString("Path=/api/radar"))))
                 .andExpect(header().string("Set-Cookie", containsString("SameSite=Strict")))
                 .andReturn();
-        String token = login.getResponse().getCookie(RadarBrowserAuthService.COOKIE_NAME).getValue();
-        MockCookie cookie = new MockCookie(RadarBrowserAuthService.COOKIE_NAME, token);
+        MockCookie cookie = sessionCookie(login);
 
         mockMvc.perform(get("/api/radar/admin/companies").cookie(cookie)).andExpect(status().isOk());
         // Authenticated browser reads of the Radar data surface succeed with the same session cookie.
@@ -158,7 +159,7 @@ class RadarBrowserAuthIntegrationTest {
 
         mockMvc.perform(post("/api/radar/auth/logout").header("Origin", "https://radar.example").cookie(cookie))
                 .andExpect(status().isNoContent())
-                .andExpect(header().string("Set-Cookie", containsString("Max-Age=0")));
+                .andExpect(header().stringValues("Set-Cookie", org.hamcrest.Matchers.everyItem(containsString("Max-Age=0"))));
         mockMvc.perform(get("/api/radar/admin/companies").cookie(cookie)).andExpect(status().isUnauthorized());
     }
 
@@ -212,7 +213,15 @@ class RadarBrowserAuthIntegrationTest {
                 .contentType("application/json")
                 .content("{\"password\":\"" + PASSWORD + "\"}"))
                 .andExpect(status().isOk()).andReturn();
-        return new MockCookie(RadarBrowserAuthService.COOKIE_NAME,
-                login.getResponse().getCookie(RadarBrowserAuthService.COOKIE_NAME).getValue());
+        return sessionCookie(login);
+    }
+
+    private MockCookie sessionCookie(MvcResult login) {
+        var issued = java.util.Arrays.stream(login.getResponse().getCookies())
+                .filter(cookie -> RadarBrowserAuthService.COOKIE_NAME.equals(cookie.getName()))
+                .filter(cookie -> "/api".equals(cookie.getPath()))
+                .filter(cookie -> !cookie.getValue().isBlank())
+                .findFirst().orElseThrow();
+        return new MockCookie(issued.getName(), issued.getValue());
     }
 }

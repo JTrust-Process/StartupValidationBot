@@ -52,7 +52,8 @@ public class RadarBrowserAuthService {
             }
             sessions.deleteExpired();
             IssuedSession issued = sessions.issue(sessionLifetime);
-            response.addHeader(HttpHeaders.SET_COOKIE, sessionCookie(issued.token(), sessionLifetime).toString());
+            response.addHeader(HttpHeaders.SET_COOKIE, sessionCookie("", Duration.ZERO, "/api/radar").toString());
+            response.addHeader(HttpHeaders.SET_COOKIE, sessionCookie(issued.token(), sessionLifetime, "/api").toString());
             return new BrowserSession(true, issued.expiresAt(), true);
         } finally {
             Arrays.fill(password, '\0');
@@ -70,7 +71,8 @@ public class RadarBrowserAuthService {
     }
 
     public Optional<Session> session(HttpServletRequest request) {
-        return sessions.validate(cookieValue(request));
+        return cookieValues(request).stream().map(sessions::validate)
+                .flatMap(Optional::stream).findFirst();
     }
 
     public void requireSession(HttpServletRequest request) {
@@ -80,25 +82,26 @@ public class RadarBrowserAuthService {
     }
 
     public void logout(HttpServletRequest request, HttpServletResponse response) {
-        sessions.revoke(cookieValue(request));
-        response.addHeader(HttpHeaders.SET_COOKIE, sessionCookie("", Duration.ZERO).toString());
+        cookieValues(request).forEach(sessions::revoke);
+        response.addHeader(HttpHeaders.SET_COOKIE, sessionCookie("", Duration.ZERO, "/api").toString());
+        response.addHeader(HttpHeaders.SET_COOKIE, sessionCookie("", Duration.ZERO, "/api/radar").toString());
     }
 
-    private ResponseCookie sessionCookie(String value, Duration maxAge) {
+    private ResponseCookie sessionCookie(String value, Duration maxAge, String path) {
         return ResponseCookie.from(COOKIE_NAME, value)
                 .httpOnly(true)
                 .secure(secureCookie)
                 .sameSite(sameSite)
-                .path("/api")
+                .path(path)
                 .maxAge(maxAge)
                 .build();
     }
 
-    private static String cookieValue(HttpServletRequest request) {
+    private static java.util.List<String> cookieValues(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();
-        if (cookies == null) return "";
+        if (cookies == null) return java.util.List.of();
         return Arrays.stream(cookies).filter(cookie -> COOKIE_NAME.equals(cookie.getName()))
-                .map(Cookie::getValue).findFirst().orElse("");
+                .map(Cookie::getValue).filter(value -> value != null && !value.isBlank()).toList();
     }
 
     private static String requireSameSite(String value) {

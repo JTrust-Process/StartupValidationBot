@@ -1125,6 +1125,18 @@ export function renderDealWorkspacePage(path: string): string {
       ${renderLegalWarning(deal)}
       ${renderRiskLanguageWarning(deal)}
 
+      <nav class="deal-section-nav" aria-label="Deal workspace sections">
+        <a href="#deal-overview">Overview</a>
+        <a href="#deal-risk">Risk</a>
+        <a href="#deal-evidence">Evidence</a>
+        <a href="#deal-documents">Documents</a>
+        <a href="#deal-memo">Memo</a>
+        <a href="#deal-scoring">Scoring</a>
+        <a href="#deal-decision">Decision</a>
+        <a href="#deal-review">Review</a>
+      </nav>
+
+      <section id="deal-overview" class="deal-workspace-section">
       ${deal.radarCompanyId ? `
         <div class="card">
           <h3>Origin</h3>
@@ -1140,16 +1152,31 @@ export function renderDealWorkspacePage(path: string): string {
 
       ${renderOverviewSection(deal)}
       ${renderScoreCards(deal)}
+      </section>
+      <section id="deal-risk" class="deal-workspace-section">
       ${renderRedFlagsSection(deal)}
       ${renderSuggestedRedFlagsSection(deal)}
+      </section>
+      <section id="deal-evidence" class="deal-workspace-section">
       ${renderEvidenceSection(deal)}
+      </section>
+      <section id="deal-documents" class="deal-workspace-section">
       ${renderDocumentLibrarySection(deal)}
+      </section>
+      <section id="deal-memo" class="deal-workspace-section">
       ${renderDealMemoSection(deal)}
       ${renderDetailForm(deal)}
+      </section>
+      <section id="deal-scoring" class="deal-workspace-section">
       ${renderQuickScreenSection(deal)}
+      </section>
+      <section id="deal-decision" class="deal-workspace-section">
       ${renderDecisionSection(deal)}
       ${renderDeepDiligenceSection(deal)}
+      </section>
+      <section id="deal-review" class="deal-workspace-section">
       ${renderReviewSection(deal)}
+      </section>
     </div>
   `;
 }

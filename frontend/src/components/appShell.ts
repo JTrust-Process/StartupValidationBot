@@ -16,6 +16,39 @@ import {
 } from '../pages/dealWorkspacePage';
 import { getDealById, loadDealById } from '../services/dealService';
 
+function renderSidebar(): string {
+  return `
+    <aside class="sidebar">
+      <a class="sidebar__brand" href="#/radar" aria-label="Startup Intelligence home">
+        <span class="sidebar__brand-mark" aria-hidden="true">SI</span>
+        <span>Startup Intelligence</span>
+      </a>
+
+      <nav class="sidebar__nav" aria-label="Primary navigation">
+        <div class="nav-group">
+          <span class="nav-section-label">Intelligence</span>
+          <a href="#/radar" class="nav-link" data-route="/radar">Intelligence Feed</a>
+          <a href="#/radar/all" class="nav-link" data-route="/radar/all">All Companies</a>
+          <a href="#/watchlist" class="nav-link" data-route="/watchlist">Watchlist</a>
+          <a href="#/trends" class="nav-link" data-route="/trends">Trends</a>
+        </div>
+        <div class="nav-group">
+          <span class="nav-section-label">Diligence</span>
+          <a href="#/dashboard" class="nav-link" data-route="/dashboard">Dashboard</a>
+          <a href="#/deals" class="nav-link" data-route="/deals">Deals</a>
+          <a href="#/deals/new" class="nav-link" data-route="/deals/new">New Deal</a>
+          <a href="#/import-text" class="nav-link" data-route="/import-text">Text Import</a>
+          <a href="#/scout" class="nav-link" data-route="/scout">Deal Scout</a>
+        </div>
+        <div class="nav-group">
+          <span class="nav-section-label">System</span>
+          <a href="#/radar-admin" class="nav-link" data-route="/radar-admin">Admin</a>
+        </div>
+      </nav>
+    </aside>
+  `;
+}
+
 function getPageHtml(path: string): string {
   if (path === '/radar') return renderRadarHomePage();
   if (path === '/radar/all') return renderRadarPage();
@@ -143,35 +176,9 @@ async function ensureWorkspaceDealLoaded(path: string): Promise<void> {
 function renderPageError(root: HTMLDivElement, message: string): void {
   root.innerHTML = `
     <div class="app-shell">
-      <aside class="sidebar">
-        <div class="sidebar__brand">Startup Intelligence</div>
-
-        <nav class="sidebar__nav">
-          <span class="nav-section-label">Intelligence</span>
-          <a href="#/radar" class="nav-link" data-route="/radar">Radar Home</a>
-          <a href="#/radar/all" class="nav-link" data-route="/radar/all">All Companies</a>
-          <a href="#/watchlist" class="nav-link" data-route="/watchlist">Watchlist</a>
-          <a href="#/trends" class="nav-link" data-route="/trends">Trends</a>
-          <a href="#/radar-admin" class="nav-link" data-route="/radar-admin">Admin</a>
-          <span class="nav-section-label">Deal workflow</span>
-          <a href="#/dashboard" class="nav-link active" data-route="/dashboard">Dashboard</a>
-          <a href="#/deals" class="nav-link" data-route="/deals">Deals</a>
-          <a href="#/deals/new" class="nav-link" data-route="/deals/new">New Deal</a>
-          <a href="#/import-text" class="nav-link" data-route="/import-text">Text Import</a>
-          <a href="#/scout" class="nav-link" data-route="/scout">Deal Scout</a>
-        </nav>
-      </aside>
+      ${renderSidebar()}
 
       <main class="main-content">
-        <header class="topbar">
-          <div>
-            <h1 class="topbar__title">Startup Intelligence / Venture Radar</h1>
-            <p class="topbar__subtitle">
-              Discover startups, monitor changes, and preserve disciplined private-market diligence.
-            </p>
-          </div>
-        </header>
-
         <section class="page-content" id="page-content">
           <div class="page page--centered">
             <div class="card card--status">
@@ -206,35 +213,9 @@ async function renderLayout(root: HTMLDivElement): Promise<void> {
 
   root.innerHTML = `
     <div class="app-shell">
-      <aside class="sidebar">
-        <div class="sidebar__brand">Startup Intelligence</div>
-
-        <nav class="sidebar__nav">
-          <span class="nav-section-label">Intelligence</span>
-          <a href="#/radar" class="nav-link" data-route="/radar">Radar Home</a>
-          <a href="#/radar/all" class="nav-link" data-route="/radar/all">All Companies</a>
-          <a href="#/watchlist" class="nav-link" data-route="/watchlist">Watchlist</a>
-          <a href="#/trends" class="nav-link" data-route="/trends">Trends</a>
-          <a href="#/radar-admin" class="nav-link" data-route="/radar-admin">Admin</a>
-          <span class="nav-section-label">Deal workflow</span>
-          <a href="#/dashboard" class="nav-link" data-route="/dashboard">Dashboard</a>
-          <a href="#/deals" class="nav-link" data-route="/deals">Deals</a>
-          <a href="#/deals/new" class="nav-link" data-route="/deals/new">New Deal</a>
-          <a href="#/import-text" class="nav-link" data-route="/import-text">Text Import</a>
-          <a href="#/scout" class="nav-link" data-route="/scout">Deal Scout</a>
-        </nav>
-      </aside>
+      ${renderSidebar()}
 
       <main class="main-content">
-        <header class="topbar">
-          <div>
-            <h1 class="topbar__title">Startup Intelligence / Venture Radar</h1>
-            <p class="topbar__subtitle">
-              Discover startups, monitor changes, and preserve disciplined private-market diligence.
-            </p>
-          </div>
-        </header>
-
         <section class="page-content" id="page-content">
           ${getPageHtml(currentRoute.path)}
         </section>
@@ -253,7 +234,7 @@ export function renderApp(root: HTMLDivElement): void {
       await renderLayout(root);
     } catch (error) {
       console.error('Failed to render app layout:', error);
-      renderPageError(root, 'The selected local deal could not be loaded. It may have been deleted or replaced by an import.');
+      renderPageError(root, 'The selected deal could not be loaded. It may have been deleted or is temporarily unavailable.');
     }
   };
 

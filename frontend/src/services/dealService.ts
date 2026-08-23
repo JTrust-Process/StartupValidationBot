@@ -14,30 +14,35 @@ import type {
 import type { DocumentExtractionItem, DocumentRiskItem } from './documentIntelligence';
 import { generateDealMemoContent } from './documentIntelligence';
 import {
-  createStoredDeal,
-  deleteStoredDeal,
   exportStoredDeals,
-  importStoredDeals,
   loadStoredDeals,
-  replaceStoredDeal,
-  updateStoredDeal
+  parseStoredDealsJson
 } from '../storage/dealStorage';
+import { RED_FLAG_DEFINITIONS } from '../models/deal';
+import {
+  createDealWorkspace,
+  deleteDealWorkspace,
+  getDealWorkspace,
+  listDealWorkspaces,
+  updateDealWorkspace
+} from './dealWorkspaceApi';
 
 let dealsCache: Deal[] = [];
+let dealWorkspaceLoaded = false;
 
 function setCache(deals: Deal[]): void {
   dealsCache = deals.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 export async function loadDeals(): Promise<Deal[]> {
-  const deals = loadStoredDeals();
+  const deals = await listDealWorkspaces();
   setCache(deals);
+  dealWorkspaceLoaded = true;
   return deals;
 }
 
 export async function loadDealById(id: number): Promise<Deal> {
-  const deal = loadStoredDeals().find((storedDeal) => storedDeal.id === id);
-  if (!deal) throw new Error(`Deal ${id} not found`);
+  const deal = await getDealWorkspace(id);
 
   upsertDealInCache(deal);
   return deal;
@@ -45,6 +50,11 @@ export async function loadDealById(id: number): Promise<Deal> {
 
 export function getDeals(): Deal[] {
   return dealsCache;
+}
+
+export function clearDealsCache(): void {
+  setCache([]);
+  dealWorkspaceLoaded = false;
 }
 
 export function getDealById(id: number): Deal | undefined {
@@ -61,20 +71,66 @@ function upsertDealInCache(updatedDeal: Deal): void {
 }
 
 export async function createDeal(input: DealInput): Promise<Deal> {
-  const deal = createStoredDeal(input);
+  const deal = await createDealWorkspace(createDealDraft(input));
   upsertDealInCache(deal);
   return deal;
 }
 
 export async function updateDeal(dealId: number, input: DealInput): Promise<Deal> {
-  const deal = updateStoredDeal(dealId, input);
-  upsertDealInCache(deal);
-  return deal;
+  const existingDeal = getRequiredDeal(dealId);
+  const dealInput: DealInput = { ...input };
+  delete dealInput.importRecord;
+  delete dealInput.initialRedFlags;
+  return persistDeal({
+    ...existingDeal,
+    ...dealInput,
+    rawDealText: input.rawDealText ?? existingDeal.rawDealText,
+    status: input.decision,
+    updatedAt: new Date().toISOString()
+  });
 }
 
 export async function deleteDeal(dealId: number): Promise<void> {
-  deleteStoredDeal(dealId);
+  await deleteDealWorkspace(dealId);
   setCache(dealsCache.filter((deal) => deal.id !== dealId));
+}
+
+function createDealDraft(input: DealInput): Deal {
+  const now = new Date().toISOString();
+  const redFlags = Object.fromEntries(
+    RED_FLAG_DEFINITIONS.map(({ key }) => [key, input.initialRedFlags?.includes(key) ?? false])
+  ) as RedFlagMap;
+  const importRecord = input.importRecord;
+  const dealInput: DealInput = { ...input };
+  delete dealInput.importRecord;
+  delete dealInput.initialRedFlags;
+  return {
+    id: 0,
+    ...dealInput,
+    rawDealText: input.rawDealText ?? importRecord?.rawText ?? '',
+    status: input.decision,
+    quickScore: 0,
+    deepScore: null,
+    redFlags,
+    ignoredSuggestedRedFlags: [],
+    evidenceClaims: [],
+    documents: [],
+    importRecords: importRecord ? [{ id: 1, dealId: 0, ...importRecord, createdAt: now }] : [],
+    ignoredDocumentRiskIds: [],
+    dealMemo: null,
+    createdAt: now,
+    updatedAt: now,
+    quickScreen: null,
+    decisionNotes: null,
+    deepDiligence: null,
+    review: null
+  };
+}
+
+async function persistDeal(updatedDeal: Deal): Promise<Deal> {
+  const persisted = await updateDealWorkspace(updatedDeal);
+  upsertDealInCache(persisted);
+  return persisted;
 }
 
 export async function saveQuickScreen(
@@ -99,9 +155,7 @@ export async function saveQuickScreen(
     updatedAt: new Date().toISOString()
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 export async function saveDecision(
@@ -122,9 +176,7 @@ export async function saveDecision(
     updatedAt: new Date().toISOString()
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 export async function saveDeepDiligence(
@@ -149,9 +201,7 @@ export async function saveDeepDiligence(
     updatedAt: new Date().toISOString()
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 export async function saveReview(
@@ -165,9 +215,7 @@ export async function saveReview(
     updatedAt: new Date().toISOString()
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 export async function saveRedFlags(
@@ -181,9 +229,7 @@ export async function saveRedFlags(
     updatedAt: new Date().toISOString()
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 export async function acceptSuggestedRedFlags(
@@ -207,9 +253,7 @@ export async function acceptSuggestedRedFlags(
     updatedAt: new Date().toISOString()
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 export async function ignoreSuggestedRedFlags(
@@ -226,9 +270,7 @@ export async function ignoreSuggestedRedFlags(
     updatedAt: new Date().toISOString()
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 export async function saveEvidenceClaim(
@@ -253,9 +295,7 @@ export async function saveEvidenceClaim(
     updatedAt: now
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 export async function deleteEvidenceClaim(
@@ -269,9 +309,7 @@ export async function deleteEvidenceClaim(
     updatedAt: new Date().toISOString()
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 export async function saveDealDocument(
@@ -295,9 +333,7 @@ export async function saveDealDocument(
     updatedAt: now
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 export async function deleteDealDocument(
@@ -315,9 +351,7 @@ export async function deleteDealDocument(
     updatedAt: new Date().toISOString()
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 export async function acceptDocumentExtractions(
@@ -353,9 +387,7 @@ export async function acceptDocumentExtractions(
     updatedAt: now
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 export async function saveExtractionEvidenceClaims(
@@ -393,9 +425,7 @@ export async function convertDocumentRisksToRedFlags(
     updatedAt: now
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 export async function convertDocumentRisksToEvidence(
@@ -424,9 +454,7 @@ export async function appendDocumentRisksToMainRisk(
     updatedAt: new Date().toISOString()
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 export async function ignoreDocumentRisks(
@@ -440,9 +468,7 @@ export async function ignoreDocumentRisks(
     updatedAt: new Date().toISOString()
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 export async function generateAndSaveDealMemo(dealId: number): Promise<Deal> {
@@ -458,9 +484,7 @@ export async function generateAndSaveDealMemo(dealId: number): Promise<Deal> {
     updatedAt: now
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 export async function saveDealMemo(dealId: number, content: string): Promise<Deal> {
@@ -476,16 +500,14 @@ export async function saveDealMemo(dealId: number, content: string): Promise<Dea
     updatedAt: now
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 function saveEvidenceClaims(
   dealId: number,
   inputs: EvidenceClaimInput[],
   documentRiskIds: string[] = []
-): Deal {
+): Promise<Deal> {
   const deal = getRequiredDeal(dealId);
   const now = new Date().toISOString();
   const nextId = deal.evidenceClaims.reduce((maxId, claim) => Math.max(maxId, claim.id), 0) + 1;
@@ -504,9 +526,7 @@ function saveEvidenceClaims(
     updatedAt: now
   };
 
-  replaceStoredDeal(updatedDeal);
-  upsertDealInCache(updatedDeal);
-  return updatedDeal;
+  return persistDeal(updatedDeal);
 }
 
 function getRequiredDeal(dealId: number): Deal {
@@ -516,13 +536,70 @@ function getRequiredDeal(dealId: number): Deal {
 }
 
 export function exportDealsAsJson(): string {
-  return JSON.stringify(exportStoredDeals(), null, 2);
+  return JSON.stringify({ version: 4, exportedAt: new Date().toISOString(), deals: dealsCache }, null, 2);
 }
 
 export async function importDealsFromJson(json: string): Promise<Deal[]> {
-  const deals = importStoredDeals(json);
-  setCache(deals);
-  return deals;
+  const importedDeals = parseStoredDealsJson(json);
+  const keys = new Set(dealsCache.map(dealIdentityKey));
+  for (const importedDeal of importedDeals) {
+    const key = dealIdentityKey(importedDeal);
+    if (keys.has(key)) continue;
+    const persisted = await createDealWorkspace(importedDeal);
+    upsertDealInCache(persisted);
+    keys.add(key);
+  }
+  return dealsCache;
+}
+
+const LEGACY_MIGRATION_COMPLETE_KEY = 'startupDealOs.serverMigration.v1.complete';
+const LEGACY_MIGRATION_DISMISSED_KEY = 'startupDealOs.serverMigration.v1.dismissed';
+
+export function getLegacyDealMigrationState(): { found: number; showNotice: boolean } {
+  const found = loadStoredDeals().length;
+  return {
+    found,
+    showNotice: found > 0
+      && dealWorkspaceLoaded
+      && window.localStorage.getItem(LEGACY_MIGRATION_COMPLETE_KEY) !== 'true'
+      && window.localStorage.getItem(LEGACY_MIGRATION_DISMISSED_KEY) !== 'true'
+  };
+}
+
+export function exportLegacyDealsAsJson(): string {
+  return JSON.stringify(exportStoredDeals(), null, 2);
+}
+
+export function dismissLegacyDealMigration(): void {
+  window.localStorage.setItem(LEGACY_MIGRATION_DISMISSED_KEY, 'true');
+}
+
+export async function migrateLegacyDealsToServer(): Promise<{ migrated: number; skipped: number }> {
+  const legacyDeals = loadStoredDeals();
+  const keys = new Set(dealsCache.map(dealIdentityKey));
+  let migrated = 0;
+  let skipped = 0;
+
+  for (const legacyDeal of legacyDeals) {
+    const key = dealIdentityKey(legacyDeal);
+    if (keys.has(key)) {
+      skipped += 1;
+      continue;
+    }
+    const persisted = await createDealWorkspace(legacyDeal);
+    upsertDealInCache(persisted);
+    keys.add(key);
+    migrated += 1;
+  }
+
+  window.localStorage.setItem(LEGACY_MIGRATION_COMPLETE_KEY, 'true');
+  return { migrated, skipped };
+}
+
+function dealIdentityKey(deal: Pick<Deal, 'companyName' | 'platform' | 'offeringUrl'>): string {
+  return [deal.companyName, deal.platform, deal.offeringUrl]
+    .map((value) => value.trim().toLowerCase().replace(/\s+/g, ' '))
+    .join('|');
 }
 
 export function getQuickScreenOutcome(total: number): string {

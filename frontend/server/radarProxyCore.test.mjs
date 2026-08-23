@@ -13,7 +13,15 @@ test('builds only HTTPS Radar backend targets', () => {
     buildRadarTarget('/api/radar/admin/status?fresh=true', 'https://radar-backend.example'),
     'https://radar-backend.example/api/radar/admin/status?fresh=true'
   );
-  assert.throws(() => buildRadarTarget('/api/deals', 'https://radar-backend.example'), /Only Radar API/);
+  assert.equal(
+    buildRadarTarget('/api/deal-workspaces/12', 'https://radar-backend.example'),
+    'https://radar-backend.example/api/deal-workspaces/12'
+  );
+  assert.equal(
+    buildRadarTarget('/api/deals/12', 'https://radar-backend.example'),
+    'https://radar-backend.example/api/deals/12'
+  );
+  assert.throws(() => buildRadarTarget('/api/private', 'https://radar-backend.example'), /explicitly allowed/);
   assert.throws(() => buildRadarTarget('/api/radar/status', 'http://radar-backend.example'), /must use HTTPS/);
 });
 
@@ -25,7 +33,16 @@ test('restores nested Radar paths from Vercel rewrites', () => {
   assert.equal(resolveRadarProxyRequestUrl('/api/radar/health'), '/api/radar/health');
   assert.throws(
     () => resolveRadarProxyRequestUrl('/api/radar/proxy?__radar_path=..%2F..%2Fdeals'),
-    /Invalid Radar proxy path/
+    /Invalid API proxy path/
+  );
+  assert.equal(
+    resolveRadarProxyRequestUrl('/api/deal-workspaces/proxy?__deal_workspace_path=12'),
+    '/api/deal-workspaces/12'
+  );
+  assert.equal(resolveRadarProxyRequestUrl('/api/deals/proxy?__deals_path='), '/api/deals/');
+  assert.throws(
+    () => resolveRadarProxyRequestUrl('/api/deals/proxy?__deals_path=..%252F..%252Fradar'),
+    /Invalid API proxy path/
   );
 });
 
@@ -70,6 +87,57 @@ test('relays session cookies through the same-origin proxy', async () => {
   assert.equal(upstreamRequest.options.headers.has('authorization'), false);
   assert.deepEqual(responseHeaders.get('set-cookie'), ['radar_admin_session=value; HttpOnly']);
   assert.equal(response.statusCode, 200);
+});
+
+test('proxies private deal cookies and preserves upstream Set-Cookie', async () => {
+  let upstreamRequest;
+  const responseHeaders = new Map();
+  const response = {
+    statusCode: 0,
+    setHeader(name, value) { responseHeaders.set(name.toLowerCase(), value); },
+    end(body) { this.body = body; }
+  };
+  await proxyRadarRequest({
+    url: '/api/deal-workspaces/proxy?__deal_workspace_path=42',
+    method: 'PUT',
+    headers: {
+      cookie: 'radar_admin_session=session',
+      origin: 'https://frontend.example',
+      authorization: 'Bearer browser-controlled',
+      'x-radar-run-token': 'browser-controlled'
+    },
+    body: { companyName: 'Example', platform: 'Republic' }
+  }, response, {
+    backendOrigin: 'https://backend.example',
+    fetchImpl: async (url, options) => {
+      upstreamRequest = { url, options };
+      return new Response('{}', { status: 200, headers: { 'set-cookie': 'session=next; HttpOnly' } });
+    }
+  });
+  assert.equal(upstreamRequest.url, 'https://backend.example/api/deal-workspaces/42');
+  assert.equal(upstreamRequest.options.headers.get('cookie'), 'radar_admin_session=session');
+  assert.equal(upstreamRequest.options.headers.has('authorization'), false);
+  assert.equal(upstreamRequest.options.headers.has('x-radar-run-token'), false);
+  assert.deepEqual(responseHeaders.get('set-cookie'), ['session=next; HttpOnly']);
+});
+
+test('returns a safe 502 when the backend is unavailable', async () => {
+  const response = {
+    statusCode: 0,
+    headers: new Map(),
+    setHeader(name, value) { this.headers.set(name.toLowerCase(), value); },
+    end(body) { this.body = body; }
+  };
+  await proxyRadarRequest({ url: '/api/deals', method: 'GET', headers: {} }, response, {
+    backendOrigin: 'https://backend.example',
+    fetchImpl: async () => { throw new Error('secret backend detail'); }
+  });
+  assert.equal(response.statusCode, 502);
+  assert.deepEqual(JSON.parse(String(response.body)), {
+    ok: false,
+    error: 'Application backend is unavailable.'
+  });
+  assert.equal(String(response.body).includes('secret backend detail'), false);
 });
 
 test('derives a client address for durable login throttling', () => {

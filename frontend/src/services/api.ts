@@ -7,10 +7,13 @@ import type {
   ReviewRequest
 } from '../models/api';
 
-const API_BASE_URL = 'http://localhost:8080/api';
+/** @deprecated Legacy DTO API retained for compatibility. New Deal Scout code uses dealService. */
+const API_BASE_URL = '/api';
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
+    credentials: 'include',
+    cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers ?? {})

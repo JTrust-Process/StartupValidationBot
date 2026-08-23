@@ -110,7 +110,7 @@ function renderProfile(detail: RadarCompanyDetail | RadarAdminCompanyDetail): st
     <div class="form-actions form-actions--start radar-profile-actions">
       ${companyUrl ? `<a id="radar-visit-link" class="button button--secondary"
           href="${escapeAttribute(companyUrl)}" target="_blank" rel="noreferrer">Visit site</a>` : ''}
-      <a class="button button--secondary" href="#/deals/new">Evaluate an Offering</a>
+      <a class="button button--secondary" href="#/deals/new?radarCompanyId=${company.id}">Evaluate an Offering</a>
       ${admin ? `
         <button id="radar-deep-dive-button" class="button button--primary" type="button">Run Deep Dive</button>
         <button id="radar-watch-button" class="button button--secondary" type="button">

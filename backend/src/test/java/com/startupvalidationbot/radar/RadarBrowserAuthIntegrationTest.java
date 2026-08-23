@@ -2,6 +2,8 @@ package com.startupvalidationbot.radar;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -58,6 +60,65 @@ class RadarBrowserAuthIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.authenticated").value(false))
                 .andExpect(jsonPath("$.configured").value(true));
+    }
+
+    @Test
+    void protectsModernAndLegacyDealDataFromAnonymousAndWorkerAccess() throws Exception {
+        mockMvc.perform(get("/api/deal-workspaces")).andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/deal-workspaces")
+                .contentType("application/json").content("{\"companyName\":\"Acme\",\"platform\":\"Republic\"}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/deals")).andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/deal-workspaces")
+                .header("Authorization", "Bearer test-worker-token"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/deals")
+                .header("X-Radar-Run-Token", "test-worker-token"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void allowsAuthenticatedDealReadsAndValidOriginWritesButRejectsWrongOrigin() throws Exception {
+        MockCookie cookie = loginCookie("198.51.100.22");
+
+        mockMvc.perform(get("/api/deal-workspaces").cookie(cookie)).andExpect(status().isOk());
+        MvcResult created = mockMvc.perform(post("/api/deal-workspaces")
+                .cookie(cookie).header("Origin", "https://radar.example")
+                .contentType("application/json")
+                .content("{\"companyName\":\"Acme\",\"platform\":\"Republic\",\"documents\":[{\"title\":\"Form C\"}]}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").isNumber())
+                .andExpect(jsonPath("$.documents[0].title").value("Form C"))
+                .andReturn();
+        long id = ((Number) com.jayway.jsonpath.JsonPath.read(
+                created.getResponse().getContentAsString(), "$.id")).longValue();
+
+        mockMvc.perform(put("/api/deal-workspaces/" + id)
+                .cookie(cookie).header("Origin", "https://attacker.example")
+                .contentType("application/json")
+                .content("{\"companyName\":\"Acme\",\"platform\":\"Republic\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/deal-workspaces/" + id)
+                .cookie(cookie).header("Origin", "https://radar.example"))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void rejectsMalformedOrIncompleteAuthenticatedDealPayloads() throws Exception {
+        MockCookie cookie = loginCookie("198.51.100.23");
+        mockMvc.perform(post("/api/deal-workspaces")
+                .cookie(cookie).header("Origin", "https://radar.example")
+                .contentType("application/json").content("[1,2,3]"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/deal-workspaces")
+                .cookie(cookie).header("Origin", "https://radar.example")
+                .contentType("application/json").content("{\"companyName\":\"Missing platform\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/deal-workspaces")
+                .cookie(cookie).header("Origin", "https://radar.example")
+                .contentType("application/json").content("{bad json"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -142,5 +203,16 @@ class RadarBrowserAuthIntegrationTest {
         mockMvc.perform(get("/api/radar/admin/companies")
                 .header("Authorization", "Bearer test-worker-token"))
                 .andExpect(status().isOk());
+    }
+
+    private MockCookie loginCookie(String address) throws Exception {
+        MvcResult login = mockMvc.perform(post("/api/radar/auth/login")
+                .with(request -> { request.setRemoteAddr(address); return request; })
+                .header("Origin", "https://radar.example")
+                .contentType("application/json")
+                .content("{\"password\":\"" + PASSWORD + "\"}"))
+                .andExpect(status().isOk()).andReturn();
+        return new MockCookie(RadarBrowserAuthService.COOKIE_NAME,
+                login.getResponse().getCookie(RadarBrowserAuthService.COOKIE_NAME).getValue());
     }
 }

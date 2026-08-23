@@ -89,7 +89,7 @@ public class RadarBrowserAuthService {
                 .httpOnly(true)
                 .secure(secureCookie)
                 .sameSite(sameSite)
-                .path("/api/radar")
+                .path("/api")
                 .maxAge(maxAge)
                 .build();
     }

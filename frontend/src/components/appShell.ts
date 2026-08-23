@@ -25,7 +25,7 @@ function getPageHtml(path: string): string {
   if (path === '/radar-admin') return renderRadarAdminPage();
   if (path === '/dashboard') return renderDashboardPage();
   if (path === '/deals') return renderDealsPage();
-  if (path === '/deals/new') return renderNewDealPage();
+  if (path.startsWith('/deals/new')) return renderNewDealPage();
   if (path === '/import-text') return renderTextImportPage();
   if (path === '/scout') return renderScoutPage();
   if (path.startsWith('/deals/')) return renderDealWorkspacePage(path);
@@ -54,9 +54,10 @@ function updateActiveNav(root: HTMLDivElement, path: string): void {
     const route = link.dataset.route;
     const isActive =
       route === path ||
+      (route === '/deals/new' && path.startsWith('/deals/new')) ||
       (route === '/radar' && path.startsWith('/radar/company/')) ||
       (route === '/radar/all' && path === '/radar/all') ||
-      (route === '/deals' && path.startsWith('/deals/') && path !== '/deals/new');
+      (route === '/deals' && path.startsWith('/deals/') && !path.startsWith('/deals/new'));
 
     link.classList.toggle('active', Boolean(isActive));
   });
@@ -97,7 +98,7 @@ function bindPageEvents(root: HTMLDivElement, path: string): void {
   }
 
   if (path === '/dashboard') {
-    bindDashboardPageEvents();
+    bindDashboardPageEvents(pageContent);
     return;
   }
 
@@ -106,8 +107,8 @@ function bindPageEvents(root: HTMLDivElement, path: string): void {
     return;
   }
 
-  if (path === '/deals/new') {
-    bindNewDealPageEvents(pageContent);
+  if (path.startsWith('/deals/new')) {
+    bindNewDealPageEvents(pageContent, path);
     return;
   }
 
@@ -128,7 +129,7 @@ function bindPageEvents(root: HTMLDivElement, path: string): void {
 
 async function ensureWorkspaceDealLoaded(path: string): Promise<void> {
   if (!path.startsWith('/deals/')) return;
-  if (path === '/deals/new') return;
+  if (path.startsWith('/deals/new')) return;
 
   const id = Number(path.split('/').pop() ?? '');
   if (!id) return;
@@ -261,7 +262,7 @@ export function renderApp(root: HTMLDivElement): void {
   });
 
   if (!window.location.hash) {
-    window.location.hash = '/dashboard';
+    window.location.hash = '/radar';
   }
 
   void rerender();

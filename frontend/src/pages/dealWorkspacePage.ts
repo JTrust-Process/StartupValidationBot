@@ -1126,14 +1126,14 @@ export function renderDealWorkspacePage(path: string): string {
       ${renderRiskLanguageWarning(deal)}
 
       <nav class="deal-section-nav" aria-label="Deal workspace sections">
-        <a href="#deal-overview">Overview</a>
-        <a href="#deal-risk">Risk</a>
-        <a href="#deal-evidence">Evidence</a>
-        <a href="#deal-documents">Documents</a>
-        <a href="#deal-memo">Memo</a>
-        <a href="#deal-scoring">Scoring</a>
-        <a href="#deal-decision">Decision</a>
-        <a href="#deal-review">Review</a>
+        <button type="button" data-deal-section="deal-overview" aria-controls="deal-overview">Overview</button>
+        <button type="button" data-deal-section="deal-risk" aria-controls="deal-risk">Risk</button>
+        <button type="button" data-deal-section="deal-evidence" aria-controls="deal-evidence">Evidence</button>
+        <button type="button" data-deal-section="deal-documents" aria-controls="deal-documents">Documents</button>
+        <button type="button" data-deal-section="deal-memo" aria-controls="deal-memo">Memo</button>
+        <button type="button" data-deal-section="deal-scoring" aria-controls="deal-scoring">Scoring</button>
+        <button type="button" data-deal-section="deal-decision" aria-controls="deal-decision">Decision</button>
+        <button type="button" data-deal-section="deal-review" aria-controls="deal-review">Review</button>
       </nav>
 
       <section id="deal-overview" class="deal-workspace-section">
@@ -1201,6 +1201,14 @@ export function bindDealWorkspacePageEvents(root: HTMLElement, path: string): vo
   const decisionForm = root.querySelector<HTMLFormElement>('#decision-form');
   const deepDiligenceForm = root.querySelector<HTMLFormElement>('#deep-diligence-form');
   const reviewForm = root.querySelector<HTMLFormElement>('#review-form');
+
+  root.querySelectorAll<HTMLButtonElement>('[data-deal-section]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const sectionId = button.dataset.dealSection;
+      if (!sectionId) return;
+      root.querySelector<HTMLElement>(`#${sectionId}`)?.scrollIntoView({ block: 'start' });
+    });
+  });
 
   if (editDealForm && dealId) {
     editDealForm.addEventListener('submit', async (event) => {

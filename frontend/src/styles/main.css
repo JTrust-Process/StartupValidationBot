@@ -3424,17 +3424,20 @@ select:focus {
   scrollbar-width: thin;
 }
 
-.deal-section-nav a {
+.deal-section-nav button {
   flex: 0 0 auto;
   padding: 6px 8px;
+  border: 0;
   border-radius: 5px;
   color: var(--text-muted);
+  background: transparent;
   font-size: 0.69rem;
   font-weight: 600;
+  cursor: pointer;
 }
 
-.deal-section-nav a:hover,
-.deal-section-nav a:focus-visible {
+.deal-section-nav button:hover,
+.deal-section-nav button:focus-visible {
   color: var(--text);
   background: rgba(117, 107, 245, 0.1);
 }

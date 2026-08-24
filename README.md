@@ -146,13 +146,13 @@ Discovery jobs fetch only configured public sources. Product Hunt uses its offic
 
 Every discovery is deduplicated, snapshotted, scored, and linked to a source. Source-supported facts and analyst inferences are displayed separately. Deterministic structured analysis remains the baseline and owns the final Radar and Personal Relevance scores.
 
-## Optional Groq Radar Analysis
+## Optional Radar AI Providers
 
-Groq is an enhancement, never a runtime dependency. Configure these server-side variables in `backend/.env` or the host secret manager:
+Radar AI is an enhancement, never a runtime dependency. Groq remains the default provider. Configure these server-side variables in `backend/.env` or the host secret manager:
 
 ```env
 RADAR_ENABLE_AI=true
-AI_PROVIDER=groq
+RADAR_AI_PROVIDER=groq
 GROQ_API_KEY=
 RADAR_AI_MODEL=openai/gpt-oss-20b
 RADAR_DEEP_DIVE_MODEL=openai/gpt-oss-120b
@@ -167,6 +167,20 @@ Never prefix `GROQ_API_KEY` or `RADAR_RUN_TOKEN` with `VITE_`. The provider rece
 Routine runs use `openai/gpt-oss-20b`. A shared per-run budget is consumed only on cache misses, prioritizing newly discovered companies, watched companies with meaningful public changes, then other changed/stale companies. With the default setting, a daily run makes at most 25 AI calls and usually fewer. Protected manual Deep Dive requests use `openai/gpt-oss-120b`; saved results are reused while the public input, provider, model, prompt version, and schema version remain unchanged.
 
 Groq output must satisfy the strict typed analysis schema. Invalid output is retried within `RADAR_AI_MAX_RETRIES`; credential errors, model errors, timeouts, rate limits, malformed responses, and provider outages are recorded without secrets. The affected company then receives cached or newly generated deterministic analysis, and the worker continues.
+
+Stage 7C also includes an opt-in Router provider experiment using Router's documented [Responses API](https://docs.router.com/api/endpoint):
+
+```env
+RADAR_AI_PROVIDER=router
+ROUTER_API_KEY=
+ROUTER_BASE_URL=https://api.router.com/v1
+RADAR_ROUTER_ROUTINE_MODEL=
+RADAR_ROUTER_DEEP_DIVE_MODEL=
+```
+
+Router model identifiers are account/catalog data. Select a pinned model ID or a Router benchmark/routing alias returned by the authenticated [Router model catalog](https://docs.router.com/guides/choose-a-model); do not guess or hard-code an undocumented identifier. The initial experiment should use a configured routed alias for routine enrichment and a configured pinned model for Deep Dive. Router retries remain inside Router only: a Router failure falls back to deterministic Radar analysis and never silently calls Groq. Switch `RADAR_AI_PROVIDER` back to `groq` for the control path.
+
+Before enabling Router in staging, disable content recording in the Router account. The client also sends `store: false`, but that request setting is not a substitute for the account-wide operational requirement. Router receives the same `PublicCompanyAnalysisInput` whitelist as Groq and never receives Deal Scout data or private notes. The authenticated Admin status view compares deterministic success/failure, schema and malformed failures, retries, cache hits, latency, tokens, requested route, and returned model. Provider cost remains `Unknown` unless the API safely reports it.
 
 ## V2 Roadmap Completed
 

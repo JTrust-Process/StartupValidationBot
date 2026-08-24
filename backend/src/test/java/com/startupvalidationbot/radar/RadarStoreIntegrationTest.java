@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -155,6 +156,33 @@ class RadarStoreIntegrationTest {
 
         assertThat(saved.changes()).extracting(change -> change.changeType())
                 .contains("ACCELERATOR");
+    }
+
+    @Test
+    void aggregatesProviderComparisonWithoutPersistingPromptContent() {
+        var company = discoveryService.ingestManual(
+                discovery("Telemetry Systems", "https://telemetry-systems.test"));
+        store.recordAiAttempt(company.id(), "RADAR", "router", "router/benchmark-alias", "input-hash",
+                "prompt-v2", "schema-v1", "SUCCESS", null, null, 1, 125L, 80L, 30L, null, null, null,
+                "provider/actual-model", new BigDecimal("0.00125000"), "req-123", "trace-456");
+        store.recordAiAttempt(company.id(), "RADAR", "router", "router/benchmark-alias", "input-hash-2",
+                "prompt-v2", "schema-v1", "FAILED", "MALFORMED_RESPONSE", "sanitized failure", 0, 75L,
+                40L, 10L, 200, null, null, null, null, "req-124", "trace-457");
+
+        assertThat(store.aiProviderComparisons()).singleElement().satisfies(comparison -> {
+            assertThat(comparison.provider()).isEqualTo("router");
+            assertThat(comparison.requestedModel()).isEqualTo("router/benchmark-alias");
+            assertThat(comparison.actualModel()).isEqualTo("provider/actual-model");
+            assertThat(comparison.successes()).isEqualTo(1);
+            assertThat(comparison.failures()).isEqualTo(1);
+            assertThat(comparison.retries()).isEqualTo(1);
+            assertThat(comparison.malformedFailures()).isEqualTo(1);
+            assertThat(comparison.inputTokens()).isEqualTo(120);
+            assertThat(comparison.outputTokens()).isEqualTo(40);
+            assertThat(comparison.providerCostUsd()).isEqualByComparingTo("0.00125000");
+        });
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_ai_attempts WHERE error_message LIKE '%Public Radar data%'",
+                Long.class)).isZero();
     }
 
     @Test

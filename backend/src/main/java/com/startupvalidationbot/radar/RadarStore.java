@@ -361,16 +361,29 @@ public class RadarStore {
             String inputHash, String promptVersion, String schemaVersion, String status, String errorType,
             String errorMessage, int retryCount, Long latencyMs, Long inputTokens, Long outputTokens,
             Integer httpStatus, String providerErrorType, String providerErrorCode) {
+        recordAiAttempt(companyId, analysisType, provider, model, inputHash, promptVersion, schemaVersion, status,
+                errorType, errorMessage, retryCount, latencyMs, inputTokens, outputTokens, httpStatus,
+                providerErrorType, providerErrorCode, null, null, null, null);
+    }
+
+    public void recordAiAttempt(long companyId, String analysisType, String provider, String model,
+            String inputHash, String promptVersion, String schemaVersion, String status, String errorType,
+            String errorMessage, int retryCount, Long latencyMs, Long inputTokens, Long outputTokens,
+            Integer httpStatus, String providerErrorType, String providerErrorCode, String actualModel,
+            java.math.BigDecimal providerCostUsd, String providerRequestId, String providerTraceId) {
         jdbc.update("""
                 INSERT INTO radar_ai_attempts (
                     company_id, analysis_type, provider, model, input_hash, prompt_version, schema_version,
                     status, error_type, error_message, retry_count, latency_ms, input_tokens, output_tokens,
-                    http_status, provider_error_type, provider_error_code, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    http_status, provider_error_type, provider_error_code, actual_model, provider_cost_usd,
+                    provider_request_id, provider_trace_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, companyId, analysisType, provider, model, inputHash, promptVersion, schemaVersion, status,
                 blankToNull(errorType), blankToNull(truncate(errorMessage, 1_000)), retryCount, latencyMs,
                 inputTokens, outputTokens, httpStatus, blankToNull(truncate(providerErrorType, 160)),
-                blankToNull(truncate(providerErrorCode, 160)), LocalDateTime.now());
+                blankToNull(truncate(providerErrorCode, 160)), blankToNull(truncate(actualModel, 160)),
+                providerCostUsd, blankToNull(truncate(providerRequestId, 160)),
+                blankToNull(truncate(providerTraceId, 160)), LocalDateTime.now());
     }
 
     private void syncInvestors(long companyId, List<String> investorNames) {
@@ -602,6 +615,37 @@ public class RadarStore {
         Long count = jdbc.queryForObject("SELECT COUNT(*) FROM radar_ai_attempts WHERE status = ?", Long.class,
                 status);
         return count == null ? 0 : count;
+    }
+
+    public List<com.startupvalidationbot.radar.RadarAdminViews.AiProviderComparison> aiProviderComparisons() {
+        return jdbc.query("""
+                SELECT provider, model,
+                    CASE WHEN COUNT(DISTINCT actual_model) = 0 THEN model
+                         WHEN COUNT(DISTINCT actual_model) = 1 THEN MIN(actual_model)
+                         ELSE 'multiple' END AS actual_model,
+                    analysis_type,
+                    COUNT(*) AS attempts,
+                    SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS successes,
+                    SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) AS failures,
+                    SUM(CASE WHEN status = 'CACHE_HIT' THEN 1 ELSE 0 END) AS cache_hits,
+                    COALESCE(SUM(retry_count), 0) AS retries,
+                    SUM(CASE WHEN error_type = 'STRUCTURED_OUTPUT_REJECTED' THEN 1 ELSE 0 END) AS schema_failures,
+                    SUM(CASE WHEN error_type = 'MALFORMED_RESPONSE' THEN 1 ELSE 0 END) AS malformed_failures,
+                    CAST(AVG(latency_ms) AS BIGINT) AS average_latency_ms,
+                    COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                    COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                    SUM(provider_cost_usd) AS provider_cost_usd
+                FROM radar_ai_attempts
+                WHERE provider IN ('groq', 'router')
+                GROUP BY provider, model, analysis_type
+                ORDER BY provider, analysis_type, model
+                """, (rs, row) -> new com.startupvalidationbot.radar.RadarAdminViews.AiProviderComparison(
+                        rs.getString("provider"), rs.getString("model"), rs.getString("actual_model"),
+                        rs.getString("analysis_type"), rs.getLong("attempts"), rs.getLong("successes"),
+                        rs.getLong("failures"), rs.getLong("cache_hits"), rs.getLong("retries"),
+                        rs.getLong("schema_failures"), rs.getLong("malformed_failures"),
+                        rs.getObject("average_latency_ms", Long.class), rs.getLong("input_tokens"),
+                        rs.getLong("output_tokens"), rs.getBigDecimal("provider_cost_usd")));
     }
 
     public RadarExport exportRadar() {

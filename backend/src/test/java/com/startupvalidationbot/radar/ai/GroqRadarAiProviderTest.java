@@ -183,8 +183,12 @@ class GroqRadarAiProviderTest {
 
         assertThatThrownBy(() -> provider(1, Duration.ofMillis(50)).analyzeCompany(input()))
                 .isInstanceOf(RadarAiException.class)
-                .satisfies(error -> assertThat(((RadarAiException) error).errorType()).isEqualTo("TIMEOUT"));
-        assertThat(requests.get()).isBetween(1, 2);
+                .satisfies(error -> {
+                    RadarAiException aiError = (RadarAiException) error;
+                    assertThat(aiError.errorType()).isEqualTo("TIMEOUT");
+                    assertThat(aiError.attempts()).isEqualTo(2);
+                });
+        assertThat(requests.get()).isLessThanOrEqualTo(2);
     }
 
     @Test

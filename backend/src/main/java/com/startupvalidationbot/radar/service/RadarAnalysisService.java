@@ -93,7 +93,8 @@ public class RadarAnalysisService {
         }
         if (!provider.isConfigured()) {
             recordFailure(company.id(), normalizedType, provider.providerId(), model, inputHash,
-                    new RadarAiException("MISSING_CREDENTIALS", "GROQ_API_KEY is not configured", false, 0));
+                    new RadarAiException("MISSING_CREDENTIALS",
+                            "Configured " + provider.providerId() + " credentials are missing", false, 0));
             return deterministic(company, normalizedType, input);
         }
         if (!budget.tryAcquire()) {
@@ -110,9 +111,16 @@ public class RadarAnalysisService {
                     ? provider.generateDeepDive(input)
                     : provider.analyzeCompany(input);
             AnalysisPayload payload = merge(scoringService.score(company), response.output());
-            store.recordAiAttempt(company.id(), normalizedType, provider.providerId(), response.model(), inputHash,
-                    promptVersion, schemaVersion, "SUCCESS", null, null, response.retryCount(),
-                    response.latencyMs(), response.inputTokens(), response.outputTokens());
+            if (hasExtendedDiagnostics(response)) {
+                store.recordAiAttempt(company.id(), normalizedType, provider.providerId(), response.model(),
+                        inputHash, promptVersion, schemaVersion, "SUCCESS", null, null, response.retryCount(),
+                        response.latencyMs(), response.inputTokens(), response.outputTokens(), null, null, null,
+                        response.actualModel(), response.providerCostUsd(), response.requestId(), response.traceId());
+            } else {
+                store.recordAiAttempt(company.id(), normalizedType, provider.providerId(), response.model(),
+                        inputHash, promptVersion, schemaVersion, "SUCCESS", null, null, response.retryCount(),
+                        response.latencyMs(), response.inputTokens(), response.outputTokens());
+            }
             return store.saveAnalysis(company.id(), normalizedType, inputHash, promptVersion, schemaVersion,
                     "HYBRID", provider.providerId(), response.model(), payload);
         } catch (RadarAiException error) {
@@ -218,11 +226,23 @@ public class RadarAnalysisService {
 
     private void recordFailure(long companyId, String analysisType, String provider, String model,
             String inputHash, RadarAiException error) {
-        store.recordAiAttempt(companyId, analysisType, provider, model, inputHash, promptVersion, schemaVersion,
-                "FAILED", error.errorType(), error.getMessage(), Math.max(0, error.attempts() - 1), null, null,
-                null, error.httpStatus(), error.providerErrorType(), error.providerErrorCode());
+        if (error.latencyMs() != null || error.requestId() != null || error.traceId() != null) {
+            store.recordAiAttempt(companyId, analysisType, provider, model, inputHash, promptVersion, schemaVersion,
+                    "FAILED", error.errorType(), error.getMessage(), Math.max(0, error.attempts() - 1),
+                    error.latencyMs(), null, null, error.httpStatus(), error.providerErrorType(),
+                    error.providerErrorCode(), null, null, error.requestId(), error.traceId());
+        } else {
+            store.recordAiAttempt(companyId, analysisType, provider, model, inputHash, promptVersion, schemaVersion,
+                    "FAILED", error.errorType(), error.getMessage(), Math.max(0, error.attempts() - 1), null, null,
+                    null, error.httpStatus(), error.providerErrorType(), error.providerErrorCode());
+        }
         log.warn("radar_ai_fallback companyId={} provider={} model={} success=false retryCount={} errorType={}",
                 companyId, provider, model, Math.max(0, error.attempts() - 1), error.errorType());
+    }
+
+    private static boolean hasExtendedDiagnostics(RadarAiResponse response) {
+        return response.providerCostUsd() != null || response.requestId() != null || response.traceId() != null
+                || !java.util.Objects.equals(response.model(), response.actualModel());
     }
 
     private static List<String> combine(List<String> first, List<String> second) {

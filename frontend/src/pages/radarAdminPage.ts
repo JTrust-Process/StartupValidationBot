@@ -49,6 +49,11 @@ function statusHtml(status: RadarSystemStatus): string {
   const integrations = Object.entries(status.integrations).map(([name, configured]) => `
     <div><span>${escapeHtml(name.replace(/([A-Z])/g, ' $1'))}</span><strong class="${configured ? 'text-good' : 'text-warn'}">${configured ? 'Configured' : 'Not configured'}</strong></div>
   `).join('');
+  const providerComparisons = status.aiProviderComparisons ?? [];
+  const comparisons = providerComparisons.length ? `
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>Provider</th><th>Type</th><th>Requested / actual model</th><th>Success / failure / cache</th><th>Retries</th><th>Avg latency</th><th>Tokens in / out</th><th>Reported cost</th></tr></thead><tbody>
+      ${providerComparisons.map((row) => `<tr><td>${escapeHtml(row.provider)}</td><td>${escapeHtml(row.analysisType)}</td><td class="table-subtext">${escapeHtml(row.requestedModel)} / ${escapeHtml(row.actualModel)}</td><td>${row.successes} / ${row.failures} / ${row.cacheHits}</td><td>${row.retries}</td><td>${row.averageLatencyMs === null ? 'Unknown' : `${row.averageLatencyMs} ms`}</td><td>${row.inputTokens} / ${row.outputTokens}</td><td>${row.providerCostUsd === null ? 'Not reported' : `$${row.providerCostUsd.toFixed(6)}`}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="radar-muted">No Groq or Router attempts recorded yet.</p>';
   return `
     <section class="radar-panel">
       <div class="page-header page-header--row"><div><h3>System status</h3><p>Sanitized runtime and job telemetry.</p></div><button id="radar-export-button" class="button button--secondary" type="button">Export Radar JSON</button></div>
@@ -64,6 +69,9 @@ function statusHtml(status: RadarSystemStatus): string {
       </div>
       <p class="radar-muted">${escapeHtml(status.aiProvider)} / ${escapeHtml(status.routineModel)}; Deep Dive: ${escapeHtml(status.deepDiveModel)}. AI ${status.aiEnabled ? 'enabled' : 'disabled'}.</p>
       <div class="radar-integration-grid">${integrations}</div>
+      <h4>AI provider comparison</h4>
+      <p class="radar-muted">Deterministic attempt telemetry only. Router cost remains unknown unless its API reports it.</p>
+      ${comparisons}
       ${status.recentJobFailures.length ? `<div class="radar-failure-list"><h4>Recent job failures</h4>${status.recentJobFailures.map((failure) => `<p><strong>${escapeHtml(failure.jobType)}</strong> ${escapeHtml(failure.errorMessage || failure.status)}</p>`).join('')}</div>` : ''}
     </section>
   `;

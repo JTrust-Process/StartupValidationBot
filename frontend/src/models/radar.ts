@@ -132,6 +132,25 @@ export interface RadarSystemStatus {
   routineModel: string;
   deepDiveModel: string;
   integrations: Record<string, boolean>;
+  aiProviderComparisons: RadarAiProviderComparison[];
+}
+
+export interface RadarAiProviderComparison {
+  provider: string;
+  requestedModel: string;
+  actualModel: string;
+  analysisType: string;
+  attempts: number;
+  successes: number;
+  failures: number;
+  cacheHits: number;
+  retries: number;
+  schemaFailures: number;
+  malformedFailures: number;
+  averageLatencyMs: number | null;
+  inputTokens: number;
+  outputTokens: number;
+  providerCostUsd: number | null;
 }
 
 export interface RadarFixtureResult {

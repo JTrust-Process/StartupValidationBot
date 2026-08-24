@@ -42,6 +42,9 @@ class PublicRadarAnalysisInputFactoryTest {
         PublicCompanyAnalysisInput input = new PublicRadarAnalysisInputFactory(store).create(company);
         String payloadText = GroqRadarAiProvider.publicPayload(input).toString();
 
+        assertThat(RouterRadarAiProvider.publicPayload(input))
+                .isEqualTo(GroqRadarAiProvider.publicPayload(input));
+
         assertThat(input.publicDescription()).contains("builds public automation tools");
         assertThat(input.sources()).extracting(PublicCompanyAnalysisInput.PublicSourceEvidence::sourceType)
                 .containsExactlyInAnyOrder("MANUAL", "RSS", "HACKER_NEWS");

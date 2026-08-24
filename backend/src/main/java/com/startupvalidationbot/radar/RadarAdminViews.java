@@ -22,7 +22,14 @@ public final class RadarAdminViews {
             LocalDateTime lastEnrichmentRun, JobRunStatus lastWatchlistRefresh, JobRunStatus lastTrendRun,
             LocalDateTime lastDigest, List<JobRunStatus> recentJobFailures, long discoveriesProcessed,
             long aiCalls, long aiCacheHits, long aiFailures, boolean aiEnabled, String aiProvider,
-            String routineModel, String deepDiveModel, Map<String, Boolean> integrations) {
+            String routineModel, String deepDiveModel, Map<String, Boolean> integrations,
+            List<AiProviderComparison> aiProviderComparisons) {
+    }
+
+    public record AiProviderComparison(String provider, String requestedModel, String actualModel,
+            String analysisType, long attempts, long successes, long failures, long cacheHits, long retries,
+            long schemaFailures, long malformedFailures, Long averageLatencyMs, long inputTokens,
+            long outputTokens, java.math.BigDecimal providerCostUsd) {
     }
 
     public record AdminSource(long id, String sourceKey, String sourceType, String name, String url,

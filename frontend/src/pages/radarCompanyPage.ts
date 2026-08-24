@@ -268,7 +268,7 @@ function renderOfferings(offerings: RadarOffering[]): string {
       <div><span>Minimum</span><strong>${escapeHtml(offeringMoney(offering.minimumInvestment))}</strong></div>
       <div><span>Target / maximum</span><strong>${escapeHtml(offeringMoney(offering.targetAmount))} / ${escapeHtml(offeringMoney(offering.maximumAmount))}</strong></div>
       <div><span>Status</span><strong>${escapeHtml(offering.status.replaceAll('_', ' '))}</strong></div>
-      <div><span>Deadline</span><strong>${escapeHtml(formatRadarDate(offering.deadline))}</strong></div>
+      <div><span>Deadline</span><strong>${escapeHtml(offering.deadline ? formatRadarDate(offering.deadline) : 'Unknown')}</strong></div>
       <div><span>Last verified</span><strong>${escapeHtml(formatRadarDate(offering.lastSeenAt))}</strong></div>
     </div>
     <p class="radar-muted">This confirms an SEC filing exists. It does not verify issuer claims or investment quality.</p>

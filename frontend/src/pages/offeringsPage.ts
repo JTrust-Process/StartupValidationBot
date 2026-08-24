@@ -34,7 +34,7 @@ function card(offering: RadarOffering): string {
       <div><dt>Exemption</dt><dd>Regulation Crowdfunding</dd></div>
       <div><dt>Security</dt><dd>${escapeHtml(offering.securityType || 'Unknown')}</dd></div>
       <div><dt>Target / maximum</dt><dd>${money(offering.targetAmount)} / ${money(offering.maximumAmount)}</dd></div>
-      <div><dt>Deadline</dt><dd>${escapeHtml(formatRadarDate(offering.deadline))}</dd></div>
+      <div><dt>Deadline</dt><dd>${escapeHtml(offering.deadline ? formatRadarDate(offering.deadline) : 'Unknown')}</dd></div>
       <div><dt>Match confidence</dt><dd>${offering.matchConfidence}/100</dd></div>
       <div><dt>Last verified</dt><dd>${escapeHtml(formatRadarDate(offering.lastSeenAt))}</dd></div>
     </dl>

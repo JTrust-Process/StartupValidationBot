@@ -10,6 +10,7 @@ test('Offerings page keeps availability separate from investment quality and exp
   assert.match(page, /Open SEC Filing/);
   assert.match(page, /Evaluate in Deal Scout/);
   assert.match(page, /Already in Deal Scout/);
+  assert.match(page, /offering\.deadline \? formatRadarDate\(offering\.deadline\) : 'Unknown'/);
 });
 
 test('only confirmed active evidence creates the strong Radar badge', async () => {
@@ -23,6 +24,7 @@ test('only confirmed active evidence creates the strong Radar badge', async () =
   assert.match(home, /Offering Found/);
   assert.match(list, /matchStatus: 'CONFIRMED'/);
   assert.match(profile, /offering\.matchStatus === 'CONFIRMED'/);
+  assert.match(profile, /offering\.deadline \? formatRadarDate\(offering\.deadline\) : 'Unknown'/);
 });
 
 test('Deal Scout handoff is user submitted and carries public offering identity', async () => {

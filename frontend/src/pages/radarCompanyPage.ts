@@ -5,7 +5,8 @@ import type {
   RadarCompanyChange,
   RadarCompanyDetail,
   RadarRelevanceExplanation,
-  RadarSimilarCompany
+  RadarSimilarCompany,
+  RadarOffering
 } from '../models/radar';
 import {
   getRadarAdminCompany,
@@ -18,7 +19,8 @@ import {
   runRadarDeepDive,
   setRadarCompanyIgnored,
   unwatchRadarCompany,
-  watchRadarCompany
+  watchRadarCompany,
+  listCompanyOfferings
 } from '../services/radarService';
 import { escapeAttribute, escapeHtml } from '../utils/html';
 import { safeExternalUrl } from '../utils/urls';
@@ -136,6 +138,8 @@ function renderProfile(detail: RadarCompanyDetail | RadarAdminCompanyDetail): st
     </div>
     <div id="radar-company-status" aria-live="polite"></div>
 
+    <div id="radar-company-offerings"></div>
+
     <section class="radar-panel radar-profile-overview">
       <div class="radar-section-heading"><p class="page-eyebrow">Company research</p><h3>Overview</h3></div>
       <p>${escapeHtml(company.description || 'No source summary captured yet.')}</p>
@@ -243,6 +247,38 @@ function renderRelevance(explanation: RadarRelevanceExplanation): string {
   `;
 }
 
+function offeringMoney(value: number | null): string {
+  return value === null ? 'Unknown' : new Intl.NumberFormat('en-US', {
+    style: 'currency', currency: 'USD', maximumFractionDigits: 0
+  }).format(value);
+}
+
+function renderOfferings(offerings: RadarOffering[]): string {
+  if (!offerings.length) return '';
+  return offerings.map((offering) => {
+    const filingUrl = safeExternalUrl(offering.secFilingUrl);
+    const offeringUrl = safeExternalUrl(offering.offeringUrl);
+    return `<section class="radar-panel offering-profile-panel">
+    <div class="radar-section-heading"><p class="page-eyebrow">SEC-filed evidence</p><h3>Investment Offering</h3></div>
+    <div class="offering-facts">
+      <div><span>Platform</span><strong>${escapeHtml(offering.platform)}</strong></div>
+      <div><span>Exemption</span><strong>Regulation Crowdfunding</strong></div>
+      <div><span>Security</span><strong>${escapeHtml(offering.securityType || 'Unknown')}</strong></div>
+      <div><span>Minimum</span><strong>${escapeHtml(offeringMoney(offering.minimumInvestment))}</strong></div>
+      <div><span>Target / maximum</span><strong>${escapeHtml(offeringMoney(offering.targetAmount))} / ${escapeHtml(offeringMoney(offering.maximumAmount))}</strong></div>
+      <div><span>Status</span><strong>${escapeHtml(offering.status.replaceAll('_', ' '))}</strong></div>
+      <div><span>Deadline</span><strong>${escapeHtml(formatRadarDate(offering.deadline))}</strong></div>
+      <div><span>Last verified</span><strong>${escapeHtml(formatRadarDate(offering.lastSeenAt))}</strong></div>
+    </div>
+    <p class="radar-muted">This confirms an SEC filing exists. It does not verify issuer claims or investment quality.</p>
+    <div class="form-actions form-actions--start">
+      ${filingUrl ? `<a class="button button--secondary" href="${escapeAttribute(filingUrl)}" target="_blank" rel="noreferrer">Open SEC Filing</a>` : ''}
+      ${offeringUrl ? `<a class="button button--secondary" href="${escapeAttribute(offeringUrl)}" target="_blank" rel="noreferrer">Open Offering Page</a>` : ''}
+      <a class="button button--offering" href="#/deals/new?radarCompanyId=${offering.radarCompanyId}&offeringDiscoveryId=${offering.id}">Evaluate in Deal Scout</a>
+    </div></section>`;
+  }).join('');
+}
+
 function renderChanges(changes: RadarCompanyChange[]): string {
   if (!changes.length) return '<p class="radar-muted">No changes detected since discovery.</p>';
   return `<div class="radar-change-list">${changes.map((change) => `
@@ -305,6 +341,7 @@ export function bindRadarCompanyPageEvents(root: HTMLElement, path: string): voi
     void fillPanel('#radar-relevance-block', () => getRadarRelevance(companyId).then(renderRelevance));
     void fillPanel('#radar-change-block', () => listRadarCompanyChanges(companyId, 12).then(renderChanges));
     void fillPanel('#radar-similar-block', () => listSimilarRadarCompanies(companyId, 6).then(renderSimilar));
+    void fillPanel('#radar-company-offerings', () => listCompanyOfferings(companyId).then(renderOfferings));
 
     if (!session.authenticated || !('watchlistNotes' in detail)) return;
     bindAdminActions(detail as RadarAdminCompanyDetail);

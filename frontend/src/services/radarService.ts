@@ -19,7 +19,9 @@ import type {
   RadarTrend,
   RadarSystemStatus,
   RadarFixtureResult,
-  RadarJobResult
+  RadarJobResult,
+  RadarOffering,
+  OfferingDiagnostics
 } from '../models/radar';
 
 function resolveRadarApiBase(): string {
@@ -176,6 +178,31 @@ export function addManualRadarCompany(input: {
 
 export function runRadarJob(jobType: string): Promise<RadarJobResult> {
   return request<RadarJobResult>(`/jobs/${encodeURIComponent(jobType)}`, { method: 'POST', body: '{}' });
+}
+
+export function listRadarOfferings(filters: {
+  status?: string;
+  platform?: string;
+  matchStatus?: string;
+  companyId?: number;
+} = {}): Promise<RadarOffering[]> {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') params.set(key, String(value));
+  });
+  return request<RadarOffering[]>(`/offerings${params.size ? `?${params.toString()}` : ''}`);
+}
+
+export function getRadarOffering(offeringId: number): Promise<RadarOffering> {
+  return request<RadarOffering>(`/offerings/${offeringId}`);
+}
+
+export function listCompanyOfferings(companyId: number): Promise<RadarOffering[]> {
+  return request<RadarOffering[]>(`/companies/${companyId}/offerings`);
+}
+
+export function getOfferingDiagnostics(): Promise<OfferingDiagnostics> {
+  return request<OfferingDiagnostics>('/admin/offering-discovery');
 }
 
 export function seedRadarDemoFixture(): Promise<RadarFixtureResult> {

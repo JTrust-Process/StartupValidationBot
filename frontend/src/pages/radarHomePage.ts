@@ -4,9 +4,10 @@ import type {
   RadarHome,
   RadarHomeCompanyCard,
   RadarHomeSection,
-  RadarTrendDetail
+  RadarTrendDetail,
+  RadarOffering
 } from '../models/radar';
-import { getRadarHome } from '../services/radarService';
+import { getRadarHome, listRadarOfferings } from '../services/radarService';
 import { escapeHtml } from '../utils/html';
 
 const SIGNIFICANCE_TONE: Record<string, string> = {
@@ -50,7 +51,7 @@ function bullets(items: string[], limit: number): string {
     .map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`;
 }
 
-function companyCard(card: RadarHomeCompanyCard): string {
+function companyCard(card: RadarHomeCompanyCard, offeringCompanyIds: ReadonlySet<number>): string {
   const batch = [card.accelerator, card.acceleratorBatch].filter(Boolean).join(' ');
   const initial = card.name.trim().charAt(0).toUpperCase() || '?';
   return `
@@ -66,6 +67,7 @@ function companyCard(card: RadarHomeCompanyCard): string {
         <div class="radar-home-card__badges">
           ${batch ? `<span class="radar-badge">${escapeHtml(batch)}</span>` : ''}
           ${card.watched ? '<span class="radar-badge radar-badge--watch">Watching</span>' : ''}
+          ${offeringCompanyIds.has(card.id) ? '<span class="radar-badge radar-badge--offering">Offering Found</span>' : ''}
         </div>
       </header>
 
@@ -163,14 +165,14 @@ const SECTION_TITLES: Record<string, string> = {
   'emerging-trends': 'Emerging Trends'
 };
 
-function sectionHtml(section: RadarHomeSection): string {
+function sectionHtml(section: RadarHomeSection, offeringCompanyIds: ReadonlySet<number>): string {
   let body: string;
   let count: number;
 
   if (section.kind === 'COMPANIES') {
     count = section.companies.length;
     body = count
-      ? `<div class="radar-home-grid">${section.companies.map(companyCard).join('')}</div>`
+      ? `<div class="radar-home-grid">${section.companies.map((company) => companyCard(company, offeringCompanyIds)).join('')}</div>`
       : '<div class="radar-empty">Nothing in this section yet.</div>';
   } else if (section.kind === 'CHANGES') {
     count = section.changes.length;
@@ -228,7 +230,7 @@ function dailyBrief(home: RadarHome): string {
   `;
 }
 
-function render(home: RadarHome, summary: HTMLElement, brief: HTMLElement, body: HTMLElement): void {
+function render(home: RadarHome, offerings: RadarOffering[], summary: HTMLElement, brief: HTMLElement, body: HTMLElement): void {
   const activeTrends = home.sections.flatMap((section) => section.trends).length;
   summary.innerHTML = `
     <div><span>Companies tracked</span><strong>${home.totalCompanies}</strong></div>
@@ -237,7 +239,11 @@ function render(home: RadarHome, summary: HTMLElement, brief: HTMLElement, body:
     <div><span>Active trends</span><strong>${activeTrends}</strong></div>
   `;
   brief.innerHTML = dailyBrief(home);
-  body.innerHTML = home.sections.map(sectionHtml).join('');
+  const offeringCompanyIds = new Set(offerings
+    .filter((offering) => offering.matchStatus === 'CONFIRMED'
+      && ['ACTIVE', 'POSSIBLY_ACTIVE'].includes(offering.status) && offering.radarCompanyId !== null)
+    .map((offering) => offering.radarCompanyId as number));
+  body.innerHTML = home.sections.map((section) => sectionHtml(section, offeringCompanyIds)).join('');
 }
 
 export function bindRadarHomePageEvents(root: HTMLElement): void {
@@ -248,8 +254,8 @@ export function bindRadarHomePageEvents(root: HTMLElement): void {
 
   // Errors propagate so guardRadarView can turn a 401 into a sign-in form.
   const load = async () => {
-    const home = await getRadarHome();
-    render(home, summary, brief, body);
+    const [home, offerings] = await Promise.all([getRadarHome(), listRadarOfferings({ matchStatus: 'CONFIRMED' })]);
+    render(home, offerings, summary, brief, body);
   };
 
   void guardRadarView(body, load);

@@ -5,7 +5,7 @@ import { safeExternalUrl } from '../utils/urls';
 
 export function formatRadarDate(value: string | null): string {
   if (!value) return 'Never';
-  const date = new Date(value);
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
 }
 
@@ -24,7 +24,7 @@ export function renderScore(label: string, score: number): string {
   `;
 }
 
-export function renderCompanyRows(companies: RadarCompany[]): string {
+export function renderCompanyRows(companies: RadarCompany[], offeringCompanyIds: ReadonlySet<number> = new Set()): string {
   if (!companies.length) {
     return '<div class="radar-empty">No companies match this view yet.</div>';
   }
@@ -39,6 +39,7 @@ export function renderCompanyRows(companies: RadarCompany[]): string {
         <p>${escapeHtml(company.description || 'No source summary captured yet.')}</p>
         <div class="radar-tags">
           <span class="radar-tag">${escapeHtml(company.sector || 'Unknown')}</span>
+          ${offeringCompanyIds.has(company.id) ? '<span class="radar-badge radar-badge--offering">Offering Found</span>' : ''}
           ${company.categories.slice(0, 3).map((category) => `<span class="radar-tag">${escapeHtml(category)}</span>`).join('')}
           <span class="radar-meta">${company.sourceCount} source${company.sourceCount === 1 ? '' : 's'}</span>
           <span class="radar-meta">Updated ${escapeHtml(formatRadarDate(company.lastSeenAt))}</span>

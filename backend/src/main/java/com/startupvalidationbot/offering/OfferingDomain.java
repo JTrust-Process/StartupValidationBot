@@ -39,6 +39,7 @@ public final class OfferingDomain {
     public record Diagnostics(long offeringsStored, long confirmedMatches, long possibleMatches,
             String sourceStatus, LocalDateTime sourceLastSuccessAt, String sourceError,
             String lastJobStatus, LocalDateTime lastJobStartedAt, LocalDateTime lastJobCompletedAt,
-            Long lastJobDurationMs) {
+            Long lastJobDurationMs, int recordsInspected, int newOfferings, int updatedOfferings,
+            int errorCount) {
     }
 }

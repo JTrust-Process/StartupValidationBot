@@ -72,6 +72,21 @@ class OfferingStoreIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void diagnosticsExposeLatestOfferingJobCounts() {
+        LocalDateTime started = LocalDateTime.now().minusSeconds(2);
+        jdbc.update("""
+                INSERT INTO radar_job_runs (job_type, idempotency_key, status, summary_json, started_at, completed_at)
+                VALUES ('offering-discovery', 'diagnostics-test', 'COMPLETED', ?, ?, ?)
+                """, "{\"processed\":42,\"created\":3,\"updated\":5,\"errorCount\":1}", started, started.plusSeconds(1));
+
+        var diagnostics = store.diagnostics();
+        assertThat(diagnostics.recordsInspected()).isEqualTo(42);
+        assertThat(diagnostics.newOfferings()).isEqualTo(3);
+        assertThat(diagnostics.updatedOfferings()).isEqualTo(5);
+        assertThat(diagnostics.errorCount()).isEqualTo(1);
+    }
+
     private long company(String name, String domain) {
         LocalDateTime now = LocalDateTime.now();
         jdbc.update("""

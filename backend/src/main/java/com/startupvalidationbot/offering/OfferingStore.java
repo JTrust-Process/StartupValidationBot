@@ -176,15 +176,18 @@ public class OfferingStore {
                         ? new SourceDiagnostic(rs.getString(1), timestamp(rs.getTimestamp(2)), rs.getString(3))
                         : new SourceDiagnostic("NEVER_CHECKED", null, null));
         JobDiagnostic job = jdbc.query("""
-                SELECT status, started_at, completed_at FROM radar_job_runs
+                SELECT status, started_at, completed_at, summary_json FROM radar_job_runs
                 WHERE job_type='offering-discovery' ORDER BY started_at DESC LIMIT 1
                 """, rs -> rs.next()
-                        ? new JobDiagnostic(rs.getString(1), timestamp(rs.getTimestamp(2)), timestamp(rs.getTimestamp(3)))
-                        : new JobDiagnostic("NEVER_RUN", null, null));
+                        ? new JobDiagnostic(rs.getString(1), timestamp(rs.getTimestamp(2)), timestamp(rs.getTimestamp(3)),
+                                jsonInt(rs.getString(4), "processed"), jsonInt(rs.getString(4), "created"),
+                                jsonInt(rs.getString(4), "updated"), jsonInt(rs.getString(4), "errorCount"))
+                        : new JobDiagnostic("NEVER_RUN", null, null, 0, 0, 0, 0));
         Long duration = job.startedAt() == null || job.completedAt() == null ? null
                 : java.time.Duration.between(job.startedAt(), job.completedAt()).toMillis();
         return new Diagnostics(total, confirmed, possible, source.status(), source.successAt(), source.error(),
-                job.status(), job.startedAt(), job.completedAt(), duration);
+                job.status(), job.startedAt(), job.completedAt(), duration, job.processed(), job.created(),
+                job.updated(), job.errorCount());
     }
 
     private Optional<Offering> findExisting(Candidate candidate) {
@@ -266,6 +269,12 @@ public class OfferingStore {
 
     private long count(String sql) { Long value = jdbc.queryForObject(sql, Long.class); return value == null ? 0 : value; }
     private String json(Object value) { try { return objectMapper.writeValueAsString(value); } catch (JsonProcessingException e) { throw new IllegalArgumentException(e); } }
+
+    private int jsonInt(String value, String field) {
+        if (value == null || value.isBlank()) return 0;
+        try { return objectMapper.readTree(value).path(field).asInt(0); }
+        catch (JsonProcessingException error) { return 0; }
+    }
     private static String normalize(String value) { return com.startupvalidationbot.radar.CompanyIdentity.normalizeName(value); }
     private static Object nullIfBlank(String value) { return blank(value) ? null : value.trim(); }
     private static boolean blank(String value) { return value == null || value.isBlank(); }
@@ -273,5 +282,6 @@ public class OfferingStore {
 
     public record UpsertResult(Offering offering, boolean created) { }
     private record SourceDiagnostic(String status, LocalDateTime successAt, String error) { }
-    private record JobDiagnostic(String status, LocalDateTime startedAt, LocalDateTime completedAt) { }
+    private record JobDiagnostic(String status, LocalDateTime startedAt, LocalDateTime completedAt,
+            int processed, int created, int updated, int errorCount) { }
 }

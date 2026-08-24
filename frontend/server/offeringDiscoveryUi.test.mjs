@@ -38,3 +38,11 @@ test('Deal Scout handoff is user submitted and carries public offering identity'
   assert.match(service, /An SEC-filed offering statement exists/);
   assert.doesNotMatch(page, /createDeal\([^)]*offering[^)]*\).*prefill/s);
 });
+
+test('Admin persists the latest offering discovery run counts', async () => {
+  const page = await source('pages/radarAdminPage.ts');
+  assert.match(page, /Records inspected/);
+  assert.match(page, /New offerings/);
+  assert.match(page, /Updated offerings/);
+  assert.match(page, /offerings\.errorCount/);
+});

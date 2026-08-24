@@ -239,6 +239,10 @@ export interface OfferingDiagnostics {
   lastJobStartedAt: string | null;
   lastJobCompletedAt: string | null;
   lastJobDurationMs: number | null;
+  recordsInspected: number;
+  newOfferings: number;
+  updatedOfferings: number;
+  errorCount: number;
 }
 
 export interface RadarCompanyFilters {

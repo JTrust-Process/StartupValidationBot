@@ -108,6 +108,10 @@ function adminHtml(status: RadarSystemStatus, sources: Awaited<ReturnType<typeof
         <div><span>Latest job</span><strong>${escapeHtml(offerings.lastJobStatus)}</strong></div>
         <div><span>Last successful run</span><strong>${escapeHtml(formatRadarDate(offerings.sourceLastSuccessAt))}</strong></div>
         <div><span>Duration</span><strong>${offerings.lastJobDurationMs === null ? 'Unknown' : `${Math.round(offerings.lastJobDurationMs / 1000)}s`}</strong></div>
+        <div><span>Records inspected</span><strong>${offerings.recordsInspected}</strong></div>
+        <div><span>New offerings</span><strong>${offerings.newOfferings}</strong></div>
+        <div><span>Updated offerings</span><strong>${offerings.updatedOfferings}</strong></div>
+        <div><span>Errors</span><strong>${offerings.errorCount}</strong></div>
         <div><span>Offerings stored</span><strong>${offerings.offeringsStored}</strong></div>
         <div><span>Confirmed matches</span><strong>${offerings.confirmedMatches}</strong></div>
         <div><span>Possible matches</span><strong>${offerings.possibleMatches}</strong></div>

@@ -254,8 +254,9 @@ function offeringMoney(value: number | null): string {
 }
 
 function renderOfferings(offerings: RadarOffering[]): string {
-  if (!offerings.length) return '';
-  return offerings.map((offering) => {
+  const confirmedOfferings = offerings.filter((offering) => offering.matchStatus === 'CONFIRMED');
+  if (!confirmedOfferings.length) return '';
+  return confirmedOfferings.map((offering) => {
     const filingUrl = safeExternalUrl(offering.secFilingUrl);
     const offeringUrl = safeExternalUrl(offering.offeringUrl);
     return `<section class="radar-panel offering-profile-panel">

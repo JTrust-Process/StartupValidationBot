@@ -1,10 +1,11 @@
-import type { RadarInterest, RadarSystemStatus } from '../models/radar';
+import type { OfferingDiagnostics, RadarInterest, RadarSystemStatus } from '../models/radar';
 import {
   addManualRadarCompany,
   downloadRadarExport,
   getRadarAdminSession,
   getRadarInterests,
   getRadarSystemStatus,
+  getOfferingDiagnostics,
   listRadarAdminSources,
   loginRadarAdmin,
   logoutRadarAdmin,
@@ -77,7 +78,8 @@ function statusHtml(status: RadarSystemStatus): string {
   `;
 }
 
-function adminHtml(status: RadarSystemStatus, sources: Awaited<ReturnType<typeof listRadarAdminSources>>): string {
+function adminHtml(status: RadarSystemStatus, sources: Awaited<ReturnType<typeof listRadarAdminSources>>,
+  offerings: OfferingDiagnostics): string {
   return `
     <div class="radar-admin-heading"><span class="status-pill status-pill--green">Authenticated</span><button id="radar-logout-button" class="button button--secondary" type="button">Log out</button></div>
     ${statusHtml(status)}
@@ -96,8 +98,21 @@ function adminHtml(status: RadarSystemStatus, sources: Awaited<ReturnType<typeof
     <section class="radar-panel">
       <h3>Run jobs</h3>
       <div class="form-actions form-actions--start">
-        ${['discovery', 'watchlist', 'trends', 'digest-preview'].map((job) => `<button class="button button--secondary" type="button" data-radar-job="${job}">${escapeHtml(job.replace('-', ' '))}</button>`).join('')}
+        ${['discovery', 'offering-discovery', 'watchlist', 'trends', 'digest-preview'].map((job) => `<button class="button button--secondary" type="button" data-radar-job="${job}">${escapeHtml(job.replaceAll('-', ' '))}</button>`).join('')}
       </div>
+    </section>
+    <section class="radar-panel">
+      <h3>Offering Discovery</h3>
+      <div class="radar-status-grid">
+        <div><span>Source health</span><strong>${escapeHtml(offerings.sourceStatus)}</strong></div>
+        <div><span>Latest job</span><strong>${escapeHtml(offerings.lastJobStatus)}</strong></div>
+        <div><span>Last successful run</span><strong>${escapeHtml(formatRadarDate(offerings.sourceLastSuccessAt))}</strong></div>
+        <div><span>Duration</span><strong>${offerings.lastJobDurationMs === null ? 'Unknown' : `${Math.round(offerings.lastJobDurationMs / 1000)}s`}</strong></div>
+        <div><span>Offerings stored</span><strong>${offerings.offeringsStored}</strong></div>
+        <div><span>Confirmed matches</span><strong>${offerings.confirmedMatches}</strong></div>
+        <div><span>Possible matches</span><strong>${offerings.possibleMatches}</strong></div>
+      </div>
+      ${offerings.sourceError ? `<p class="radar-muted">${escapeHtml(offerings.sourceError)}</p>` : ''}
     </section>
     <section class="radar-panel">
       <h3>Discovery sources</h3>
@@ -239,7 +254,8 @@ export function bindRadarAdminPageEvents(root: HTMLElement): void {
         button.disabled = true;
         try {
           const result = await runRadarJob(button.dataset.radarJob || '');
-          showMessage(result.message, !result.ok);
+          showMessage(`${result.message} ${result.processed} inspected, ${result.created} new, `
+            + `${result.updated} updated, ${result.errorCount} errors.`, !result.ok);
           await load();
         } catch (error) {
           showMessage(error instanceof Error ? error.message : 'Job failed.', true);
@@ -289,8 +305,10 @@ export function bindRadarAdminPageEvents(root: HTMLElement): void {
         bindLogin();
         return;
       }
-      const [status, sources] = await Promise.all([getRadarSystemStatus(), listRadarAdminSources()]);
-      content.innerHTML = adminHtml(status, sources);
+      const [status, sources, offerings] = await Promise.all([
+        getRadarSystemStatus(), listRadarAdminSources(), getOfferingDiagnostics()
+      ]);
+      content.innerHTML = adminHtml(status, sources, offerings);
       bindAdmin();
     } catch (error) {
       content.innerHTML = renderRadarError(error);

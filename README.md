@@ -17,6 +17,7 @@ This is a research organization tool. It is not financial, legal, or tax advice.
 ## Current Features
 
 - Persistent PostgreSQL Startup Radar with Flyway migrations
+- Separate SEC-backed Offering Discovery for tracked Radar companies, with conservative Form C matching, lifecycle history, and explicit Deal Scout handoff
 - Modular discovery adapters for configurable RSS/Atom feeds, the official Product Hunt API, and manual sources
 - Conservative YC directory entry retained as manual-only rather than relying on an undocumented scraper
 - Company deduplication by normalized domain, normalized name, and legal-name aliases
@@ -145,6 +146,18 @@ The authenticated Admin page provides system status, source management, manual p
 Discovery jobs fetch only configured public sources. Product Hunt uses its official GraphQL API and requires `PRODUCT_HUNT_TOKEN`. Add RSS/Atom URLs with `RADAR_RSS_URLS` or the protected source API. YC remains manual-only: YC exposes public company pages, but its official `robots.txt` disallows `/companies?*` query-directory crawling and no supported company-discovery API/feed has been identified. The adapters do not bypass authentication, paywalls, captchas, rate limits, robots rules, or source terms.
 
 Every discovery is deduplicated, snapshotted, scored, and linked to a source. Source-supported facts and analyst inferences are displayed separately. Deterministic structured analysis remains the baseline and owns the final Radar and Personal Relevance scores.
+
+## Offering Discovery
+
+Offering Discovery is the bridge between company research and private-market diligence:
+
+```text
+Radar company -> SEC-filed offering evidence -> user review -> Deal Scout
+```
+
+It monitors official SEC Regulation Crowdfunding data through bounded quarterly baselines and current-quarter EDGAR indexes. Matching is deterministic, unmatched SEC issuers are not retained, and recent filing documents are fetched only after a tracked company identity first matches. A confirmed offering adds neutral offering evidence, never an investment-quality signal, and no Deal Scout workspace is created until the user submits the existing New Deal form.
+
+Live SEC access requires the server-only `SEC_EDGAR_USER_AGENT` setting. The client is restricted to official SEC HTTPS hosts and defaults to two requests per second. See [Offering Discovery V1](docs/offering-discovery-v1.md) for the schema, lifecycle rules, matching confidence, APIs, worker cadence, fair-access policy, limitations, and staging procedure.
 
 ## Optional Radar AI Providers
 

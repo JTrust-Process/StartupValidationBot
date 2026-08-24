@@ -113,7 +113,17 @@ function createDealDraft(input: DealInput): Deal {
     deepScore: null,
     redFlags,
     ignoredSuggestedRedFlags: [],
-    evidenceClaims: [],
+    evidenceClaims: input.secFilingUrl ? [{
+      id: 1,
+      claim: 'An SEC-filed offering statement exists for this offering.',
+      sourceType: 'FORM_C',
+      sourceText: input.secFilingUrl,
+      evidenceStrength: 'STRONG',
+      verified: true,
+      notes: 'This verifies the regulatory filing exists, not that every issuer claim is accurate.',
+      createdAt: now,
+      updatedAt: now
+    }] : [],
     documents: [],
     importRecords: importRecord ? [{ id: 1, dealId: 0, ...importRecord, createdAt: now }] : [],
     ignoredDocumentRiskIds: [],

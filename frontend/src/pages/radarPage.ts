@@ -3,7 +3,8 @@ import type { RadarCompanyFilters, RadarSource } from '../models/radar';
 import {
   getRadarApiBase,
   listRadarCompanies,
-  listRadarSources
+  listRadarSources,
+  listRadarOfferings
 } from '../services/radarService';
 import { escapeHtml } from '../utils/html';
 
@@ -99,8 +100,13 @@ async function refreshRadar(root: HTMLElement): Promise<void> {
   const form = root.querySelector<HTMLFormElement>('#radar-filter-form');
   if (!list || !summary || !sourceRows || !form) return;
   {
-    const [companies, sources] = await Promise.all([listRadarCompanies(readFilters(form)), listRadarSources()]);
-    list.innerHTML = renderCompanyRows(companies);
+    const [companies, sources, offerings] = await Promise.all([
+      listRadarCompanies(readFilters(form)), listRadarSources(), listRadarOfferings({ matchStatus: 'CONFIRMED' })
+    ]);
+    const offeringCompanyIds = new Set(offerings
+      .filter((offering) => ['ACTIVE', 'POSSIBLY_ACTIVE'].includes(offering.status) && offering.radarCompanyId !== null)
+      .map((offering) => offering.radarCompanyId as number));
+    list.innerHTML = renderCompanyRows(companies, offeringCompanyIds);
     sourceRows.innerHTML = renderSourceRows(sources);
     const strong = companies.filter((company) => company.radarScore >= 70).length;
     const recentlyUpdated = companies.filter((company) => Date.now() - new Date(company.lastSeenAt).getTime()

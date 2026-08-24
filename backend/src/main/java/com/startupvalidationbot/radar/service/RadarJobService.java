@@ -15,6 +15,7 @@ import com.startupvalidationbot.radar.RadarStore.JobStart;
 import com.startupvalidationbot.radar.ai.RadarAiRunBudget;
 import com.startupvalidationbot.radar.service.RadarDiscoveryService.DiscoveryResult;
 import com.startupvalidationbot.radar.service.RadarDigestService.DigestResult;
+import com.startupvalidationbot.offering.OfferingDiscoveryService;
 
 @Service
 public class RadarJobService {
@@ -23,16 +24,19 @@ public class RadarJobService {
     private final RadarAnalysisService analysisService;
     private final RadarTrendService trendService;
     private final RadarDigestService digestService;
+    private final OfferingDiscoveryService offeringDiscoveryService;
     private final Duration jobLease;
 
     public RadarJobService(RadarStore store, RadarDiscoveryService discoveryService,
             RadarAnalysisService analysisService, RadarTrendService trendService, RadarDigestService digestService,
+            OfferingDiscoveryService offeringDiscoveryService,
             @Value("${radar.job-lease-minutes:120}") long jobLeaseMinutes) {
         this.store = store;
         this.discoveryService = discoveryService;
         this.analysisService = analysisService;
         this.trendService = trendService;
         this.digestService = digestService;
+        this.offeringDiscoveryService = offeringDiscoveryService;
         this.jobLease = Duration.ofMinutes(Math.max(15, Math.min(jobLeaseMinutes, 360)));
     }
 
@@ -41,7 +45,7 @@ public class RadarJobService {
         String key = requestedKey == null || requestedKey.isBlank()
                 ? (scheduled ? LocalDate.now().toString() : UUID.randomUUID().toString())
                 : requestedKey.trim();
-        if (!List.of("discovery", "watchlist", "trends", "digest", "digest-preview").contains(normalized)) {
+        if (!List.of("discovery", "offering-discovery", "watchlist", "trends", "digest", "digest-preview").contains(normalized)) {
             throw new IllegalArgumentException("Unsupported Radar job: " + jobType);
         }
         JobStart start = store.beginJob(normalized, key, jobLease);
@@ -53,6 +57,7 @@ public class RadarJobService {
         try {
             JobResult result = switch (normalized) {
                 case "discovery" -> discovery(normalized, key);
+                case "offering-discovery" -> offeringDiscovery(normalized, key);
                 case "watchlist" -> watchlist(normalized, key);
                 case "trends" -> trends(normalized, key);
                 case "digest" -> digest(normalized, key, true);
@@ -73,6 +78,14 @@ public class RadarJobService {
         DiscoveryResult result = discoveryService.discoverEnabledSources();
         return new JobResult(result.errors().isEmpty(), jobType, key, false, result.processed(), result.created(),
                 result.updated(), result.errors().size(), result.errors(), "Discovery run completed.");
+    }
+
+    private JobResult offeringDiscovery(String jobType, String key) {
+        com.startupvalidationbot.offering.OfferingDomain.DiscoveryResult result = offeringDiscoveryService.discover();
+        return new JobResult(result.errors() == 0, jobType, key, false, result.recordsInspected(), result.created(),
+                result.updated(), result.errors(), result.errorMessages(),
+                "Offering discovery completed: " + result.confirmed() + " confirmed, "
+                        + result.possible() + " possible matches.");
     }
 
     private JobResult watchlist(String jobType, String key) {

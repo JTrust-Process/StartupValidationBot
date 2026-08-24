@@ -169,6 +169,7 @@ public class RouterRadarAiProvider implements RadarAiProvider {
                     "model", model,
                     "instructions", RadarAiPrompt.instructions(deepDive),
                     "input", "Public Radar data:\n" + mapper.writeValueAsString(PublicRadarPayload.from(input)),
+                    "max_output_tokens", deepDive ? 6_000 : 3_500,
                     "reasoning", Map.of("effort", deepDive ? "medium" : "low"),
                     "text", Map.of("format", format),
                     "store", false);

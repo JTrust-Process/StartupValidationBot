@@ -68,6 +68,7 @@ class RouterRadarAiProviderTest {
         JsonNode request = mapper.readTree(requestBody.get());
         assertThat(request.path("model").asText()).isEqualTo("router/benchmark-alias");
         assertThat(request.path("store").asBoolean()).isFalse();
+        assertThat(request.path("max_output_tokens").asInt()).isEqualTo(3_500);
         assertThat(request.path("text").path("format").path("type").asText()).isEqualTo("json_schema");
         assertThat(request.path("text").path("format").path("strict").asBoolean()).isTrue();
         assertThat(request.path("input").asText()).contains("Public Radar data", "Public launch description")

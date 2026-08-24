@@ -13,14 +13,16 @@ test('Offerings page keeps availability separate from investment quality and exp
 });
 
 test('only confirmed active evidence creates the strong Radar badge', async () => {
-  const [home, list] = await Promise.all([
+  const [home, list, profile] = await Promise.all([
     source('pages/radarHomePage.ts'),
-    source('pages/radarPage.ts')
+    source('pages/radarPage.ts'),
+    source('pages/radarCompanyPage.ts')
   ]);
   assert.match(home, /offering\.matchStatus === 'CONFIRMED'/);
   assert.match(home, /\['ACTIVE', 'POSSIBLY_ACTIVE'\]/);
   assert.match(home, /Offering Found/);
   assert.match(list, /matchStatus: 'CONFIRMED'/);
+  assert.match(profile, /offering\.matchStatus === 'CONFIRMED'/);
 });
 
 test('Deal Scout handoff is user submitted and carries public offering identity', async () => {

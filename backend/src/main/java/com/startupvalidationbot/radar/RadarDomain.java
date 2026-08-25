@@ -106,6 +106,11 @@ public final class RadarDomain {
     }
 
     public record JobResult(boolean ok, String jobType, String idempotencyKey, boolean duplicate, int processed,
-            int created, int updated, int errorCount, List<String> errors, String message) {
+            int created, int updated, int errorCount, List<String> errors, List<String> diagnostics, String message) {
+        public JobResult(boolean ok, String jobType, String idempotencyKey, boolean duplicate, int processed,
+                int created, int updated, int errorCount, List<String> errors, String message) {
+            this(ok, jobType, idempotencyKey, duplicate, processed, created, updated, errorCount, errors, List.of(),
+                    message);
+        }
     }
 }

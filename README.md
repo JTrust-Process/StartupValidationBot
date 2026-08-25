@@ -143,6 +143,8 @@ Production browser administration uses the Vercel function at `/api/radar/*` as 
 
 The authenticated Admin page provides system status, source management, manual public intake, protected job runs, logout, and Radar JSON export. Authenticated company pages provide Watch, Unwatch, Ignore, Restore, and Deep Dive controls. Sessions expire after `RADAR_AUTH_SESSION_HOURS` and can be revoked immediately with logout.
 
+Manual discovery can outlast Vercel's frontend proxy timeout. If the Admin request ends early, check the durable System Status before retrying; the Fly job may still be running. Scheduled worker runs call the backend directly and do not depend on the Vercel proxy.
+
 Discovery jobs fetch only configured public sources. Product Hunt uses its official GraphQL API and requires `PRODUCT_HUNT_TOKEN`. Add RSS/Atom URLs with `RADAR_RSS_URLS` or the protected source API. YC remains manual-only: YC exposes public company pages, but its official `robots.txt` disallows `/companies?*` query-directory crawling and no supported company-discovery API/feed has been identified. The adapters do not bypass authentication, paywalls, captchas, rate limits, robots rules, or source terms.
 
 Every discovery is deduplicated, snapshotted, scored, and linked to a source. Source-supported facts and analyst inferences are displayed separately. Deterministic structured analysis remains the baseline and owns the final Radar and Personal Relevance scores.
@@ -171,6 +173,7 @@ RADAR_AI_MODEL=openai/gpt-oss-20b
 RADAR_DEEP_DIVE_MODEL=openai/gpt-oss-120b
 RADAR_AI_MAX_ITEMS_PER_RUN=25
 RADAR_AI_MAX_RETRIES=2
+RADAR_AI_GROQ_MIN_REQUEST_INTERVAL_MS=12500
 RADAR_AI_PROMPT_VERSION=radar-v2
 RADAR_AI_SCHEMA_VERSION=radar-analysis-v2
 ```
@@ -179,7 +182,7 @@ Never prefix `GROQ_API_KEY` or `RADAR_RUN_TOKEN` with `VITE_`. The provider rece
 
 Routine runs use `openai/gpt-oss-20b`. A shared per-run budget is consumed only on cache misses, prioritizing newly discovered companies, watched companies with meaningful public changes, then other changed/stale companies. With the default setting, a daily run makes at most 25 AI calls and usually fewer. Protected manual Deep Dive requests use `openai/gpt-oss-120b`; saved results are reused while the public input, provider, model, prompt version, and schema version remain unchanged.
 
-Groq output must satisfy the strict typed analysis schema. Invalid output is retried within `RADAR_AI_MAX_RETRIES`; credential errors, model errors, timeouts, rate limits, malformed responses, and provider outages are recorded without secrets. The affected company then receives cached or newly generated deterministic analysis, and the worker continues.
+Groq output must satisfy the strict typed analysis schema. Invalid output is retried within `RADAR_AI_MAX_RETRIES`; credential errors, model errors, timeouts, rate limits, malformed responses, and provider outages are recorded without secrets. The affected company then receives cached or newly generated deterministic analysis, and the worker continues. Routine Groq attempts are spaced by `RADAR_AI_GROQ_MIN_REQUEST_INTERVAL_MS` (12.5 seconds by default) to keep the measured production workload below the account's 8,000 token-per-minute limit; provider `Retry-After` signals can extend that bounded wait.
 
 Stage 7C also includes an opt-in Router provider experiment using Router's documented [Responses API](https://docs.router.com/api/endpoint):
 

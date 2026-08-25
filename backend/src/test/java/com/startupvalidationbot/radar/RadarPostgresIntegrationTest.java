@@ -35,6 +35,7 @@ import com.startupvalidationbot.dealworkspace.DealWorkspaceStore;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.startupvalidationbot.offering.OfferingDomain.Match;
 import com.startupvalidationbot.offering.OfferingDomain.MatchStatus;
+import com.startupvalidationbot.offering.OfferingMatchService;
 import com.startupvalidationbot.offering.OfferingStore;
 
 /**
@@ -98,6 +99,9 @@ class RadarPostgresIntegrationTest {
 
     @Autowired
     private OfferingStore offeringStore;
+
+    @Autowired
+    private OfferingMatchService offeringMatcher;
 
     @Test
     void appliesEveryMigrationAndValidatesTheJpaMappingAgainstIt() {
@@ -200,6 +204,16 @@ class RadarPostgresIntegrationTest {
                     assertThat(offering.radarCompanyId()).isNull();
                     assertThat(offering.matchStatus()).isEqualTo(MatchStatus.AMBIGUOUS);
                 });
+
+        var storedIdentity = offeringStore.listStoredIdentities().stream()
+                .filter(identity -> identity.offeringId() == first.offering().id()).findFirst().orElseThrow();
+        offeringStore.updateMatch(storedIdentity.offeringId(), offeringMatcher.match(storedIdentity.issuerName(),
+                storedIdentity.issuerWebsite(), store.listCompanies()));
+        assertThat(offeringStore.find(first.offering().id())).get().satisfies(offering -> {
+            assertThat(offering.matchStatus()).isEqualTo(MatchStatus.LIKELY);
+            assertThat(offering.matchConfidence()).isEqualTo(85);
+            assertThat(offering.matchReason()).contains("corroborating identity evidence is unavailable");
+        });
     }
 
     private com.startupvalidationbot.offering.OfferingDomain.Candidate offeringCandidate(

@@ -24,7 +24,14 @@ test('only confirmed active evidence creates the strong Radar badge', async () =
   assert.match(home, /Offering Found/);
   assert.match(list, /matchStatus: 'CONFIRMED'/);
   assert.match(profile, /offering\.matchStatus === 'CONFIRMED'/);
+  assert.match(home, /offering\.matchStatus === 'CONFIRMED'/);
   assert.match(profile, /offering\.deadline \? formatRadarDate\(offering\.deadline\) : 'Unknown'/);
+});
+
+test('likely and ambiguous offerings stay in manual review surfaces', async () => {
+  const page = await source('pages/offeringsPage.ts');
+  assert.match(page, /\['LIKELY', 'AMBIGUOUS'\]\.includes\(offering\.matchStatus\)/);
+  assert.match(page, /Possible/);
 });
 
 test('Deal Scout handoff is user submitted and carries public offering identity', async () => {

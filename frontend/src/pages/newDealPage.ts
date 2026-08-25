@@ -1,6 +1,10 @@
 import type { DealInput } from '../models/deal';
-import { createDeal } from '../services/dealService';
+import { createDeal, loadDeals } from '../services/dealService';
+import { getDeals } from '../services/dealService';
+import { getRadarCompany, getRadarOffering } from '../services/radarService';
+import { escapeAttribute, escapeHtml } from '../utils/html';
 import { navigateTo } from '../utils/router';
+import { safeExternalUrl } from '../utils/urls';
 
 function getString(formData: FormData, key: keyof DealInput): string {
   return String(formData.get(key) ?? '').trim();
@@ -16,6 +20,10 @@ function getNumber(formData: FormData, key: keyof DealInput): number | undefined
 
 function getDealInput(formData: FormData): DealInput {
   return {
+    radarCompanyId: getNumber(formData, 'radarCompanyId'),
+    offeringDiscoveryId: getNumber(formData, 'offeringDiscoveryId'),
+    secFilingUrl: getString(formData, 'secFilingUrl'),
+    offeringDeadline: getString(formData, 'offeringDeadline'),
     companyName: getString(formData, 'companyName'),
     platform: getString(formData, 'platform'),
     sector: getString(formData, 'sector'),
@@ -43,15 +51,21 @@ export function renderNewDealPage(): string {
     <div class="page">
       <div class="page-header">
         <h2>New Deal</h2>
-        <p>Add a startup or private-market deal to your local diligence workspace.</p>
+        <p>Add a startup or private-market offering to your private diligence workspace.</p>
       </div>
 
       <div class="notice notice--neutral">
         This tool is for research organization only and is not financial advice.
       </div>
 
+      <div id="radar-deal-origin-status"></div>
+
       <div class="card">
         <form class="form-grid" id="new-deal-form">
+          <input id="radarCompanyId" name="radarCompanyId" type="hidden" />
+          <input id="offeringDiscoveryId" name="offeringDiscoveryId" type="hidden" />
+          <input id="secFilingUrl" name="secFilingUrl" type="hidden" />
+          <input id="offeringDeadline" name="offeringDeadline" type="hidden" />
           <div class="form-field">
             <label for="companyName">Company Name</label>
             <input id="companyName" name="companyName" type="text" placeholder="Acme Robotics" required />
@@ -189,10 +203,21 @@ export function renderNewDealPage(): string {
   `;
 }
 
-export function bindNewDealPageEvents(root: HTMLElement): void {
+export function bindNewDealPageEvents(root: HTMLElement, path: string): void {
   const form = root.querySelector<HTMLFormElement>('#new-deal-form');
 
   if (!form) return;
+
+  const query = path.includes('?') ? path.slice(path.indexOf('?') + 1) : '';
+  const params = new URLSearchParams(query);
+  const radarCompanyId = Number(params.get('radarCompanyId'));
+  const offeringDiscoveryId = Number(params.get('offeringDiscoveryId'));
+  if (Number.isInteger(offeringDiscoveryId) && offeringDiscoveryId > 0) {
+    void prefillFromOffering(root, form, offeringDiscoveryId);
+  } else
+  if (Number.isInteger(radarCompanyId) && radarCompanyId > 0) {
+    void prefillFromRadar(root, form, radarCompanyId);
+  }
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -212,4 +237,89 @@ export function bindNewDealPageEvents(root: HTMLElement): void {
       window.alert('Failed to create deal.');
     }
   });
+}
+
+async function prefillFromOffering(root: HTMLElement, form: HTMLFormElement, offeringId: number): Promise<void> {
+  const status = root.querySelector<HTMLElement>('#radar-deal-origin-status');
+  await loadDeals();
+  const duplicate = getDeals().find((deal) => deal.offeringDiscoveryId === offeringId);
+  if (duplicate) {
+    if (status) status.innerHTML = `<div class="notice notice--warning">This offering is already in Deal Scout.
+      <a href="#/deals/${duplicate.id}">Open ${escapeHtml(duplicate.companyName)}</a>.</div>`;
+    return;
+  }
+  try {
+    const offering = await getRadarOffering(offeringId);
+    const securityType = /safe/i.test(offering.securityType || '') ? 'SAFE'
+      : /note|debt/i.test(offering.securityType || '') ? 'NOTE'
+        : /stock|equity|share/i.test(offering.securityType || '') ? 'EQUITY' : 'UNKNOWN';
+    const fields: Record<string, string> = {
+      radarCompanyId: String(offering.radarCompanyId || ''),
+      offeringDiscoveryId: String(offering.id),
+      secFilingUrl: offering.secFilingUrl,
+      offeringDeadline: offering.deadline || '',
+      companyName: offering.companyName || offering.issuerName,
+      platform: offering.platform,
+      offeringUrl: offering.offeringUrl || offering.secFilingUrl,
+      minimumInvestment: offering.minimumInvestment === null ? '' : String(offering.minimumInvestment),
+      valuationOrCap: offering.valuationOrCap || '',
+      amountRaised: offering.amountRaised === null ? '' : String(offering.amountRaised),
+      investorEligibility: 'NON_ACCREDITED',
+      offeringExemption: 'REG_CF',
+      securityType,
+      liquidity: 'ILLIQUID',
+      shortDescription: `SEC-filed Regulation Crowdfunding offering (${offering.filingType}). Filing: ${offering.secFilingUrl}`
+    };
+    Object.entries(fields).forEach(([name, value]) => {
+      const field = form.elements.namedItem(name);
+      if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement) field.value = value;
+    });
+    if (offering.radarCompanyId) {
+      const company = await getRadarCompany(offering.radarCompanyId);
+      const sector = form.elements.namedItem('sector');
+      if (sector instanceof HTMLInputElement) sector.value = company.company.sector;
+    }
+    const filingUrl = safeExternalUrl(offering.secFilingUrl);
+    if (status) status.innerHTML = `<div class="notice notice--neutral">Public offering facts were prefilled from an
+      ${filingUrl ? `<a href="${escapeAttribute(filingUrl)}" target="_blank" rel="noreferrer">SEC-filed offering statement</a>` : 'SEC-filed offering statement'}.
+      Review every field before saving. The filing does not verify issuer claims.</div>`;
+  } catch (error) {
+    if (status) status.innerHTML = `<div class="notice notice--warning">Could not load offering evidence. ${escapeHtml(error instanceof Error ? error.message : '')}</div>`;
+  }
+}
+
+async function prefillFromRadar(root: HTMLElement, form: HTMLFormElement, radarCompanyId: number): Promise<void> {
+  const status = root.querySelector<HTMLElement>('#radar-deal-origin-status');
+  await loadDeals();
+  const duplicate = getDeals().find((deal) => deal.radarCompanyId === radarCompanyId);
+  if (duplicate) {
+    if (status) status.innerHTML = `
+      <div class="notice notice--warning">
+        A Deal Scout workspace already links to this Radar company.
+        <a href="#/deals/${duplicate.id}">Open ${escapeHtml(duplicate.companyName)}</a> before creating another.
+      </div>`;
+    return;
+  }
+
+  try {
+    const detail = await getRadarCompany(radarCompanyId);
+    const fields: Record<string, string> = {
+      radarCompanyId: String(radarCompanyId),
+      companyName: detail.company.name,
+      sector: detail.company.sector,
+      shortDescription: detail.company.description,
+      offeringUrl: detail.company.websiteUrl ?? ''
+    };
+    Object.entries(fields).forEach(([name, value]) => {
+      const field = form.elements.namedItem(name);
+      if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.value = value;
+    });
+    if (status) status.innerHTML = `
+      <div class="notice notice--neutral">
+        Prefilled public company facts from <a href="#/radar/company/${radarCompanyId}">Startup Radar</a>.
+        Add the actual investment platform and offering terms before saving.
+      </div>`;
+  } catch (error) {
+    if (status) status.innerHTML = `<div class="notice notice--warning">Could not load the linked Radar company. ${escapeHtml(error instanceof Error ? error.message : '')}</div>`;
+  }
 }

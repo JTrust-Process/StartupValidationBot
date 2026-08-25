@@ -284,6 +284,10 @@ export interface ReviewData {
 
 export interface Deal {
   id: number;
+  radarCompanyId?: number;
+  offeringDiscoveryId?: number;
+  secFilingUrl?: string;
+  offeringDeadline?: string;
   companyName: string;
   platform: string;
   sector: string;
@@ -323,6 +327,10 @@ export interface Deal {
 }
 
 export interface DealInput {
+  radarCompanyId?: number;
+  offeringDiscoveryId?: number;
+  secFilingUrl?: string;
+  offeringDeadline?: string;
   companyName: string;
   platform: string;
   sector: string;

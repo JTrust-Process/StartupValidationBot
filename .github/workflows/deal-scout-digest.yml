@@ -1,10 +1,7 @@
-name: Deal Scout Digest
+name: Manual Legacy Deal Scout Digest
 
 on:
   workflow_dispatch:
-  schedule:
-    # Monday 9:00 AM Eastern during standard time. Adjust as needed.
-    - cron: '0 14 * * 1'
 
 jobs:
   run-digest:

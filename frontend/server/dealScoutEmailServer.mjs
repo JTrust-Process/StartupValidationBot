@@ -130,7 +130,8 @@ const server = http.createServer(async (request, response) => {
 
   if (url.pathname === runEndpoint) {
     try {
-      const result = await runAutomatedDealScoutDigest({ send: true });
+      const payload = await readJson(request);
+      const result = await runAutomatedDealScoutDigest({ send: payload.send !== false });
       sendJson(response, result.ok ? 200 : 400, result, origin);
     } catch (error) {
       sendJson(response, 500, {

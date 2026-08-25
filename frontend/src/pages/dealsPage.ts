@@ -165,7 +165,7 @@ export function renderDealsPage(): string {
       </div>
 
       <div class="notice notice--neutral">
-        Local-first workspace. Back up your research with JSON export before clearing browser data.
+        Private diligence workspace. Use JSON export when you want a portable research backup.
       </div>
 
       <div class="card">

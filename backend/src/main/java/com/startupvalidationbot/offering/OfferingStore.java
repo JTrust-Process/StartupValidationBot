@@ -17,6 +17,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.startupvalidationbot.radar.ContentHash;
 
@@ -57,13 +58,20 @@ public class OfferingStore {
         return jdbc.query(SELECT + " WHERE o.id = ?", offeringMapper(), id).stream().findFirst();
     }
 
-    public Optional<Long> findCompanyByCik(String cik) {
-        if (blank(cik)) return Optional.empty();
-        return jdbc.queryForList("""
-                SELECT radar_company_id FROM radar_offerings
-                WHERE issuer_cik = ? AND radar_company_id IS NOT NULL AND match_status = 'CONFIRMED'
-                ORDER BY updated_at DESC LIMIT 1
-                """, Long.class, cik).stream().findFirst();
+    public List<StoredIdentity> listStoredIdentities() {
+        return jdbc.query("""
+                SELECT id, issuer_name, raw_facts_json FROM radar_offerings
+                WHERE match_status IN ('CONFIRMED', 'LIKELY', 'AMBIGUOUS')
+                """, (rs, row) -> new StoredIdentity(rs.getLong("id"), rs.getString("issuer_name"),
+                        issuerWebsite(rs.getString("raw_facts_json"))));
+    }
+
+    public void updateMatch(long offeringId, Match match) {
+        jdbc.update("""
+                UPDATE radar_offerings SET radar_company_id=?, match_status=?, match_confidence=?,
+                  match_reason=?, updated_at=? WHERE id=?
+                """, match.companyId(), match.status().name(), match.confidence(), match.reason(),
+                LocalDateTime.now(), offeringId);
     }
 
     @Transactional
@@ -275,12 +283,29 @@ public class OfferingStore {
         try { return objectMapper.readTree(value).path(field).asInt(0); }
         catch (JsonProcessingException error) { return 0; }
     }
+
+    private String issuerWebsite(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            JsonNode facts = objectMapper.readTree(value);
+            for (var field : facts.properties()) {
+                if ("issuerwebsite".equalsIgnoreCase(field.getKey())) {
+                    String website = field.getValue().asText("").trim();
+                    return website.isEmpty() ? null : website;
+                }
+            }
+            return null;
+        } catch (JsonProcessingException error) {
+            return null;
+        }
+    }
     private static String normalize(String value) { return com.startupvalidationbot.radar.CompanyIdentity.normalizeName(value); }
     private static Object nullIfBlank(String value) { return blank(value) ? null : value.trim(); }
     private static boolean blank(String value) { return value == null || value.isBlank(); }
     private static LocalDateTime timestamp(Timestamp value) { return value == null ? null : value.toLocalDateTime(); }
 
     public record UpsertResult(Offering offering, boolean created) { }
+    public record StoredIdentity(long offeringId, String issuerName, String issuerWebsite) { }
     private record SourceDiagnostic(String status, LocalDateTime successAt, String error) { }
     private record JobDiagnostic(String status, LocalDateTime startedAt, LocalDateTime completedAt,
             int processed, int created, int updated, int errorCount) { }

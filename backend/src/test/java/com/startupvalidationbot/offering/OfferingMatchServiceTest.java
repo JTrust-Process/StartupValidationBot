@@ -16,21 +16,57 @@ class OfferingMatchServiceTest {
     private final OfferingMatchService matcher = new OfferingMatchService();
 
     @Test
-    void confirmsUniqueLegalNameAndDomainButRejectsAConflictingDomain() {
+    void confirmsOnlyWhenExactNameAndIssuerDomainMatch() {
         Company company = company(7, "Acme Technologies", "acme.example", List.of("Acme Technologies, Inc."));
-        assertThat(matcher.match(candidate("Acme Technologies, Inc.", "https://acme.example"), List.of(company)).status())
-                .isEqualTo(MatchStatus.CONFIRMED);
-        assertThat(matcher.match(candidate("Acme Technologies, Inc.", "https://other.example"), List.of(company)).status())
+        var match = matcher.match(candidate("Acme Technologies, Inc.", "https://acme.example"), List.of(company));
+        assertThat(match.status()).isEqualTo(MatchStatus.CONFIRMED);
+        assertThat(match.confidence()).isEqualTo(100);
+        assertThat(match.reason()).contains("issuer website domain match");
+    }
+
+    @Test
+    void rejectsAnExactNameWithAConflictingDomain() {
+        Company company = company(7, "Acme Technologies", "acme.example", List.of());
+        assertThat(matcher.match(candidate("Acme Technologies", "https://other.example"), List.of(company)).status())
                 .isEqualTo(MatchStatus.REJECTED);
     }
 
     @Test
-    void neverConfirmsFuzzyOnlyOrAmbiguousNames() {
+    void keepsUniqueExactNameWithoutDomainAsLikely() {
+        Company company = company(7, "Acme Technologies", "acme.example", List.of());
+        var match = matcher.match(candidate("Acme Technologies", null), List.of(company));
+        assertThat(match.status()).isEqualTo(MatchStatus.LIKELY);
+        assertThat(match.confidence()).isEqualTo(85);
+        assertThat(match.reason()).contains("corroborating identity evidence is unavailable")
+                .contains("Manual verification required");
+    }
+
+    @Test
+    void keepsExactDomainWithoutExactNameAsLikely() {
+        Company company = company(7, "Acme Technologies", "acme.example", List.of());
+        assertThat(matcher.match(candidate("Different Legal Name", "https://acme.example"), List.of(company)).status())
+                .isEqualTo(MatchStatus.LIKELY);
+    }
+
+    @Test
+    void neverConfirmsFuzzyOnlyNames() {
         Company acme = company(1, "Acme", "acme.example", List.of());
         assertThat(matcher.match(candidate("Acme Labs", null), List.of(acme)).status()).isEqualTo(MatchStatus.LIKELY);
+    }
+
+    @Test
+    void marksMultipleExactNameMatchesAmbiguous() {
+        Company acme = company(1, "Acme", "acme.example", List.of());
         Company duplicate = company(2, "Acme", "other.example", List.of());
         assertThat(matcher.match(candidate("Acme", null), List.of(acme, duplicate)).status())
                 .isEqualTo(MatchStatus.AMBIGUOUS);
+    }
+
+    @Test
+    void leavesUnmatchedIdentityUnmatched() {
+        Company acme = company(1, "Acme", "acme.example", List.of());
+        assertThat(matcher.match(candidate("Northwind Robotics", null), List.of(acme)).status())
+                .isEqualTo(MatchStatus.UNMATCHED);
     }
 
     private static Candidate candidate(String name, String website) {

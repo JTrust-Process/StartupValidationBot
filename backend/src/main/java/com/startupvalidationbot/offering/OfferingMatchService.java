@@ -14,8 +14,12 @@ import com.startupvalidationbot.radar.RadarDomain.Company;
 @Service
 public class OfferingMatchService {
     public Match match(Candidate candidate, List<Company> companies) {
-        String issuerName = CompanyIdentity.normalizeName(candidate.issuerName());
-        String issuerDomain = CompanyIdentity.normalizeDomain(candidate.issuerWebsite());
+        return match(candidate.issuerName(), candidate.issuerWebsite(), companies);
+    }
+
+    public Match match(String candidateIssuerName, String candidateIssuerWebsite, List<Company> companies) {
+        String issuerName = CompanyIdentity.normalizeName(candidateIssuerName);
+        String issuerDomain = CompanyIdentity.normalizeDomain(candidateIssuerWebsite);
         List<Company> exactNames = companies.stream().filter(company -> names(company).contains(issuerName)).toList();
         List<Company> domains = issuerDomain == null ? List.of()
                 : companies.stream().filter(company -> issuerDomain.equals(company.domain())).toList();
@@ -26,10 +30,13 @@ public class OfferingMatchService {
                 return new Match(company.id(), MatchStatus.REJECTED, 15,
                         "Exact normalized name conflicts with the issuer website domain.");
             }
-            int confidence = issuerDomain != null && issuerDomain.equals(company.domain()) ? 100 : 90;
-            return new Match(company.id(), MatchStatus.CONFIRMED, confidence,
-                    confidence == 100 ? "Exact legal/name alias and website domain match."
-                            : "Unique exact normalized legal/name alias match.");
+            if (issuerDomain != null && issuerDomain.equals(company.domain())) {
+                return new Match(company.id(), MatchStatus.CONFIRMED, 100,
+                        "Exact legal/name identity and issuer website domain match.");
+            }
+            return new Match(company.id(), MatchStatus.LIKELY, 85,
+                    "Unique exact normalized legal/name match, but issuer domain or equivalent corroborating "
+                            + "identity evidence is unavailable. Manual verification required.");
         }
         if (exactNames.size() > 1) {
             return new Match(null, MatchStatus.AMBIGUOUS, 45,

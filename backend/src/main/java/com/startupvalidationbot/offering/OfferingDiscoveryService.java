@@ -42,24 +42,19 @@ public class OfferingDiscoveryService {
         }
 
         List<Company> companies = radarStore.listCompanies();
+        revalidateStoredMatches(companies);
         int created = 0;
         int updated = 0;
         int confirmed = 0;
         int possible = 0;
         for (Candidate initialCandidate : candidates.values()) {
             try {
-                java.util.Optional<Long> establishedCompany = store.findCompanyByCik(initialCandidate.issuerCik());
-                Match match = establishedCompany
-                        .map(id -> new Match(id, MatchStatus.CONFIRMED, 100,
-                                "Issuer CIK matches a previously confirmed offering identity."))
-                        .orElseGet(() -> matcher.match(initialCandidate, companies));
+                Match match = matcher.match(initialCandidate, companies);
                 if (match.status() == MatchStatus.UNMATCHED || match.status() == MatchStatus.REJECTED) continue;
                 Candidate candidate = source.enrich(initialCandidate);
-                if (establishedCompany.isEmpty()) {
-                    Match enrichedMatch = matcher.match(candidate, companies);
-                    if (enrichedMatch.status() == MatchStatus.REJECTED || enrichedMatch.status() == MatchStatus.UNMATCHED) continue;
-                    match = enrichedMatch;
-                }
+                Match enrichedMatch = matcher.match(candidate, companies);
+                if (enrichedMatch.status() == MatchStatus.REJECTED || enrichedMatch.status() == MatchStatus.UNMATCHED) continue;
+                match = enrichedMatch;
                 OfferingStore.UpsertResult result = store.upsert(candidate, match);
                 if (result.created()) created++; else updated++;
                 if (match.status() == MatchStatus.CONFIRMED) confirmed++; else possible++;
@@ -69,6 +64,11 @@ public class OfferingDiscoveryService {
         }
         return new DiscoveryResult(candidates.size(), created, updated, confirmed, possible,
                 errors.size(), List.copyOf(errors));
+    }
+
+    void revalidateStoredMatches(List<Company> companies) {
+        store.listStoredIdentities().forEach(identity -> store.updateMatch(identity.offeringId(),
+                matcher.match(identity.issuerName(), identity.issuerWebsite(), companies)));
     }
 
     private void fetch(String sourceKey, CandidateSupplier supplier, Map<String, Candidate> target,

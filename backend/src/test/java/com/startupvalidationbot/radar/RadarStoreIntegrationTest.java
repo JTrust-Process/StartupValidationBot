@@ -73,7 +73,7 @@ class RadarStoreIntegrationTest {
     }
 
     @Test
-    void requiresAuthenticationForEveryRadarReadAndProtectsAdminJobs() throws Exception {
+    void requiresBrowserAuthenticationForRadarReadsAndLimitsWorkerToJobs() throws Exception {
         var company = discoveryService.ingestManual(discovery("Public Radar Company", "https://public-radar.test"));
         mockMvc.perform(get("/api/radar/health")).andExpect(status().isOk());
         mockMvc.perform(get("/actuator/health"))
@@ -86,23 +86,15 @@ class RadarStoreIntegrationTest {
         mockMvc.perform(get("/api/radar/sources")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/radar/trends")).andExpect(status().isUnauthorized());
 
-        // The non-admin projection still withholds personal scoring and raw snapshot/source text.
+        // The worker credential is not a substitute for the browser-admin session.
         mockMvc.perform(get("/api/radar/companies").header("Authorization", "Bearer test-token"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].personalScore").doesNotExist())
-                .andExpect(jsonPath("$[0].watched").doesNotExist())
-                .andExpect(jsonPath("$[0].ignored").doesNotExist());
+                .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/radar/companies/{id}", company.id())
                 .header("Authorization", "Bearer test-token"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.latestAnalysis.personalScore").doesNotExist())
-                .andExpect(jsonPath("$.snapshots[0].snapshotJson").doesNotExist())
-                .andExpect(jsonPath("$.researchSources[0].excerpt").doesNotExist());
+                .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/radar/admin/companies")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/radar/admin/companies").header("Authorization", "Bearer test-token"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].personalScore").exists())
-                .andExpect(jsonPath("$[0].watched").exists());
+                .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/radar/jobs/discovery").contentType("application/json").content("{}"))
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/radar/jobs/discovery").contentType("application/json").content("{}")

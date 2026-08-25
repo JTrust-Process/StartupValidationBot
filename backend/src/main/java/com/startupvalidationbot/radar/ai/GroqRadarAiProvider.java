@@ -7,6 +7,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -34,6 +38,7 @@ public class GroqRadarAiProvider implements RadarAiProvider {
     private final String deepDiveModel;
     private final int maxRetries;
     private final Duration requestTimeout;
+    private final RequestPacer routinePacer;
 
     @Autowired
     public GroqRadarAiProvider(ObjectMapper mapper,
@@ -42,13 +47,22 @@ public class GroqRadarAiProvider implements RadarAiProvider {
             @Value("${radar.ai.model:openai/gpt-oss-20b}") String routineModel,
             @Value("${radar.ai.deep-dive-model:openai/gpt-oss-120b}") String deepDiveModel,
             @Value("${radar.ai.max-retries:2}") int maxRetries,
-            @Value("${radar.ai.timeout-seconds:60}") int timeoutSeconds) {
+            @Value("${radar.ai.timeout-seconds:60}") int timeoutSeconds,
+            @Value("${radar.ai.groq-min-request-interval-ms:12500}") long minRequestIntervalMs) {
         this(mapper, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build(), URI.create(endpoint),
-                apiKey, routineModel, deepDiveModel, maxRetries, Duration.ofSeconds(Math.max(5, timeoutSeconds)));
+                apiKey, routineModel, deepDiveModel, maxRetries, Duration.ofSeconds(Math.max(5, timeoutSeconds)),
+                RequestPacer.fixed(Duration.ofMillis(Math.max(0, Math.min(minRequestIntervalMs, 60_000)))));
     }
 
     GroqRadarAiProvider(ObjectMapper mapper, HttpClient httpClient, URI endpoint, String apiKey,
             String routineModel, String deepDiveModel, int maxRetries, Duration requestTimeout) {
+        this(mapper, httpClient, endpoint, apiKey, routineModel, deepDiveModel, maxRetries, requestTimeout,
+                RequestPacer.fixed(Duration.ZERO));
+    }
+
+    GroqRadarAiProvider(ObjectMapper mapper, HttpClient httpClient, URI endpoint, String apiKey,
+            String routineModel, String deepDiveModel, int maxRetries, Duration requestTimeout,
+            RequestPacer routinePacer) {
         this.mapper = mapper;
         this.httpClient = httpClient;
         this.endpoint = endpoint;
@@ -57,6 +71,7 @@ public class GroqRadarAiProvider implements RadarAiProvider {
         this.deepDiveModel = deepDiveModel;
         this.maxRetries = Math.max(0, Math.min(maxRetries, 5));
         this.requestTimeout = requestTimeout;
+        this.routinePacer = routinePacer;
     }
 
     @Override
@@ -97,6 +112,9 @@ public class GroqRadarAiProvider implements RadarAiProvider {
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             long started = System.nanoTime();
             try {
+                if (!deepDive) {
+                    routinePacer.awaitTurn();
+                }
                 HttpResponse<String> response = httpClient.send(buildRequest(input, model, deepDive),
                         HttpResponse.BodyHandlers.ofString());
                 long latencyMs = elapsedMs(started);
@@ -256,21 +274,57 @@ public class GroqRadarAiProvider implements RadarAiProvider {
     }
 
     private static void sleepBeforeRetry(HttpResponse<?> response, int attempt) {
-        long delayMs = Math.min(5_000, 250L * (1L << Math.min(attempt, 4)));
-        if (response != null) {
-            String retryAfter = response.headers().firstValue("retry-after").orElse("");
-            try {
-                delayMs = Math.min(5_000, Math.max(delayMs, Long.parseLong(retryAfter) * 1_000));
-            } catch (NumberFormatException ignored) {
-                // Exponential delay remains in effect when Retry-After is absent or date-formatted.
-            }
-        }
+        String retryAfter = response == null ? "" : response.headers().firstValue("retry-after").orElse("");
+        long delayMs = retryDelayMs(retryAfter, attempt, Instant.now());
         try {
             Thread.sleep(delayMs);
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
             throw new RadarAiException("INTERRUPTED", "Groq retry wait was interrupted", false, attempt + 1,
                     error);
+        }
+    }
+
+    static long retryDelayMs(String retryAfter, int attempt, Instant now) {
+        long exponentialMs = Math.min(60_000, 250L * (1L << Math.min(attempt, 8)));
+        if (retryAfter == null || retryAfter.isBlank()) {
+            return exponentialMs;
+        }
+        try {
+            long providerMs = Math.round(Double.parseDouble(retryAfter.trim()) * 1_000);
+            return Math.min(60_000, Math.max(exponentialMs, providerMs));
+        } catch (NumberFormatException ignored) {
+            try {
+                Instant retryAt = ZonedDateTime.parse(retryAfter.trim(), DateTimeFormatter.RFC_1123_DATE_TIME)
+                        .toInstant();
+                long providerMs = Math.max(0, Duration.between(now, retryAt).toMillis());
+                return Math.min(60_000, Math.max(exponentialMs, providerMs));
+            } catch (DateTimeParseException ignoredDate) {
+                return exponentialMs;
+            }
+        }
+    }
+
+    @FunctionalInterface
+    interface RequestPacer {
+        void awaitTurn() throws InterruptedException;
+
+        static RequestPacer fixed(Duration interval) {
+            long intervalNanos = Math.max(0, interval.toNanos());
+            return new RequestPacer() {
+                private long nextRequestAt;
+
+                @Override
+                public synchronized void awaitTurn() throws InterruptedException {
+                    long remaining;
+                    while ((remaining = nextRequestAt - System.nanoTime()) > 0) {
+                        long millis = remaining / 1_000_000;
+                        int nanos = (int) (remaining % 1_000_000);
+                        Thread.sleep(millis, nanos);
+                    }
+                    nextRequestAt = System.nanoTime() + intervalNanos;
+                }
+            };
         }
     }
 

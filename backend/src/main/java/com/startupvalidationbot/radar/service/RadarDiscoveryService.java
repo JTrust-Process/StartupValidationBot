@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.startupvalidationbot.radar.ContentHash;
+import com.startupvalidationbot.radar.InvalidCompanyIdentityException;
 import com.startupvalidationbot.radar.RadarRequests.ManualDiscovery;
 import com.startupvalidationbot.radar.RadarIntelStore;
 import com.startupvalidationbot.radar.RadarStore;
@@ -46,6 +47,7 @@ public class RadarDiscoveryService {
         int created = 0;
         int updated = 0;
         List<String> errors = new ArrayList<>();
+        List<String> diagnostics = new ArrayList<>();
         Map<Long, QueuedAnalysis> analysisQueue = new LinkedHashMap<>();
 
         for (Source source : store.listSources().stream().filter(Source::enabled).toList()) {
@@ -79,6 +81,8 @@ public class RadarDiscoveryService {
                                 result.discovery().snapshotCreated());
                         analysisQueue.merge(result.company().id(), queued,
                                 (previous, current) -> previous.priority() >= current.priority() ? previous : current);
+                    } catch (InvalidCompanyIdentityException error) {
+                        diagnostics.add(source.name() + " / " + candidate.companyName() + ": " + error.getMessage());
                     } catch (RuntimeException error) {
                         errors.add(source.name() + " / " + candidate.companyName() + ": " + error.getMessage());
                     }
@@ -98,7 +102,7 @@ public class RadarDiscoveryService {
                         errors.add(item.company().name() + " analysis: " + error.getMessage());
                     }
                 });
-        return new DiscoveryResult(processed, created, updated, errors);
+        return new DiscoveryResult(processed, created, updated, errors, diagnostics);
     }
 
     public Company ingestManual(ManualDiscovery request) {
@@ -153,7 +157,8 @@ public class RadarDiscoveryService {
         return value == null ? "" : value;
     }
 
-    public record DiscoveryResult(int processed, int created, int updated, List<String> errors) {
+    public record DiscoveryResult(int processed, int created, int updated, List<String> errors,
+            List<String> diagnostics) {
     }
 
     private record IngestResult(CompanyUpsert upsert, Company company, DiscoverySaveResult discovery) {

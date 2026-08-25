@@ -12,25 +12,43 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.mock.web.MockCookie;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.startupvalidationbot.radar.auth.RadarBrowserAuthService;
+import com.startupvalidationbot.radar.auth.RadarPasswordHasher;
+
 @SpringBootTest(properties = {
         "radar.run-token=fixture-worker-token",
         "radar.ai.enabled=false",
-        "radar.demo-fixture.enabled=true"
+        "radar.demo-fixture.enabled=true",
+        "app.allowed-origins=https://radar.example",
+        "radar.auth.browser-origin=https://radar.example",
+        "radar.auth.secure-cookie=false"
 })
 @AutoConfigureMockMvc
 @Transactional
 class RadarEndToEndFixtureIntegrationTest {
+    private static final String PASSWORD = "fixture browser password";
+    private static final String PASSWORD_HASH = RadarPasswordHasher.hash(PASSWORD.toCharArray());
+
+    @DynamicPropertySource
+    static void authProperties(DynamicPropertyRegistry registry) {
+        registry.add("radar.auth.admin-password-hash", () -> PASSWORD_HASH);
+    }
+
     @Autowired
     private MockMvc mockMvc;
 
     @Test
     void runsSyntheticPipelineAndProducesSanitizedExportAndStatus() throws Exception {
+        MockCookie cookie = loginCookie();
         mockMvc.perform(post("/api/radar/admin/fixtures/synthetic")
-                .header("Authorization", "Bearer fixture-worker-token"))
+                .cookie(cookie).header("Origin", "https://radar.example"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.deduplicated").value(true))
                 .andExpect(jsonPath("$.snapshotCount", greaterThanOrEqualTo(2)))
@@ -43,7 +61,7 @@ class RadarEndToEndFixtureIntegrationTest {
                 .andExpect(jsonPath("$.digestPreviewGenerated").value(true));
 
         mockMvc.perform(get("/api/radar/admin/status")
-                .header("Authorization", "Bearer fixture-worker-token"))
+                .cookie(cookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.databaseHealthy").value(true))
                 .andExpect(jsonPath("$.lastEnrichmentRun").exists())
@@ -53,7 +71,7 @@ class RadarEndToEndFixtureIntegrationTest {
                 .andExpect(jsonPath("$.routineModel").value("openai/gpt-oss-20b"));
 
         MvcResult export = mockMvc.perform(get("/api/radar/admin/export")
-                .header("Authorization", "Bearer fixture-worker-token"))
+                .cookie(cookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.schemaVersion").value("startup-radar-export-v1"))
                 .andExpect(jsonPath("$.companies.length()", greaterThanOrEqualTo(2)))
@@ -69,5 +87,19 @@ class RadarEndToEndFixtureIntegrationTest {
         String body = export.getResponse().getContentAsString();
         assertThat(body).doesNotContain("fixture-worker-token", "RADAR_RUN_TOKEN", "GROQ_API_KEY",
                 "radar_admin_sessions", "authorization");
+    }
+
+    private MockCookie loginCookie() throws Exception {
+        MvcResult login = mockMvc.perform(post("/api/radar/auth/login")
+                .header("Origin", "https://radar.example")
+                .contentType("application/json")
+                .content("{\"password\":\"" + PASSWORD + "\"}"))
+                .andExpect(status().isOk()).andReturn();
+        var issued = java.util.Arrays.stream(login.getResponse().getCookies())
+                .filter(cookie -> RadarBrowserAuthService.COOKIE_NAME.equals(cookie.getName()))
+                .filter(cookie -> "/api".equals(cookie.getPath()))
+                .filter(cookie -> !cookie.getValue().isBlank())
+                .findFirst().orElseThrow();
+        return new MockCookie(issued.getName(), issued.getValue());
     }
 }

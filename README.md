@@ -135,9 +135,9 @@ cd backend
 
 ## Startup Radar Architecture
 
-New Radar data lives in provider-independent PostgreSQL tables managed by Flyway. Existing Deal Scout and diligence records remain in browser `localStorage`; no silent migration or destructive conversion occurs. Use the existing JSON export before moving browsers or devices. A later authenticated sync can import those backups into server storage without changing their current schema.
+Radar data and explicitly created Deal Workspaces live in PostgreSQL tables managed by Flyway. Older browser-only Deal Scout records remain in `localStorage` until the user imports or recreates them; no silent migration or destructive conversion occurs. Use the existing JSON export before moving those legacy records between browsers or devices.
 
-General company, trend, and source-status reads use sanitized public DTOs. They omit Personal Relevance, watch/ignore state, watchlist notes, next-review dates, source configuration, raw snapshots, and source excerpts. Protected reads and mutations accept either a server-side browser session or the separate worker bearer token. `RADAR_RUN_TOKEN` remains server-only and is never sent to Vite.
+All research and diligence data reads require the server-side browser session. `RADAR_RUN_TOKEN` remains server-only, is never sent to Vite, and is accepted only for `POST /api/radar/jobs/{jobType}` so scheduled workers cannot read exports or use browser-admin mutations.
 
 Production browser administration uses the Vercel function at `/api/radar/*` as a same-origin reverse proxy to Fly. The proxy forwards the HttpOnly session cookie but strips browser-supplied `Authorization` and `X-Radar-Run-Token` headers. Spring stores only SHA-256 session-token hashes in PostgreSQL, enforces a fixed expiration, validates the exact `RADAR_BROWSER_ORIGIN` for login/logout and mutations, and rate-limits failed logins. Cookies are Secure, HttpOnly, and SameSite=Strict in production. Direct Vercel-to-Fly browser cookie authentication is intentionally unsupported because cross-site cookie blocking makes it unreliable.
 
@@ -435,9 +435,9 @@ no fail-open path: when `RADAR_ADMIN_PASSWORD_HASH` is unset no session can vali
 stays closed and `/auth/session` reports `configured: false`. The SPA renders an explicit
 configuration error in that case rather than a login form that could never succeed.
 
-`RADAR_RUN_TOKEN` remains a separate server-to-server worker credential. The Vercel proxy forwards a
-strict header allowlist that excludes `authorization` and `x-radar-run-token`, so a browser can never
-present it.
+`RADAR_RUN_TOKEN` remains a separate server-to-server worker credential, scoped only to
+`POST /api/radar/jobs/{jobType}`. The Vercel proxy forwards a strict header allowlist that excludes
+`authorization` and `x-radar-run-token`, so a browser can never present it.
 
 ### Login throttling
 
@@ -453,7 +453,7 @@ Tunable via `RADAR_AUTH_MAX_LOGIN_ATTEMPTS`, `RADAR_AUTH_LOGIN_WINDOW_MINUTES`,
 
 ## Database Schema Ownership
 
-Flyway is the single schema authority. Migrations `V1`-`V7` live in
+Flyway is the single schema authority. Migrations `V1`-`V11` live in
 `backend/src/main/resources/db/migration`:
 
 | Migration | Contents |
@@ -464,6 +464,11 @@ Flyway is the single schema authority. Migrations `V1`-`V7` live in
 | `V4` | Legacy Deal Scout / diligence tables (`deals`, `quick_screens`, `decisions`, `deep_diligence`, `reviews`) previously created implicitly by Hibernate |
 | `V5` | Durable login throttling (`radar_login_attempts`) |
 | `V6` | Intelligence layer: interest profile, interaction signals, tiered company changes, accelerator provenance, trend velocity columns |
+| `V7` | Public evidence references and AI diagnostics |
+| `V8` | Removal of Product Hunt redirect URLs from company website identity |
+| `V9` | Server-backed Deal Workspaces |
+| `V10` | Router AI diagnostics |
+| `V11` | SEC offering discovery, filing history, and source diagnostics |
 
 The application runs with `spring.jpa.hibernate.ddl-auto=validate`, so **neither the web nor the
 worker process mutates the schema at boot** - important because both start concurrently on deploy.
@@ -624,17 +629,16 @@ The worker posts a preview request to the authenticated Deal Scout `/digest/run`
 
 `GET /api/radar/admin/status` is authenticated and reports database health, latest jobs, recent failures, discovery and AI counters, configured provider/model names, and integration-configured booleans. It never returns environment values, URLs containing credentials, API keys, tokens, database URLs, cookies, or authorization headers.
 
-For a deterministic development demo, start the backend with `RADAR_DEMO_FIXTURE_ENABLED=true` and `RADAR_ENABLE_AI=false`, then invoke the protected fixture once:
-
-```powershell
-Invoke-RestMethod -Method Post `
-  -Uri "http://localhost:8080/api/radar/admin/fixtures/synthetic" `
-  -Headers @{ Authorization = "Bearer $env:RADAR_RUN_TOKEN" }
-```
+For a deterministic development demo, start the backend with `RADAR_DEMO_FIXTURE_ENABLED=true` and
+`RADAR_ENABLE_AI=false`, sign in through the local frontend, and run the synthetic fixture from the
+authenticated Admin page. The fixture is a browser-admin operation; the worker token cannot invoke it.
 
 The fixture performs manual ingestion, normalization, domain deduplication, persistence, two snapshots, deterministic Radar and Personal scoring, Watchlist, deterministic Deep Dive, trend clustering, and digest preview. It uses only `.example` URLs and never calls Groq or Product Hunt. Keep `RADAR_DEMO_FIXTURE_ENABLED=false` in staging and production. `RadarEndToEndFixtureIntegrationTest` runs the same workflow automatically.
 
 The Admin page downloads `GET /api/radar/admin/export` as `startup-radar-export.json`. The export includes companies, normalized discovery references and hashes, public source metadata, sanitized snapshots, analyses, watchlist, trends, and research-source references. It excludes raw discovery text, source configuration JSON, sessions, password hashes, worker tokens, credentials, database settings, AI attempt errors, email settings, and all unrelated Deal Scout/diligence data.
+
+Production promotion, backup verification, smoke checks, and rollback steps are in
+[`docs/v1-production-runbook.md`](docs/v1-production-runbook.md).
 
 ## Next Radar Iterations
 

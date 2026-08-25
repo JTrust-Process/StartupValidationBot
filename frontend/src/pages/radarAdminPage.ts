@@ -1,5 +1,6 @@
 import type { OfferingDiagnostics, RadarInterest, RadarSystemStatus } from '../models/radar';
 import {
+  RadarApiError,
   addManualRadarCompany,
   downloadRadarExport,
   getRadarAdminSession,
@@ -255,14 +256,20 @@ export function bindRadarAdminPageEvents(root: HTMLElement): void {
     });
     content.querySelectorAll<HTMLButtonElement>('[data-radar-job]').forEach((button) => {
       button.addEventListener('click', async () => {
+        const jobType = button.dataset.radarJob || '';
         button.disabled = true;
         try {
-          const result = await runRadarJob(button.dataset.radarJob || '');
+          const result = await runRadarJob(jobType);
           showMessage(`${result.message} ${result.processed} inspected, ${result.created} new, `
             + `${result.updated} updated, ${result.errorCount} errors.`, !result.ok);
           await load();
         } catch (error) {
-          showMessage(error instanceof Error ? error.message : 'Job failed.', true);
+          const proxyMayHaveTimedOut = jobType === 'discovery'
+            && error instanceof RadarApiError
+            && (error.status === 0 || error.status >= 500);
+          showMessage(proxyMayHaveTimedOut
+            ? 'The browser request ended before discovery reported back. The durable backend job may still be running; refresh System Status before retrying.'
+            : error instanceof Error ? error.message : 'Job failed.', true);
         } finally { button.disabled = false; }
       });
     });

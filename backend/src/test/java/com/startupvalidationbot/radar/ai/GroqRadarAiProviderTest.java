@@ -9,6 +9,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -77,6 +81,45 @@ class GroqRadarAiProviderTest {
                     assertThat(aiError.attempts()).isEqualTo(2);
                 });
         assertThat(requests).hasValue(2);
+    }
+
+    @Test
+    void routineRetriesPassThroughConfiguredPacer() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        AtomicInteger pacedAttempts = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/chat/completions", exchange -> {
+            int request = requests.incrementAndGet();
+            if (request == 1) {
+                respond(exchange, 429, "{\"error\":{\"message\":\"rate limited\"}}");
+            } else {
+                respond(exchange, 200, mapper.writeValueAsString(Map.of(
+                        "choices", List.of(Map.of("message", Map.of("content", mapper.writeValueAsString(validOutput())))),
+                        "usage", Map.of("prompt_tokens", 80, "completion_tokens", 30))));
+            }
+        });
+        server.start();
+        URI endpoint = URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/chat/completions");
+        GroqRadarAiProvider provider = new GroqRadarAiProvider(mapper, HttpClient.newHttpClient(), endpoint,
+                "test-server-key", "openai/gpt-oss-20b", "openai/gpt-oss-120b", 1, Duration.ofSeconds(5),
+                pacedAttempts::incrementAndGet);
+
+        provider.analyzeCompany(input());
+
+        assertThat(requests).hasValue(2);
+        assertThat(pacedAttempts).hasValue(2);
+    }
+
+    @Test
+    void retryAfterSupportsFractionalSecondsAndHttpDatesWithinBound() {
+        Instant now = Instant.parse("2026-08-25T03:12:00Z");
+        String date = DateTimeFormatter.RFC_1123_DATE_TIME
+                .format(ZonedDateTime.ofInstant(now.plusSeconds(9), ZoneOffset.UTC));
+
+        assertThat(GroqRadarAiProvider.retryDelayMs("6.5", 0, now)).isEqualTo(6_500);
+        assertThat(GroqRadarAiProvider.retryDelayMs(date, 0, now)).isEqualTo(9_000);
+        assertThat(GroqRadarAiProvider.retryDelayMs("120", 0, now)).isEqualTo(60_000);
+        assertThat(GroqRadarAiProvider.retryDelayMs("invalid", 1, now)).isEqualTo(500);
     }
 
     @Test

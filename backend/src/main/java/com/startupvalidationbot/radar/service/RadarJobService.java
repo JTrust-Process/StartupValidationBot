@@ -77,7 +77,9 @@ public class RadarJobService {
     private JobResult discovery(String jobType, String key) {
         DiscoveryResult result = discoveryService.discoverEnabledSources();
         return new JobResult(result.errors().isEmpty(), jobType, key, false, result.processed(), result.created(),
-                result.updated(), result.errors().size(), result.errors(), "Discovery run completed.");
+                result.updated(), result.errors().size(), result.errors(), result.diagnostics(),
+                result.diagnostics().isEmpty() ? "Discovery run completed."
+                        : "Discovery run completed with " + result.diagnostics().size() + " skipped candidate(s).");
     }
 
     private JobResult offeringDiscovery(String jobType, String key) {

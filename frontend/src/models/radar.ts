@@ -191,6 +191,7 @@ export interface RadarJobResult {
   updated: number;
   errorCount: number;
   errors: string[];
+  diagnostics: string[];
   message: string;
 }
 

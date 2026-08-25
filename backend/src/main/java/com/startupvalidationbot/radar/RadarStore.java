@@ -119,7 +119,7 @@ public class RadarStore {
     public CompanyUpsert upsertCompany(Candidate candidate) {
         String normalizedName = CompanyIdentity.normalizeName(candidate.companyName());
         if (normalizedName.isBlank()) {
-            throw new IllegalArgumentException("company name cannot normalize to an empty value");
+            throw new InvalidCompanyIdentityException("company name cannot normalize to an empty value");
         }
         String domain = CompanyIdentity.normalizeDomain(candidate.websiteUrl());
         Optional<Company> match = findCompanyByIdentity(domain, normalizedName);

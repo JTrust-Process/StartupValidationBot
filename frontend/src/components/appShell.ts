@@ -10,6 +10,7 @@ import { bindWatchlistPageEvents, renderWatchlistPage } from '../pages/watchlist
 import { bindTrendsPageEvents, renderTrendsPage } from '../pages/trendsPage';
 import { bindRadarCompanyPageEvents, renderRadarCompanyPage } from '../pages/radarCompanyPage';
 import { bindRadarAdminPageEvents, renderRadarAdminPage } from '../pages/radarAdminPage';
+import { bindOfferingsPageEvents, renderOfferingsPage } from '../pages/offeringsPage';
 import {
   bindDealWorkspacePageEvents,
   renderDealWorkspacePage
@@ -35,6 +36,7 @@ function renderSidebar(): string {
         <div class="nav-group">
           <span class="nav-section-label">Diligence</span>
           <a href="#/dashboard" class="nav-link" data-route="/dashboard">Dashboard</a>
+          <a href="#/offerings" class="nav-link" data-route="/offerings">Offerings</a>
           <a href="#/deals" class="nav-link" data-route="/deals">Deals</a>
           <a href="#/deals/new" class="nav-link" data-route="/deals/new">New Deal</a>
           <a href="#/import-text" class="nav-link" data-route="/import-text">Text Import</a>
@@ -56,6 +58,7 @@ function getPageHtml(path: string): string {
   if (path === '/trends') return renderTrendsPage();
   if (path.startsWith('/radar/company/')) return renderRadarCompanyPage();
   if (path === '/radar-admin') return renderRadarAdminPage();
+  if (path === '/offerings') return renderOfferingsPage();
   if (path === '/dashboard') return renderDashboardPage();
   if (path === '/deals') return renderDealsPage();
   if (path.startsWith('/deals/new')) return renderNewDealPage();
@@ -127,6 +130,11 @@ function bindPageEvents(root: HTMLDivElement, path: string): void {
 
   if (path === '/radar-admin') {
     bindRadarAdminPageEvents(pageContent);
+    return;
+  }
+
+  if (path === '/offerings') {
+    bindOfferingsPageEvents(pageContent);
     return;
   }
 

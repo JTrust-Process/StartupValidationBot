@@ -194,6 +194,57 @@ export interface RadarJobResult {
   message: string;
 }
 
+export type OfferingStatus = 'ACTIVE' | 'POSSIBLY_ACTIVE' | 'ENDED' | 'WITHDRAWN' | 'TERMINATED' | 'UNKNOWN';
+export type OfferingMatchStatus = 'CONFIRMED' | 'LIKELY' | 'AMBIGUOUS' | 'UNMATCHED' | 'REJECTED';
+
+export interface RadarOffering {
+  id: number;
+  radarCompanyId: number | null;
+  companyName: string | null;
+  issuerName: string;
+  issuerCik: string;
+  platform: string;
+  intermediaryName: string | null;
+  offeringUrl: string | null;
+  secFilingUrl: string;
+  accessionNumber: string;
+  fileNumber: string | null;
+  filingType: string;
+  filingDate: string;
+  offeringExemption: 'REG_CF';
+  securityType: string | null;
+  minimumInvestment: number | null;
+  targetAmount: number | null;
+  maximumAmount: number | null;
+  valuationOrCap: string | null;
+  deadline: string | null;
+  amountRaised: number | null;
+  status: OfferingStatus;
+  source: string;
+  matchStatus: OfferingMatchStatus;
+  matchConfidence: number;
+  matchReason: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
+export interface OfferingDiagnostics {
+  offeringsStored: number;
+  confirmedMatches: number;
+  possibleMatches: number;
+  sourceStatus: string;
+  sourceLastSuccessAt: string | null;
+  sourceError: string | null;
+  lastJobStatus: string;
+  lastJobStartedAt: string | null;
+  lastJobCompletedAt: string | null;
+  lastJobDurationMs: number | null;
+  recordsInspected: number;
+  newOfferings: number;
+  updatedOfferings: number;
+  errorCount: number;
+}
+
 export interface RadarCompanyFilters {
   search?: string;
   sector?: string;

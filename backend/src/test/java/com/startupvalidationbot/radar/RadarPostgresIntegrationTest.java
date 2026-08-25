@@ -33,6 +33,10 @@ import com.startupvalidationbot.radar.source.RssStartupSourceAdapter;
 import com.startupvalidationbot.radar.source.SourceFetchException;
 import com.startupvalidationbot.dealworkspace.DealWorkspaceStore;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.startupvalidationbot.offering.OfferingDomain.Match;
+import com.startupvalidationbot.offering.OfferingDomain.MatchStatus;
+import com.startupvalidationbot.offering.OfferingMatchService;
+import com.startupvalidationbot.offering.OfferingStore;
 
 /**
  * Production-representative persistence coverage.
@@ -93,6 +97,12 @@ class RadarPostgresIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private OfferingStore offeringStore;
+
+    @Autowired
+    private OfferingMatchService offeringMatcher;
+
     @Test
     void appliesEveryMigrationAndValidatesTheJpaMappingAgainstIt() {
         List<String> applied = jdbc.queryForList(
@@ -107,6 +117,7 @@ class RadarPostgresIntegrationTest {
                 .anyMatch(script -> script.contains("V6__"));
         assertThat(applied).anyMatch(script -> script.contains("V9__"));
         assertThat(applied).anyMatch(script -> script.contains("V10__"));
+        assertThat(applied).anyMatch(script -> script.contains("V11__"));
 
         // V4 brought the legacy diligence tables under Flyway. The context booting with
         // ddl-auto=validate is itself the assertion that the JPA mapping matches them.
@@ -130,6 +141,8 @@ class RadarPostgresIntegrationTest {
                   "platform": "Republic",
                   "offeringUrl": "https://republic.example/gridcool",
                   "radarCompanyId": 42,
+                  "offeringDiscoveryId": 77,
+                  "secFilingUrl": "https://www.sec.gov/Archives/example",
                   "documents": [{"id": 1, "title": "Form C", "pastedText": "Nested text"}],
                   "evidenceClaims": [{"id": 1, "claim": "Revenue", "verified": true}],
                   "redFlags": {"illiquidityNotDisclosed": true},
@@ -145,6 +158,7 @@ class RadarPostgresIntegrationTest {
         assertThat(created.at("/importRecords/0/dealId").asLong()).isEqualTo(id);
         assertThat(created.at("/documents/0/pastedText").asText()).isEqualTo("Nested text");
         assertThat(created.get("radarCompanyId").asLong()).isEqualTo(42);
+        assertThat(created.get("offeringDiscoveryId").asLong()).isEqualTo(77);
 
         var loaded = dealWorkspaces.find(id).orElseThrow();
         assertThat(loaded.at("/evidenceClaims/0/verified").asBoolean()).isTrue();
@@ -158,6 +172,59 @@ class RadarPostgresIntegrationTest {
 
         dealWorkspaces.delete(id);
         assertThat(dealWorkspaces.find(id)).isEmpty();
+    }
+
+    @Test
+    void persistsIdempotentOfferingAndAmendmentHistoryOnPostgres() {
+        var company = store.upsertCompany(new Candidate("postgres-offering", "offering-1",
+                "Postgres Offering Co", "https://offering.example", "", "Fintech", List.of("fintech"),
+                null, null, "https://example.com/source", LocalDateTime.now(), "")).company();
+        Match match = new Match(company.id(), MatchStatus.CONFIRMED, 100, "Exact name and domain.");
+        var first = offeringStore.upsert(offeringCandidate("0002099999-26-000001", "C", "020-99991",
+                java.time.LocalDate.of(2026, 8, 1)), match);
+        var repeated = offeringStore.upsert(offeringCandidate("0002099999-26-000001", "C", "020-99991",
+                java.time.LocalDate.of(2026, 8, 1)), match);
+        offeringStore.upsert(offeringCandidate("0002099999-26-000002", "C-W", "020-99991",
+                java.time.LocalDate.of(2026, 8, 20)), match);
+
+        assertThat(first.created()).isTrue();
+        assertThat(repeated.created()).isFalse();
+        assertThat(offeringStore.list(null, null, "CONFIRMED", company.id())).singleElement()
+                .satisfies(offering -> assertThat(offering.status().name()).isEqualTo("WITHDRAWN"));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_offering_filings WHERE offering_id=?",
+                Integer.class, first.offering().id())).isEqualTo(2);
+
+        Match ambiguous = new Match(null, MatchStatus.AMBIGUOUS, 45,
+                "Issuer name matches more than one tracked company.");
+        offeringStore.upsert(offeringCandidate("0002088888-26-000001", "C", "020-88881",
+                java.time.LocalDate.of(2026, 8, 22)), ambiguous);
+
+        assertThat(offeringStore.list("ACTIVE", "Wefunder", "AMBIGUOUS", null)).singleElement()
+                .satisfies(offering -> {
+                    assertThat(offering.radarCompanyId()).isNull();
+                    assertThat(offering.matchStatus()).isEqualTo(MatchStatus.AMBIGUOUS);
+                });
+
+        var storedIdentity = offeringStore.listStoredIdentities().stream()
+                .filter(identity -> identity.offeringId() == first.offering().id()).findFirst().orElseThrow();
+        offeringStore.updateMatch(storedIdentity.offeringId(), offeringMatcher.match(storedIdentity.issuerName(),
+                storedIdentity.issuerWebsite(), store.listCompanies()));
+        assertThat(offeringStore.find(first.offering().id())).get().satisfies(offering -> {
+            assertThat(offering.matchStatus()).isEqualTo(MatchStatus.LIKELY);
+            assertThat(offering.matchConfidence()).isEqualTo(85);
+            assertThat(offering.matchReason()).contains("corroborating identity evidence is unavailable");
+        });
+    }
+
+    private com.startupvalidationbot.offering.OfferingDomain.Candidate offeringCandidate(
+            String accession, String form, String fileNumber, java.time.LocalDate date) {
+        return new com.startupvalidationbot.offering.OfferingDomain.Candidate("Postgres Offering Co",
+                "0002099999", "https://offering.example", "Wefunder", "Wefunder Portal LLC", null, null,
+                "https://www.sec.gov/Archives/edgar/data/2099999/" + accession.replace("-", "") + "/"
+                        + accession + "-index.html",
+                accession, fileNumber, form, date, "Crowd SAFE", new java.math.BigDecimal("100"),
+                new java.math.BigDecimal("100000"), new java.math.BigDecimal("500000"), null,
+                java.time.LocalDate.of(2026, 12, 31), null, "TEST", java.util.Map.of("form", form));
     }
 
     @Test

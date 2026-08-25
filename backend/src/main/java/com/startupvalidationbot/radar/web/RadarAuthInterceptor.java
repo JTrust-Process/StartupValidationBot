@@ -1,7 +1,9 @@
 package com.startupvalidationbot.radar.web;
 
 import org.springframework.stereotype.Component;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.startupvalidationbot.radar.auth.RadarBrowserAuthService;
 import com.startupvalidationbot.radar.auth.RadarOriginPolicy;
@@ -29,6 +31,10 @@ public class RadarAuthInterceptor implements HandlerInterceptor {
         }
         if (isPublic(request)) return true;
         if (tokenGuard.matches(request.getHeader("Authorization"), request.getHeader("X-Radar-Run-Token"))) {
+            if (!isWorkerJobRequest(request)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "Worker credentials are limited to Radar job execution");
+            }
             request.setAttribute("radarAuthentication", "WORKER_TOKEN");
             return true;
         }
@@ -62,5 +68,10 @@ public class RadarAuthInterceptor implements HandlerInterceptor {
 
     private static boolean isSafeMethod(String method) {
         return "GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method);
+    }
+
+    private static boolean isWorkerJobRequest(HttpServletRequest request) {
+        return "POST".equalsIgnoreCase(request.getMethod())
+                && request.getRequestURI().matches("/api/radar/jobs/[A-Za-z0-9-]+");
     }
 }

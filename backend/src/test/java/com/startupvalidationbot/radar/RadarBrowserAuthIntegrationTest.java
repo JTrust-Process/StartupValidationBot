@@ -203,6 +203,17 @@ class RadarBrowserAuthIntegrationTest {
 
         mockMvc.perform(get("/api/radar/admin/companies")
                 .header("Authorization", "Bearer test-worker-token"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/radar/admin/export")
+                .header("X-Radar-Run-Token", "test-worker-token"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/radar/companies/manual")
+                .header("Authorization", "Bearer test-worker-token")
+                .contentType("application/json")
+                .content("{\"name\":\"Worker must not mutate\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/radar/jobs/trends")
+                .header("Authorization", "Bearer test-worker-token"))
                 .andExpect(status().isOk());
     }
 

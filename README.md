@@ -18,6 +18,9 @@ This is a research organization tool. It is not financial, legal, or tax advice.
 
 - Persistent PostgreSQL Startup Radar with Flyway migrations
 - Separate SEC-backed Offering Discovery for tracked Radar companies, with conservative Form C matching, lifecycle history, and explicit Deal Scout handoff
+- Autonomous public diligence packets with SEC financial history, evidence provenance, Wefunder/Republic/StartEngine campaign enrichment, discrepancy checks, and a Review Queue
+- Automated investment-availability coverage on every Radar profile, including honest `COULD NOT ESTABLISH` results and exact unresolved questions
+- Durable high-signal Resend events for newly confirmed offerings, first READY packets, and material offering changes
 - Modular discovery adapters for configurable RSS/Atom feeds, the official Product Hunt API, and manual sources
 - Conservative YC directory entry retained as manual-only rather than relying on an undocumented scraper
 - Company deduplication by normalized domain, normalized name, and legal-name aliases
@@ -456,7 +459,7 @@ Tunable via `RADAR_AUTH_MAX_LOGIN_ATTEMPTS`, `RADAR_AUTH_LOGIN_WINDOW_MINUTES`,
 
 ## Database Schema Ownership
 
-Flyway is the single schema authority. Migrations `V1`-`V11` live in
+Flyway is the single schema authority. Migrations `V1`-`V12` live in
 `backend/src/main/resources/db/migration`:
 
 | Migration | Contents |
@@ -472,6 +475,7 @@ Flyway is the single schema authority. Migrations `V1`-`V11` live in
 | `V9` | Server-backed Deal Workspaces |
 | `V10` | Router AI diagnostics |
 | `V11` | SEC offering discovery, filing history, and source diagnostics |
+| `V12` | Autonomous diligence packets, provenance evidence, multi-period financials, platform campaigns, availability checks, and notification events |
 
 The application runs with `spring.jpa.hibernate.ddl-auto=validate`, so **neither the web nor the
 worker process mutates the schema at boot** - important because both start concurrently on deploy.

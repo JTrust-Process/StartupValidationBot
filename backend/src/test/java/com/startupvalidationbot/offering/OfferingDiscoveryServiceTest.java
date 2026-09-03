@@ -69,6 +69,40 @@ class OfferingDiscoveryServiceTest {
         verify(store).updateMatch(9L, likely);
     }
 
+    @Test
+    void revisitsStoredLikelyMatchAndConfirmsAfterSecEnrichmentAddsFiledDomain() {
+        OfferingSourceAdapter source = mock(OfferingSourceAdapter.class);
+        OfferingMatchService matcher = mock(OfferingMatchService.class);
+        OfferingStore store = mock(OfferingStore.class);
+        RadarStore radar = mock(RadarStore.class);
+        var company = mock(com.startupvalidationbot.radar.RadarDomain.Company.class);
+        List<com.startupvalidationbot.radar.RadarDomain.Company> companies = List.of(company);
+        Candidate before = candidate("Bloomy, Inc.", "bloomy-accession");
+        Candidate enriched = new Candidate(before.issuerName(), before.issuerCik(), "https://joinbloomy.com",
+                before.platform(), before.intermediaryName(), before.intermediaryCik(), before.offeringUrl(),
+                before.secFilingUrl(), before.accessionNumber(), before.fileNumber(), before.filingType(),
+                before.filingDate(), before.securityType(), before.minimumInvestment(), before.targetAmount(),
+                before.maximumAmount(), before.valuationOrCap(), before.deadline(), before.amountRaised(),
+                before.source(), Map.of("issuerWebsite", "https://joinbloomy.com"));
+        Match confirmed = new Match(17L, MatchStatus.CONFIRMED, 100, "Exact name and filed domain match.");
+        var storedOffering = mock(OfferingDomain.Offering.class);
+        when(storedOffering.id()).thenReturn(9L);
+        when(source.fetchRecent()).thenReturn(List.of());
+        when(store.baselineDue(anyInt())).thenReturn(false);
+        when(store.listStoredIdentities()).thenReturn(List.of());
+        when(store.listStoredCandidatesForResolution(20))
+                .thenReturn(List.of(new OfferingStore.StoredCandidate(9L, before)));
+        when(radar.listCompanies()).thenReturn(companies);
+        when(source.enrich(before)).thenReturn(enriched);
+        when(matcher.match(enriched, companies)).thenReturn(confirmed);
+        when(store.upsert(enriched, confirmed)).thenReturn(new OfferingStore.UpsertResult(storedOffering, false));
+
+        new OfferingDiscoveryService(source, matcher, store, radar, 30).discover();
+
+        verify(store).markResolution(9L, "CONFIRMED", confirmed.reason(),
+                List.of("STORED_SEC_FACTS", "SEC_FILING"));
+    }
+
     private static Candidate candidate(String name, String accession) {
         return new Candidate(name, "0000000001", null, "UNKNOWN", null, null, null,
                 "https://www.sec.gov/Archives/example", accession, null, "C", LocalDate.now(), null,

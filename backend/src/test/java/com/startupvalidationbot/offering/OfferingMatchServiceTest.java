@@ -25,6 +25,15 @@ class OfferingMatchServiceTest {
     }
 
     @Test
+    void confirmsBloomyStyleIssuerOnlyAfterFiledDomainMatchesIndependentRadarIdentity() {
+        Company company = company(7, "Bloomy", "joinbloomy.com", List.of());
+        assertThat(matcher.match(candidate("Bloomy, Inc.", null), List.of(company)).status())
+                .isEqualTo(MatchStatus.LIKELY);
+        assertThat(matcher.match(candidate("Bloomy, Inc.", "https://joinbloomy.com"), List.of(company)).status())
+                .isEqualTo(MatchStatus.CONFIRMED);
+    }
+
+    @Test
     void rejectsAnExactNameWithAConflictingDomain() {
         Company company = company(7, "Acme Technologies", "acme.example", List.of());
         assertThat(matcher.match(candidate("Acme Technologies", "https://other.example"), List.of(company)).status())

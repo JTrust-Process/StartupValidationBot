@@ -85,6 +85,9 @@ class RadarStoreIntegrationTest {
         mockMvc.perform(get("/api/radar/companies/{id}", company.id())).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/radar/sources")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/radar/trends")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/radar/diligence")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/radar/companies/{id}/investment-availability", company.id()))
+                .andExpect(status().isUnauthorized());
 
         // The worker credential is not a substitute for the browser-admin session.
         mockMvc.perform(get("/api/radar/companies").header("Authorization", "Bearer test-token"))
@@ -94,6 +97,8 @@ class RadarStoreIntegrationTest {
                 .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/radar/admin/companies")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/radar/admin/companies").header("Authorization", "Bearer test-token"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/radar/diligence").header("Authorization", "Bearer test-token"))
                 .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/radar/jobs/discovery").contentType("application/json").content("{}"))
                 .andExpect(status().isUnauthorized());

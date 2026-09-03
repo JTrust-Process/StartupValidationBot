@@ -21,7 +21,10 @@ import type {
   RadarFixtureResult,
   RadarJobResult,
   RadarOffering,
-  OfferingDiagnostics
+  OfferingDiagnostics,
+  DiligencePacket,
+  CompanyInvestmentAvailability,
+  AutonomousDiligenceDiagnostics
 } from '../models/radar';
 
 function resolveRadarApiBase(): string {
@@ -203,6 +206,27 @@ export function listCompanyOfferings(companyId: number): Promise<RadarOffering[]
 
 export function getOfferingDiagnostics(): Promise<OfferingDiagnostics> {
   return request<OfferingDiagnostics>('/admin/offering-discovery');
+}
+
+export function listDiligencePackets(status?: string): Promise<DiligencePacket[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : '';
+  return request<DiligencePacket[]>(`/diligence${query}`);
+}
+
+export function getDiligencePacket(packetId: number): Promise<DiligencePacket> {
+  return request<DiligencePacket>(`/diligence/${packetId}`);
+}
+
+export function refreshDiligencePacket(packetId: number): Promise<DiligencePacket> {
+  return request<DiligencePacket>(`/diligence/${packetId}/refresh`, { method: 'POST', body: '{}' });
+}
+
+export function getInvestmentAvailability(companyId: number): Promise<CompanyInvestmentAvailability> {
+  return request<CompanyInvestmentAvailability>(`/companies/${companyId}/investment-availability`);
+}
+
+export function getAutonomousDiligenceDiagnostics(): Promise<AutonomousDiligenceDiagnostics> {
+  return request<AutonomousDiligenceDiagnostics>('/admin/diligence');
 }
 
 export function seedRadarDemoFixture(): Promise<RadarFixtureResult> {

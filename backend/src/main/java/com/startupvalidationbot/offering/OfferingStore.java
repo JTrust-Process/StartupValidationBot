@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Map;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -58,12 +59,56 @@ public class OfferingStore {
         return jdbc.query(SELECT + " WHERE o.id = ?", offeringMapper(), id).stream().findFirst();
     }
 
+    public Map<String, String> facts(long offeringId) {
+        String value = jdbc.queryForObject("SELECT raw_facts_json FROM radar_offerings WHERE id=?", String.class,
+                offeringId);
+        if (value == null || value.isBlank()) return Map.of();
+        try {
+            JsonNode node = objectMapper.readTree(value);
+            java.util.Map<String, String> facts = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+            node.properties().forEach(entry -> facts.put(entry.getKey(), entry.getValue().asText("")));
+            return Map.copyOf(facts);
+        } catch (JsonProcessingException error) {
+            return Map.of();
+        }
+    }
+
+    public void markResolution(long offeringId, String status, String reason, List<String> sourcesChecked) {
+        jdbc.update("""
+                UPDATE radar_offerings SET last_resolution_attempt_at=?, resolution_sources_checked=?,
+                  resolution_reason=?, resolution_status=?, updated_at=? WHERE id=?
+                """, LocalDateTime.now(), json(sourcesChecked), nullIfBlank(reason), status,
+                LocalDateTime.now(), offeringId);
+    }
+
     public List<StoredIdentity> listStoredIdentities() {
         return jdbc.query("""
                 SELECT id, issuer_name, raw_facts_json FROM radar_offerings
                 WHERE match_status IN ('CONFIRMED', 'LIKELY', 'AMBIGUOUS')
                 """, (rs, row) -> new StoredIdentity(rs.getLong("id"), rs.getString("issuer_name"),
                         issuerWebsite(rs.getString("raw_facts_json"))));
+    }
+
+    public List<StoredCandidate> listStoredCandidatesForResolution(int limit) {
+        return jdbc.query("""
+                SELECT * FROM radar_offerings
+                WHERE match_status IN ('LIKELY','AMBIGUOUS')
+                ORDER BY COALESCE(last_resolution_attempt_at, TIMESTAMP '1970-01-01 00:00:00'), updated_at DESC
+                LIMIT ?
+                """, (rs, row) -> {
+            Map<String, String> facts = factsFromJson(rs.getString("raw_facts_json"));
+            Candidate candidate = new Candidate(rs.getString("issuer_name"), rs.getString("issuer_cik"),
+                    issuerWebsite(rs.getString("raw_facts_json")), rs.getString("platform"),
+                    rs.getString("intermediary_name"), rs.getString("intermediary_cik"),
+                    rs.getString("offering_url"), rs.getString("sec_filing_url"),
+                    rs.getString("sec_accession_number"), rs.getString("sec_file_number"),
+                    rs.getString("filing_type"), rs.getObject("filing_date", LocalDate.class),
+                    rs.getString("security_type"), rs.getBigDecimal("minimum_investment"),
+                    rs.getBigDecimal("target_amount"), rs.getBigDecimal("maximum_amount"),
+                    rs.getString("valuation_or_cap"), rs.getObject("deadline", LocalDate.class),
+                    rs.getBigDecimal("amount_raised"), rs.getString("source"), facts);
+            return new StoredCandidate(rs.getLong("id"), candidate);
+        }, Math.max(1, Math.min(limit, 50)));
     }
 
     public void updateMatch(long offeringId, Match match) {
@@ -299,6 +344,15 @@ public class OfferingStore {
             return null;
         }
     }
+    private Map<String, String> factsFromJson(String value) {
+        if (value == null || value.isBlank()) return Map.of();
+        try {
+            JsonNode node = objectMapper.readTree(value);
+            java.util.Map<String, String> facts = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+            node.properties().forEach(entry -> facts.put(entry.getKey(), entry.getValue().asText("")));
+            return Map.copyOf(facts);
+        } catch (JsonProcessingException error) { return Map.of(); }
+    }
     private static String normalize(String value) { return com.startupvalidationbot.radar.CompanyIdentity.normalizeName(value); }
     private static Object nullIfBlank(String value) { return blank(value) ? null : value.trim(); }
     private static boolean blank(String value) { return value == null || value.isBlank(); }
@@ -306,6 +360,7 @@ public class OfferingStore {
 
     public record UpsertResult(Offering offering, boolean created) { }
     public record StoredIdentity(long offeringId, String issuerName, String issuerWebsite) { }
+    public record StoredCandidate(long offeringId, Candidate candidate) { }
     private record SourceDiagnostic(String status, LocalDateTime successAt, String error) { }
     private record JobDiagnostic(String status, LocalDateTime startedAt, LocalDateTime completedAt,
             int processed, int created, int updated, int errorCount) { }

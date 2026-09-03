@@ -3,10 +3,13 @@ package com.startupvalidationbot.radar;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +35,14 @@ import com.startupvalidationbot.radar.service.RadarScoringService;
 import com.startupvalidationbot.radar.source.RssStartupSourceAdapter;
 import com.startupvalidationbot.radar.source.SourceFetchException;
 import com.startupvalidationbot.dealworkspace.DealWorkspaceStore;
+import com.startupvalidationbot.diligence.DiligenceDomain.CampaignStatus;
+import com.startupvalidationbot.diligence.DiligenceDomain.EvidenceClassification;
+import com.startupvalidationbot.diligence.DiligenceDomain.FinancialPeriod;
+import com.startupvalidationbot.diligence.DiligenceDomain.PacketStatus;
+import com.startupvalidationbot.diligence.DiligenceDomain.PlatformCampaign;
+import com.startupvalidationbot.diligence.DiligenceStore;
+import com.startupvalidationbot.diligence.DiligenceStore.EvidenceDraft;
+import com.startupvalidationbot.diligence.DiligenceStore.PacketDraft;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.startupvalidationbot.offering.OfferingDomain.Match;
 import com.startupvalidationbot.offering.OfferingDomain.MatchStatus;
@@ -103,6 +114,9 @@ class RadarPostgresIntegrationTest {
     @Autowired
     private OfferingMatchService offeringMatcher;
 
+    @Autowired
+    private DiligenceStore diligenceStore;
+
     @Test
     void appliesEveryMigrationAndValidatesTheJpaMappingAgainstIt() {
         List<String> applied = jdbc.queryForList(
@@ -118,6 +132,7 @@ class RadarPostgresIntegrationTest {
         assertThat(applied).anyMatch(script -> script.contains("V9__"));
         assertThat(applied).anyMatch(script -> script.contains("V10__"));
         assertThat(applied).anyMatch(script -> script.contains("V11__"));
+        assertThat(applied).anyMatch(script -> script.contains("V12__"));
 
         // V4 brought the legacy diligence tables under Flyway. The context booting with
         // ddl-auto=validate is itself the assertion that the JPA mapping matches them.
@@ -128,6 +143,8 @@ class RadarPostgresIntegrationTest {
         assertThat(tableExists("reviews")).isTrue();
         assertThat(tableExists("radar_login_attempts")).isTrue();
         assertThat(tableExists("deal_workspaces")).isTrue();
+        assertThat(tableExists("radar_diligence_packets")).isTrue();
+        assertThat(tableExists("radar_notification_events")).isTrue();
     }
 
     @Test
@@ -214,6 +231,75 @@ class RadarPostgresIntegrationTest {
             assertThat(offering.matchConfidence()).isEqualTo(85);
             assertThat(offering.matchReason()).contains("corroborating identity evidence is unavailable");
         });
+    }
+
+    @Test
+    void persistsIdempotentDiligenceStateOnPostgres() {
+        var company = store.upsertCompany(new Candidate("postgres-diligence", "diligence-1",
+                "Postgres Diligence Co", "https://diligence.example", "", "Energy", List.of("energy"),
+                null, null, "https://example.com/diligence-source", LocalDateTime.now(), "")).company();
+        var offeringCandidate = new com.startupvalidationbot.offering.OfferingDomain.Candidate(
+                "Postgres Diligence Co", "0002077777", "https://diligence.example", "Wefunder",
+                "Wefunder Portal LLC", null, "https://wefunder.com/postgres-diligence",
+                "https://www.sec.gov/Archives/edgar/data/2077777/000207777726000001/"
+                        + "0002077777-26-000001-index.html",
+                "0002077777-26-000001", "020-77771", "C", LocalDate.of(2026, 8, 25),
+                "Crowd SAFE", new BigDecimal("100"), new BigDecimal("100000"),
+                new BigDecimal("1235000"), "$12M cap", LocalDate.of(2026, 12, 31),
+                new BigDecimal("640000"), "TEST", Map.of());
+        long offeringId = offeringStore.upsert(offeringCandidate,
+                new Match(company.id(), MatchStatus.CONFIRMED, 100, "Exact identity match.")).offering().id();
+
+        LocalDateTime now = LocalDateTime.now();
+        PlatformCampaign firstCampaign = new PlatformCampaign(null, offeringId, "WEFUNDER",
+                "https://wefunder.com/postgres-diligence", "SEC_OFFERING_URL", 100, CampaignStatus.ACTIVE,
+                "Postgres Diligence Co", "Crowd SAFE", new BigDecimal("100"), null, null,
+                new BigDecimal("12000000"), null, new BigDecimal("100000"), new BigDecimal("1235000"),
+                new BigDecimal("640000"), 814, LocalDate.of(2026, 12, 31), "Postgres Diligence",
+                Map.of("amountRaised", "640000"), "campaign-one", now, now);
+        diligenceStore.upsertCampaign(firstCampaign);
+        diligenceStore.upsertCampaign(new PlatformCampaign(null, offeringId, "WEFUNDER",
+                firstCampaign.campaignUrl(), "SEC_OFFERING_URL", 100, CampaignStatus.ACTIVE,
+                firstCampaign.issuerName(), firstCampaign.securityType(), firstCampaign.minimumInvestment(),
+                null, null, firstCampaign.valuationCap(), null, firstCampaign.targetAmount(),
+                firstCampaign.maximumAmount(), new BigDecimal("650000"), 820, firstCampaign.deadline(),
+                firstCampaign.headline(), Map.of("amountRaised", "650000"), "campaign-two", now, now));
+
+        EvidenceDraft evidence = new EvidenceDraft("SEC_EDGAR", "https://www.sec.gov/diligence", "Form C",
+                "revenue", "35992", "FY2025", EvidenceClassification.SEC_FILED_FACT, 95,
+                "Filed revenue", Map.of());
+        FinancialPeriod financial = new FinancialPeriod("FY2025", new BigDecimal("35992"), null,
+                new BigDecimal("-14000"), new BigDecimal("9000"), new BigDecimal("25000"), null,
+                null, null, null, "0002077777-26-000001", "https://www.sec.gov/diligence");
+        PacketDraft firstPacket = new PacketDraft(company.id(), offeringId, PacketStatus.READY, "CONFIRMED",
+                90, 95, "PostgreSQL diligence packet", List.of("Bull"), List.of("Bear"),
+                List.of("Illiquidity"), List.of("Verify claims"), List.of(), List.of("Monitor amendments"),
+                List.of("SEC_EDGAR"), List.of(), "packet-one", List.of(evidence), List.of(financial));
+        long packetId = diligenceStore.savePacket(firstPacket).id();
+        long repeatedPacketId = diligenceStore.savePacket(new PacketDraft(company.id(), offeringId,
+                PacketStatus.READY, "CONFIRMED", 92, 96, "Updated PostgreSQL diligence packet",
+                firstPacket.bullCase(), firstPacket.bearCase(), firstPacket.keyRisks(),
+                firstPacket.unansweredQuestions(), firstPacket.discrepancies(), firstPacket.milestones(),
+                firstPacket.sourcesChecked(), firstPacket.dataNotFound(), "packet-two", List.of(evidence),
+                List.of(financial))).id();
+
+        assertThat(repeatedPacketId).isEqualTo(packetId);
+        assertThat(diligenceStore.findCampaign(offeringId)).get().extracting(PlatformCampaign::sourceFingerprint)
+                .isEqualTo("campaign-two");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_platform_campaigns WHERE offering_id=?",
+                Integer.class, offeringId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_diligence_packets WHERE offering_id=?",
+                Integer.class, offeringId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_diligence_evidence WHERE packet_id=?",
+                Integer.class, packetId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_diligence_financials WHERE packet_id=?",
+                Integer.class, packetId)).isEqualTo(1);
+        assertThat(diligenceStore.queueNotification("DILIGENCE_READY", "PACKET", packetId,
+                "postgres-diligence-notification", "owner@example.com", "Subject", "Text", "<p>Text</p>"))
+                .isTrue();
+        assertThat(diligenceStore.queueNotification("DILIGENCE_READY", "PACKET", packetId,
+                "postgres-diligence-notification", "owner@example.com", "Subject", "Text", "<p>Text</p>"))
+                .isFalse();
     }
 
     private com.startupvalidationbot.offering.OfferingDomain.Candidate offeringCandidate(

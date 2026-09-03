@@ -67,7 +67,6 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
 
     @Override
     public Candidate enrich(Candidate candidate) {
-        if (!"SEC_EDGAR_RECENT_INDEX".equals(candidate.source())) return candidate;
         String path = candidate.facts().get("submissionPath");
         if (blank(path)) return candidate;
         IndexRecord record = new IndexRecord(candidate.issuerCik(), candidate.issuerName(), candidate.filingType(),

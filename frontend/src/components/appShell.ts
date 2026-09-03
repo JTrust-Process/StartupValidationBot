@@ -11,6 +11,8 @@ import { bindTrendsPageEvents, renderTrendsPage } from '../pages/trendsPage';
 import { bindRadarCompanyPageEvents, renderRadarCompanyPage } from '../pages/radarCompanyPage';
 import { bindRadarAdminPageEvents, renderRadarAdminPage } from '../pages/radarAdminPage';
 import { bindOfferingsPageEvents, renderOfferingsPage } from '../pages/offeringsPage';
+import { bindReviewQueuePageEvents, renderReviewQueuePage } from '../pages/reviewQueuePage';
+import { bindDiligenceDetailPageEvents, renderDiligenceDetailPage } from '../pages/diligenceDetailPage';
 import {
   bindDealWorkspacePageEvents,
   renderDealWorkspacePage
@@ -37,6 +39,7 @@ function renderSidebar(): string {
           <span class="nav-section-label">Diligence</span>
           <a href="#/dashboard" class="nav-link" data-route="/dashboard">Dashboard</a>
           <a href="#/offerings" class="nav-link" data-route="/offerings">Offerings</a>
+          <a href="#/review" class="nav-link" data-route="/review">Review Queue</a>
           <a href="#/deals" class="nav-link" data-route="/deals">Deals</a>
           <a href="#/deals/new" class="nav-link" data-route="/deals/new">New Deal</a>
           <a href="#/import-text" class="nav-link" data-route="/import-text">Text Import</a>
@@ -59,6 +62,8 @@ function getPageHtml(path: string): string {
   if (path.startsWith('/radar/company/')) return renderRadarCompanyPage();
   if (path === '/radar-admin') return renderRadarAdminPage();
   if (path === '/offerings') return renderOfferingsPage();
+  if (path === '/review') return renderReviewQueuePage();
+  if (path.startsWith('/review/')) return renderDiligenceDetailPage();
   if (path === '/dashboard') return renderDashboardPage();
   if (path === '/deals') return renderDealsPage();
   if (path.startsWith('/deals/new')) return renderNewDealPage();
@@ -93,6 +98,7 @@ function updateActiveNav(root: HTMLDivElement, path: string): void {
       (route === '/deals/new' && path.startsWith('/deals/new')) ||
       (route === '/radar' && path.startsWith('/radar/company/')) ||
       (route === '/radar/all' && path === '/radar/all') ||
+      (route === '/review' && path.startsWith('/review/')) ||
       (route === '/deals' && path.startsWith('/deals/') && !path.startsWith('/deals/new'));
 
     link.classList.toggle('active', Boolean(isActive));
@@ -135,6 +141,16 @@ function bindPageEvents(root: HTMLDivElement, path: string): void {
 
   if (path === '/offerings') {
     bindOfferingsPageEvents(pageContent);
+    return;
+  }
+
+  if (path === '/review') {
+    bindReviewQueuePageEvents(pageContent);
+    return;
+  }
+
+  if (path.startsWith('/review/')) {
+    bindDiligenceDetailPageEvents(pageContent, path);
     return;
   }
 

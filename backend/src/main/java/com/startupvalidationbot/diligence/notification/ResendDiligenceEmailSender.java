@@ -20,6 +20,7 @@ public class ResendDiligenceEmailSender implements DiligenceEmailSender {
     private final String provider;
     private final String apiKey;
     private final String from;
+    private final String subjectPrefix;
     private final HttpClient client;
     private final ObjectMapper json;
     private final URI endpoint;
@@ -27,19 +28,27 @@ public class ResendDiligenceEmailSender implements DiligenceEmailSender {
     @Autowired
     public ResendDiligenceEmailSender(@Value("${email.provider:preview}") String provider,
             @Value("${resend.api-key:}") String apiKey, @Value("${resend.from:}") String from,
+            @Value("${startup.intelligence.email-subject-prefix:}") String subjectPrefix,
             ObjectMapper json) {
-        this(provider, apiKey, from, json, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
+        this(provider, apiKey, from, json, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build(),
+                URI.create("https://api.resend.com/emails"), subjectPrefix);
     }
 
     ResendDiligenceEmailSender(String provider, String apiKey, String from, ObjectMapper json, HttpClient client) {
-        this(provider, apiKey, from, json, client, URI.create("https://api.resend.com/emails"));
+        this(provider, apiKey, from, json, client, URI.create("https://api.resend.com/emails"), "");
     }
 
     ResendDiligenceEmailSender(String provider, String apiKey, String from, ObjectMapper json, HttpClient client,
             URI endpoint) {
+        this(provider, apiKey, from, json, client, endpoint, "");
+    }
+
+    ResendDiligenceEmailSender(String provider, String apiKey, String from, ObjectMapper json, HttpClient client,
+            URI endpoint, String subjectPrefix) {
         this.provider = provider == null ? "" : provider.trim();
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.from = from == null ? "" : from.trim();
+        this.subjectPrefix = subjectPrefix == null || subjectPrefix.isBlank() ? "" : subjectPrefix.trim() + " ";
         this.client = client;
         this.json = json;
         this.endpoint = endpoint;
@@ -59,7 +68,7 @@ public class ResendDiligenceEmailSender implements DiligenceEmailSender {
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
                 String body = json.writeValueAsString(Map.of("from", from, "to", new String[] { to.trim() },
-                        "subject", subject, "text", text, "html", html));
+                        "subject", subjectPrefix + subject, "text", text, "html", html));
                 HttpRequest request = HttpRequest.newBuilder(endpoint)
                         .timeout(Duration.ofSeconds(20)).header("Authorization", "Bearer " + apiKey)
                         .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build();

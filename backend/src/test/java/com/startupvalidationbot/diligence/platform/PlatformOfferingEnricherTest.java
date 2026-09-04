@@ -83,6 +83,21 @@ class PlatformOfferingEnricherTest {
     }
 
     @Test
+    void prefersCampaignHeadingOverGenericNavigationJsonAndDetectsReservation() {
+        String html = """
+                <html><head><title>Reserve in Open Secret: The Film | Wefunder</title>
+                <script type="application/ld+json">{"name":"Home"}</script></head>
+                <body><h1>Open Secret: The Film</h1><p>Reserve Your Investment ($100 minimum)</p></body></html>
+                """;
+
+        var value = new WefunderOfferingEnricher(mock(PlatformHttpClient.class)).parse(offering(5),
+                URI.create("https://wefunder.com/opensecret"), html);
+
+        assertThat(value.issuerName()).isEqualTo("Open Secret: The Film");
+        assertThat(value.status()).isEqualTo(CampaignStatus.RESERVATION);
+    }
+
+    @Test
     void retriesTransientFailureTwiceAndBoundsSuccessfulResponseBody() throws Exception {
         HttpClient http = mock(HttpClient.class);
         @SuppressWarnings("unchecked") HttpResponse<InputStream> unavailable = mock(HttpResponse.class);

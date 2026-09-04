@@ -18,6 +18,7 @@ import com.startupvalidationbot.radar.ContentHash;
 
 abstract class AbstractPlatformOfferingEnricher implements PlatformOfferingEnricher {
     private static final Pattern TITLE = Pattern.compile("(?is)<title[^>]*>(.*?)</title>");
+    private static final Pattern H1 = Pattern.compile("(?is)<h1[^>]*>(.*?)</h1>");
     private static final Pattern JSON_NAME = Pattern.compile("(?is)\"(?:name|headline)\"\s*:\s*\"([^\"]{2,500})\"");
     private final PlatformHttpClient client;
 
@@ -38,7 +39,8 @@ abstract class AbstractPlatformOfferingEnricher implements PlatformOfferingEnric
     PlatformCampaign parse(Offering offering, URI campaignUrl, String html) {
         String text = visibleText(html);
         Map<String, String> facts = new LinkedHashMap<>();
-        String issuer = first(html, JSON_NAME);
+        String issuer = first(html, H1);
+        if (issuer == null) issuer = firstNonGenericJsonName(html);
         if (issuer == null) issuer = first(html, TITLE);
         issuer = cleanTitle(issuer);
         String security = field(text, "(?:security(?: type)?|instrument)", "([A-Za-z][A-Za-z /-]{2,80})");
@@ -71,7 +73,8 @@ abstract class AbstractPlatformOfferingEnricher implements PlatformOfferingEnric
         String lower = text.toLowerCase(Locale.ROOT);
         if (lower.contains("successfully funded") || lower.contains("funded and closed")) return CampaignStatus.FUNDED;
         if (lower.contains("campaign ended") || lower.contains("offering closed") || lower.contains("closed offering")) return CampaignStatus.CLOSED;
-        if (lower.contains("accepting reservations") || lower.contains("reservation")) return CampaignStatus.RESERVATION;
+        if (lower.contains("accepting reservations") || lower.contains("reservation")
+                || lower.contains("reserve your investment")) return CampaignStatus.RESERVATION;
         if (lower.contains("invest now") || lower.contains("days left") || lower.contains("open for investment")) return CampaignStatus.ACTIVE;
         return CampaignStatus.UNKNOWN;
     }
@@ -93,9 +96,22 @@ abstract class AbstractPlatformOfferingEnricher implements PlatformOfferingEnric
         return matcher.find() ? matcher.group(1).replaceAll("\\s+", " ").trim() : null;
     }
 
+    private static String firstNonGenericJsonName(String html) {
+        Matcher matcher = JSON_NAME.matcher(html);
+        while (matcher.find()) {
+            String candidate = matcher.group(1).replaceAll("\\s+", " ").trim();
+            if (!candidate.matches("(?i)home|menu|navigation|search|login|sign up|learn more")) return candidate;
+        }
+        return null;
+    }
+
     private static String cleanTitle(String value) {
         if (value == null) return null;
-        return value.replaceAll("(?i)\\s*[|\\-–]\\s*(Wefunder|Republic|StartEngine).*$", "").trim();
+        String cleaned = value.replaceAll("(?is)<[^>]+>", " ").replace("&amp;", "&")
+                .replaceAll("(?i)^\\s*(?:invest|reserve)\\s+in\\s+", "")
+                .replaceAll("(?i)\\s*[|\\-–—]\\s*(Wefunder|Republic|StartEngine).*$", "")
+                .replaceAll("\\s+", " ").trim();
+        return cleaned.isBlank() ? null : cleaned;
     }
 
     private static BigDecimal money(String value) {

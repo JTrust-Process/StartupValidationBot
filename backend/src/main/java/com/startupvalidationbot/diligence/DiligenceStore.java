@@ -35,7 +35,7 @@ public class DiligenceStore {
     public List<Long> eligibleOfferingIds(int limit) {
         return jdbc.queryForList("""
                 SELECT o.id FROM radar_offerings o
-                LEFT JOIN radar_watchlist w ON w.company_id=o.radar_company_id
+                LEFT JOIN radar_watchlist_entries w ON w.company_id=o.radar_company_id
                 WHERE o.radar_company_id IS NOT NULL AND (
                   o.match_status='CONFIRMED' OR
                   (o.match_status='LIKELY' AND o.match_confidence >= 75) OR

@@ -66,6 +66,8 @@ EMAIL_PROVIDER=resend
 RESEND_API_KEY=...
 RESEND_FROM=Startup Intelligence <verified-sender@example.com>
 STARTUP_INTELLIGENCE_EMAIL_RECIPIENT=recipient@example.com
+# Optional outside production. The sender adds the separating space.
+STARTUP_INTELLIGENCE_EMAIL_SUBJECT_PREFIX=[STAGING]
 ```
 
 Never prefix `RESEND_API_KEY` with `VITE_`. The sender uses a 20-second timeout, at most two attempts

@@ -6,6 +6,7 @@ import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,7 @@ import com.sun.net.httpserver.HttpServer;
 
 class ResendDiligenceEmailSenderTest {
     private HttpServer server;
+    private final AtomicReference<String> requestBody = new AtomicReference<>();
 
     @AfterEach void stop() { if (server != null) server.stop(0); }
 
@@ -25,6 +27,20 @@ class ResendDiligenceEmailSenderTest {
         assertThat(result.ok()).isTrue();
         assertThat(result.messageId()).isEqualTo("email_123");
         assertThat(calls).hasValue(1);
+    }
+
+    @Test
+    void appliesConfiguredSubjectPrefix() throws Exception {
+        serve(200, "{\"id\":\"email_123\"}");
+        var sender = new ResendDiligenceEmailSender("resend", "secret-test-key",
+                "Startup Intelligence <from@example.com>", new ObjectMapper(), HttpClient.newHttpClient(),
+                java.net.URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/emails"), "[STAGING] ");
+
+        var result = sender.send("person@example.com", "Research shortlist", "text", "<p>text</p>");
+
+        assertThat(result.ok()).isTrue();
+        assertThat(new ObjectMapper().readTree(requestBody.get()).path("subject").asText())
+                .isEqualTo("[STAGING] Research shortlist");
     }
 
     @Test
@@ -58,7 +74,7 @@ class ResendDiligenceEmailSenderTest {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/emails", exchange -> {
             calls.incrementAndGet();
-            exchange.getRequestBody().readAllBytes();
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] value = body.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(status, value.length);
             exchange.getResponseBody().write(value);

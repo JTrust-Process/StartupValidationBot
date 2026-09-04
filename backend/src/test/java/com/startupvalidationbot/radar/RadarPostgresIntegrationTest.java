@@ -250,6 +250,8 @@ class RadarPostgresIntegrationTest {
         long offeringId = offeringStore.upsert(offeringCandidate,
                 new Match(company.id(), MatchStatus.CONFIRMED, 100, "Exact identity match.")).offering().id();
 
+        assertThat(diligenceStore.eligibleOfferingIds(25)).contains(offeringId);
+
         LocalDateTime now = LocalDateTime.now();
         PlatformCampaign firstCampaign = new PlatformCampaign(null, offeringId, "WEFUNDER",
                 "https://wefunder.com/postgres-diligence", "SEC_OFFERING_URL", 100, CampaignStatus.ACTIVE,

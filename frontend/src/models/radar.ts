@@ -342,7 +342,7 @@ export interface CompanyInvestmentAvailability {
   checks: InvestmentAvailabilityCheck[];
 }
 
-export interface AutonomousDiligenceDiagnostics {
+  export interface AutonomousDiligenceDiagnostics {
   lastRunStatus: string;
   lastRunStartedAt: string | null;
   lastRunCompletedAt: string | null;
@@ -357,9 +357,29 @@ export interface AutonomousDiligenceDiagnostics {
   platformErrors: number;
   aiFallbacks: number;
   emailsQueued: number;
-  emailsSent: number;
-  emailsFailed: number;
-  platforms: Array<{
+    emailsSent: number;
+    emailsFailed: number;
+    campaignCompaniesEligible: number;
+    campaignCompaniesSearched: number;
+    campaignCandidatesFound: number;
+    campaignConfirmed: number;
+    campaignPossible: number;
+    campaignRejected: number;
+    campaignCacheHits: number;
+    campaignDiscoveryErrors: number;
+    campaignDiscoveryPlatforms: Array<{
+      platform: string;
+      capability: string;
+      lastCheckedAt: string | null;
+      lastSuccessAt: string | null;
+      lastFailureAt: string | null;
+      status: string;
+      requests: number;
+      candidates: number;
+      resolved: number;
+      error: string | null;
+    }>;
+    platforms: Array<{
     platform: string;
     lastCheckedAt: string | null;
     status: string;

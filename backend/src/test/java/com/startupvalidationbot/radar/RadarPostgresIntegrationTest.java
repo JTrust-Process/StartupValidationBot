@@ -43,6 +43,11 @@ import com.startupvalidationbot.diligence.DiligenceDomain.PlatformCampaign;
 import com.startupvalidationbot.diligence.DiligenceStore;
 import com.startupvalidationbot.diligence.DiligenceStore.EvidenceDraft;
 import com.startupvalidationbot.diligence.DiligenceStore.PacketDraft;
+import com.startupvalidationbot.diligence.discovery.CampaignDiscoveryDomain.CampaignCandidate;
+import com.startupvalidationbot.diligence.discovery.CampaignDiscoveryDomain.IdentityDecision;
+import com.startupvalidationbot.diligence.discovery.CampaignDiscoveryDomain.IdentityStatus;
+import com.startupvalidationbot.diligence.discovery.CampaignDiscoveryDomain.PlatformRun;
+import com.startupvalidationbot.diligence.discovery.CampaignDiscoveryStore;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.startupvalidationbot.offering.OfferingDomain.Match;
 import com.startupvalidationbot.offering.OfferingDomain.MatchStatus;
@@ -117,6 +122,9 @@ class RadarPostgresIntegrationTest {
     @Autowired
     private DiligenceStore diligenceStore;
 
+    @Autowired
+    private CampaignDiscoveryStore campaignDiscoveryStore;
+
     @Test
     void appliesEveryMigrationAndValidatesTheJpaMappingAgainstIt() {
         List<String> applied = jdbc.queryForList(
@@ -133,6 +141,7 @@ class RadarPostgresIntegrationTest {
         assertThat(applied).anyMatch(script -> script.contains("V10__"));
         assertThat(applied).anyMatch(script -> script.contains("V11__"));
         assertThat(applied).anyMatch(script -> script.contains("V12__"));
+        assertThat(applied).anyMatch(script -> script.contains("V13__"));
 
         // V4 brought the legacy diligence tables under Flyway. The context booting with
         // ddl-auto=validate is itself the assertion that the JPA mapping matches them.
@@ -145,6 +154,7 @@ class RadarPostgresIntegrationTest {
         assertThat(tableExists("deal_workspaces")).isTrue();
         assertThat(tableExists("radar_diligence_packets")).isTrue();
         assertThat(tableExists("radar_notification_events")).isTrue();
+        assertThat(tableExists("radar_campaign_discovery_results")).isTrue();
     }
 
     @Test
@@ -201,13 +211,18 @@ class RadarPostgresIntegrationTest {
                 java.time.LocalDate.of(2026, 8, 1)), match);
         var repeated = offeringStore.upsert(offeringCandidate("0002099999-26-000001", "C", "020-99991",
                 java.time.LocalDate.of(2026, 8, 1)), match);
+        assertThat(offeringStore.attachCampaignUrl(first.offering().id(), "WEFUNDER",
+                "https://wefunder.com/postgres-offering")).isTrue();
         offeringStore.upsert(offeringCandidate("0002099999-26-000002", "C-W", "020-99991",
                 java.time.LocalDate.of(2026, 8, 20)), match);
 
         assertThat(first.created()).isTrue();
         assertThat(repeated.created()).isFalse();
         assertThat(offeringStore.list(null, null, "CONFIRMED", company.id())).singleElement()
-                .satisfies(offering -> assertThat(offering.status().name()).isEqualTo("WITHDRAWN"));
+                .satisfies(offering -> {
+                    assertThat(offering.status().name()).isEqualTo("WITHDRAWN");
+                    assertThat(offering.offeringUrl()).isEqualTo("https://wefunder.com/postgres-offering");
+                });
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_offering_filings WHERE offering_id=?",
                 Integer.class, first.offering().id())).isEqualTo(2);
 
@@ -302,6 +317,36 @@ class RadarPostgresIntegrationTest {
         assertThat(diligenceStore.queueNotification("DILIGENCE_READY", "PACKET", packetId,
                 "postgres-diligence-notification", "owner@example.com", "Subject", "Text", "<p>Text</p>"))
                 .isFalse();
+    }
+
+    @Test
+    void persistsCampaignDiscoveryProvenanceAndCacheStateOnPostgres() {
+        var company = store.upsertCompany(new Candidate("postgres-campaign-discovery", "campaign-1",
+                "Postgres Campaign Co", "https://campaign-company.example", "", "Energy", List.of("energy"),
+                null, null, "https://example.com/campaign-source", LocalDateTime.now(), "")).company();
+        LocalDateTime nextEligible = LocalDateTime.now().plusHours(24);
+        campaignDiscoveryStore.saveCheck(company.id(), null, "STARTENGINE", "identity-one", "FOUND", 2, 1,
+                "One corroborated public campaign was found.", null, nextEligible);
+        CampaignCandidate candidate = new CampaignCandidate("STARTENGINE",
+                "https://www.startengine.com/offering/postgres-campaign", "Postgres Campaign Co",
+                "campaign-company.example", "ACTIVE", "postgres-campaign", "PUBLIC_DIRECTORY", 85,
+                Map.of("listingText", "Public listing evidence"));
+        campaignDiscoveryStore.saveCandidate(company.id(), null, candidate,
+                new IdentityDecision(IdentityStatus.CONFIRMED, 98, "Exact name and domain."));
+        campaignDiscoveryStore.markPlatform(new PlatformRun("STARTENGINE", "PUBLIC_DIRECTORY", "OK",
+                2, 1, 1, null));
+
+        assertThat(campaignDiscoveryStore.cached(company.id(), "STARTENGINE", "identity-one",
+                LocalDateTime.now())).isTrue();
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM radar_campaign_discovery_results
+                WHERE radar_company_id=? AND identity_status='CONFIRMED'
+                """, Integer.class, company.id())).isEqualTo(1);
+        assertThat(campaignDiscoveryStore.platformDiagnostics().stream()
+                .filter(value -> value.platform().equals("STARTENGINE")).toList()).singleElement().satisfies(value -> {
+            assertThat(value.platform()).isEqualTo("STARTENGINE");
+            assertThat(value.resolved()).isEqualTo(1);
+        });
     }
 
     private com.startupvalidationbot.offering.OfferingDomain.Candidate offeringCandidate(

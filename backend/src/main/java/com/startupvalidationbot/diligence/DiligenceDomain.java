@@ -6,6 +6,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
+import com.startupvalidationbot.diligence.discovery.CampaignDiscoveryDomain;
+
 public final class DiligenceDomain {
     private DiligenceDomain() { }
 
@@ -55,7 +57,7 @@ public final class DiligenceDomain {
     public record RunResult(int companiesConsidered, int offeringsConsidered, int identitiesResolved,
             int campaignsResolved, int packetsReady, int packetsPartial, int needsReview,
             int platformErrors, int aiFallbacks, int emailsQueued, int emailsSent, int emailsFailed,
-            List<String> errors) { }
+            List<String> errors, CampaignDiscoveryDomain.RunResult campaignDiscovery) { }
 
     public record PlatformDiagnostic(String platform, LocalDateTime lastCheckedAt, String status,
             int requests, int campaignsFound, String error) { }
@@ -68,5 +70,9 @@ public final class DiligenceDomain {
             int offeringsConsidered, int identitiesResolved, int campaignsResolved,
             int packetsReady, int packetsPartial, int needsReview, int platformErrors,
             int aiFallbacks, int emailsQueued, int emailsSent, int emailsFailed,
-            List<PlatformDiagnostic> platforms, NotificationDiagnostic resend) { }
+            List<PlatformDiagnostic> platforms, NotificationDiagnostic resend,
+            int campaignCompaniesEligible, int campaignCompaniesSearched,
+            int campaignCandidatesFound, int campaignConfirmed, int campaignPossible,
+            int campaignRejected, int campaignCacheHits, int campaignDiscoveryErrors,
+            List<CampaignDiscoveryDomain.PlatformDiagnostic> campaignDiscoveryPlatforms) { }
 }

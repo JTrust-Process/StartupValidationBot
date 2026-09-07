@@ -246,6 +246,135 @@ export interface OfferingDiagnostics {
   errorCount: number;
 }
 
+export type DiligencePacketStatus =
+  | 'PENDING'
+  | 'RESOLVING_IDENTITY'
+  | 'GATHERING_EVIDENCE'
+  | 'READY'
+  | 'PARTIAL'
+  | 'NEEDS_REVIEW'
+  | 'FAILED';
+
+export type DiligenceEvidenceClassification =
+  | 'SEC_FILED_FACT'
+  | 'PLATFORM_ISSUER_CLAIM'
+  | 'ISSUER_WEBSITE_CLAIM'
+  | 'PUBLIC_REPORTING'
+  | 'DETERMINISTIC_INFERENCE'
+  | 'AI_SYNTHESIS';
+
+export interface DiligenceEvidence {
+  id: number;
+  sourceType: string;
+  sourceUrl: string | null;
+  sourceTitle: string;
+  factKey: string;
+  factValue: string;
+  period: string | null;
+  classification: DiligenceEvidenceClassification;
+  observedAt: string;
+  confidence: number;
+  rawExcerpt: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface DiligenceFinancialPeriod {
+  period: string;
+  revenue: number | null;
+  costOfGoods: number | null;
+  netIncome: number | null;
+  cash: number | null;
+  assets: number | null;
+  liabilities: number | null;
+  shortTermDebt: number | null;
+  longTermDebt: number | null;
+  taxesPaid: number | null;
+  sourceAccessionNumber: string | null;
+  sourceUrl: string | null;
+}
+
+export interface DiligencePacket {
+  id: number;
+  radarCompanyId: number;
+  companyName: string;
+  offeringId: number;
+  platform: string;
+  campaignUrl: string | null;
+  secFilingUrl: string | null;
+  status: DiligencePacketStatus;
+  identityStatus: string;
+  completeness: number;
+  confidence: number;
+  summary: string;
+  bullCase: string[];
+  bearCase: string[];
+  keyRisks: string[];
+  unansweredQuestions: string[];
+  materialDiscrepancies: string[];
+  nextMonitoringMilestones: string[];
+  sourcesChecked: string[];
+  dataNotFound: string[];
+  generatedAt: string;
+  lastRefreshedAt: string;
+  reviewedAt: string | null;
+  securityType: string | null;
+  minimumInvestment: number | null;
+  targetAmount: number | null;
+  maximumAmount: number | null;
+  amountRaised: number | null;
+  valuationOrCap: string | null;
+  deadline: string | null;
+  evidence: DiligenceEvidence[];
+  financials: DiligenceFinancialPeriod[];
+}
+
+export interface InvestmentAvailabilityCheck {
+  sourceType: string;
+  status: string;
+  resultSummary: string;
+  unresolvedQuestion: string | null;
+  checkedAt: string;
+}
+
+export interface CompanyInvestmentAvailability {
+  companyId: number;
+  lastFullCheck: string | null;
+  checks: InvestmentAvailabilityCheck[];
+}
+
+export interface AutonomousDiligenceDiagnostics {
+  lastRunStatus: string;
+  lastRunStartedAt: string | null;
+  lastRunCompletedAt: string | null;
+  lastRunDurationMs: number | null;
+  companiesConsidered: number;
+  offeringsConsidered: number;
+  identitiesResolved: number;
+  campaignsResolved: number;
+  packetsReady: number;
+  packetsPartial: number;
+  needsReview: number;
+  platformErrors: number;
+  aiFallbacks: number;
+  emailsQueued: number;
+  emailsSent: number;
+  emailsFailed: number;
+  platforms: Array<{
+    platform: string;
+    lastCheckedAt: string | null;
+    status: string;
+    requests: number;
+    campaignsFound: number;
+    error: string | null;
+  }>;
+  resend: {
+    configured: boolean;
+    lastStatus: string;
+    lastMessageId: string | null;
+    lastError: string | null;
+  };
+}
+
 export interface RadarCompanyFilters {
   search?: string;
   sector?: string;

@@ -27,6 +27,11 @@ public class RadarWorkerConfiguration {
         jobs.run("offering-discovery", null, true);
     }
 
+    @Scheduled(cron = "${autonomous.diligence-cron:0 45 7 * * *}", zone = "${radar.time-zone:America/New_York}")
+    public void autonomousDiligence() {
+        jobs.run("autonomous-diligence", null, true);
+    }
+
     @Scheduled(cron = "${radar.watchlist-cron:0 30 6 * * *}", zone = "${radar.time-zone:America/New_York}")
     public void refreshWatchlist() {
         jobs.run("watchlist", null, true);

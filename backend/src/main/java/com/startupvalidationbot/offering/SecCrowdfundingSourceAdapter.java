@@ -38,15 +38,18 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
     private static final Pattern ACCESSION = Pattern.compile("(\\d{10}-\\d{2}-\\d{6})");
     private final SecFilingClient client;
     private final int recentLimit;
+    private final int indexMaxBytes;
     private final int baselineStartYear;
     private final int baselineMaxDatasets;
 
     public SecCrowdfundingSourceAdapter(SecFilingClient client,
             @Value("${offering.sec.recent-limit:40}") int recentLimit,
+            @Value("${offering.sec.index-max-response-bytes:32000000}") int indexMaxBytes,
             @Value("${offering.sec.baseline-start-year:2025}") int baselineStartYear,
             @Value("${offering.sec.baseline-max-datasets:8}") int baselineMaxDatasets) {
         this.client = client;
         this.recentLimit = Math.max(1, Math.min(recentLimit, 100));
+        this.indexMaxBytes = boundedIndexBytes(indexMaxBytes);
         this.baselineStartYear = Math.max(2020, baselineStartYear);
         this.baselineMaxDatasets = Math.max(1, Math.min(baselineMaxDatasets, 8));
     }
@@ -57,7 +60,7 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
         int quarter = ((now.getMonthValue() - 1) / 3) + 1;
         String indexUrl = "https://www.sec.gov/Archives/edgar/full-index/" + now.getYear()
                 + "/QTR" + quarter + "/master.idx";
-        String index = client.getText(indexUrl, 20_000_000);
+        String index = client.getText(indexUrl, indexMaxBytes);
         return parseIndex(index).stream().limit(recentLimit).map(record -> new Candidate(record.issuerName(),
                 padCik(record.cik()), null, "UNKNOWN", null, null, null,
                 filingIndexUrl(record.cik(), record.accession()), record.accession(), null, record.form(),
@@ -67,7 +70,6 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
 
     @Override
     public Candidate enrich(Candidate candidate) {
-        if (!"SEC_EDGAR_RECENT_INDEX".equals(candidate.source())) return candidate;
         String path = candidate.facts().get("submissionPath");
         if (blank(path)) return candidate;
         IndexRecord record = new IndexRecord(candidate.issuerCik(), candidate.issuerName(), candidate.filingType(),
@@ -100,6 +102,10 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
         }
         records.sort(java.util.Comparator.comparing(IndexRecord::filingDate).reversed());
         return records;
+    }
+
+    static int boundedIndexBytes(int configured) {
+        return Math.max(1_000_000, Math.min(configured, 50_000_000));
     }
 
     static Candidate parseSubmission(IndexRecord record, String submission) {

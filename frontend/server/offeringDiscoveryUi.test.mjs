@@ -52,4 +52,29 @@ test('Admin persists the latest offering discovery run counts', async () => {
   assert.match(page, /New offerings/);
   assert.match(page, /Updated offerings/);
   assert.match(page, /offerings\.errorCount/);
+  assert.match(page, /Autonomous Diligence/);
+  assert.match(page, /Emails queued \/ sent \/ failed/);
+  assert.match(page, /diligence\.resend\.configured/);
+});
+
+test('Review Queue and detail keep filed facts separate and never auto-create a Deal', async () => {
+  const [queue, detail, newDeal] = await Promise.all([
+    source('pages/reviewQueuePage.ts'),
+    source('pages/diligenceDetailPage.ts'),
+    source('pages/newDealPage.ts')
+  ]);
+  assert.match(queue, /Ready for Review/);
+  assert.match(queue, /Needs Review/);
+  assert.match(queue, /Partial/);
+  assert.match(detail, /SEC-Filed Facts/);
+  assert.match(detail, /Platform \/ Issuer Claims/);
+  assert.match(detail, /Material discrepancies require review/);
+  assert.match(detail, /Automated Search Coverage/);
+  assert.match(detail, /shortTerm === null && longTerm === null/);
+  assert.match(detail, /money\(totalDebt\(period\.shortTermDebt, period\.longTermDebt\)\)/);
+  assert.match(detail, /diligencePacketId=/);
+  assert.match(newDeal, /prefillFromDiligence/);
+  assert.match(newDeal, /Review every field before explicitly creating/);
+  assert.equal((newDeal.match(/createDeal\(/g) || []).length, 1);
+  assert.match(newDeal, /form\.addEventListener\('submit'[\s\S]*createDeal\(input\)/);
 });

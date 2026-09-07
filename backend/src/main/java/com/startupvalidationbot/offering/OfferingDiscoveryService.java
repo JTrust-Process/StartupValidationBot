@@ -69,6 +69,20 @@ public class OfferingDiscoveryService {
     void revalidateStoredMatches(List<Company> companies) {
         store.listStoredIdentities().forEach(identity -> store.updateMatch(identity.offeringId(),
                 matcher.match(identity.issuerName(), identity.issuerWebsite(), companies)));
+        for (OfferingStore.StoredCandidate stored : store.listStoredCandidatesForResolution(20)) {
+            List<String> sources = new ArrayList<>();
+            sources.add("STORED_SEC_FACTS");
+            try {
+                Candidate enriched = source.enrich(stored.candidate());
+                sources.add("SEC_FILING");
+                Match match = matcher.match(enriched, companies);
+                OfferingStore.UpsertResult result = store.upsert(enriched, match);
+                store.markResolution(result.offering().id(), match.status().name(), match.reason(), sources);
+            } catch (RuntimeException error) {
+                sources.add("SEC_FILING_UNAVAILABLE");
+                store.markResolution(stored.offeringId(), "RETRY_REQUIRED", safe(error), sources);
+            }
+        }
     }
 
     private void fetch(String sourceKey, CandidateSupplier supplier, Map<String, Candidate> target,

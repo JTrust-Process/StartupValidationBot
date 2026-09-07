@@ -21,7 +21,7 @@ class LegacySchemaMigrationPostgresIntegrationTest {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @Test
-    void migratesLegacyDiligenceSchemaThroughV11WithoutLosingRows() throws Exception {
+    void migratesLegacyDiligenceSchemaThroughV12WithoutLosingRows() throws Exception {
         createLegacySchemaAndRows();
 
         var result = Flyway.configure()
@@ -33,7 +33,7 @@ class LegacySchemaMigrationPostgresIntegrationTest {
                 .load()
                 .migrate();
 
-        assertThat(result.targetSchemaVersion).isEqualTo("11");
+        assertThat(result.targetSchemaVersion).isEqualTo("12");
         try (Connection connection = connection(); Statement statement = connection.createStatement()) {
             assertThat(singleInt(statement, "SELECT COUNT(*) FROM deals WHERE company_name='Legacy Grid'"))
                     .isEqualTo(1);
@@ -41,10 +41,14 @@ class LegacySchemaMigrationPostgresIntegrationTest {
             assertThat(singleInt(statement, "SELECT COUNT(*) FROM decisions WHERE deal_id=1")).isEqualTo(1);
             assertThat(singleInt(statement, "SELECT COUNT(*) FROM deep_diligence WHERE deal_id=1")).isEqualTo(1);
             assertThat(singleInt(statement, "SELECT COUNT(*) FROM reviews WHERE deal_id=1")).isEqualTo(1);
-            assertThat(singleInt(statement, "SELECT COUNT(*) FROM flyway_schema_history WHERE success")).isEqualTo(12);
+            assertThat(singleInt(statement, "SELECT COUNT(*) FROM flyway_schema_history WHERE success")).isEqualTo(13);
             assertThat(singleInt(statement, """
                     SELECT COUNT(*) FROM information_schema.tables
                      WHERE table_schema='public' AND table_name='radar_offerings'
+                    """)).isEqualTo(1);
+            assertThat(singleInt(statement, """
+                    SELECT COUNT(*) FROM information_schema.tables
+                     WHERE table_schema='public' AND table_name='radar_diligence_packets'
                     """)).isEqualTo(1);
         }
     }

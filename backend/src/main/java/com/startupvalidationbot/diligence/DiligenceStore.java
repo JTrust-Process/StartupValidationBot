@@ -220,6 +220,17 @@ public class DiligenceStore {
                 """, companyId, sourceType, status, summary, question, LocalDateTime.now());
     }
 
+    public synchronized void availabilityIfAbsent(long companyId, String sourceType, String status,
+            String summary, String question) {
+        jdbc.update("""
+                INSERT INTO radar_investment_availability_checks
+                  (radar_company_id, source_type, status, result_summary, unresolved_question, checked_at)
+                SELECT ?,?,?,?,?,? WHERE NOT EXISTS (
+                  SELECT 1 FROM radar_investment_availability_checks
+                  WHERE radar_company_id=? AND source_type=?)
+                """, companyId, sourceType, status, summary, question, LocalDateTime.now(), companyId, sourceType);
+    }
+
     public CompanyAvailability availability(long companyId) {
         List<AvailabilityCheck> checks = jdbc.query("""
                 SELECT source_type,status,result_summary,unresolved_question,checked_at
@@ -301,7 +312,24 @@ public class DiligenceStore {
                 jobInt(job.json,"packetsReady"), jobInt(job.json,"packetsPartial"),
                 jobInt(job.json,"needsReview"), jobInt(job.json,"platformErrors"),
                 jobInt(job.json,"aiFallbacks"), jobInt(job.json,"emailsQueued"),
-                jobInt(job.json,"emailsSent"), jobInt(job.json,"emailsFailed"), platforms, notification);
+                jobInt(job.json,"emailsSent"), jobInt(job.json,"emailsFailed"), platforms, notification,
+                jobInt(job.json,"campaignCompaniesEligible"), jobInt(job.json,"campaignCompaniesSearched"),
+                jobInt(job.json,"campaignCandidatesFound"), jobInt(job.json,"campaignConfirmed"),
+                jobInt(job.json,"campaignPossible"), jobInt(job.json,"campaignRejected"),
+                jobInt(job.json,"campaignCacheHits"), jobInt(job.json,"campaignDiscoveryErrors"),
+                campaignDiscoveryDiagnostics());
+    }
+
+    private List<com.startupvalidationbot.diligence.discovery.CampaignDiscoveryDomain.PlatformDiagnostic>
+            campaignDiscoveryDiagnostics() {
+        return jdbc.query("""
+                SELECT platform,discovery_capability,last_checked_at,last_success_at,last_failure_at,
+                  last_status,requests_made,candidates_found,campaigns_resolved,last_error
+                FROM radar_campaign_discovery_platform_state ORDER BY platform
+                """, (rs, row) -> new com.startupvalidationbot.diligence.discovery.CampaignDiscoveryDomain.PlatformDiagnostic(
+                rs.getString(1), rs.getString(2), time(rs.getTimestamp(3)), time(rs.getTimestamp(4)),
+                time(rs.getTimestamp(5)), rs.getString(6), rs.getInt(7), rs.getInt(8), rs.getInt(9),
+                rs.getString(10)));
     }
 
     private Packet packet(PacketRow row) {

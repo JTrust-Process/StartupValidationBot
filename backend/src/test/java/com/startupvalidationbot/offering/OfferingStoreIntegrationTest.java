@@ -45,6 +45,21 @@ class OfferingStoreIntegrationTest {
     }
 
     @Test
+    void secRefreshDoesNotEraseAResolvedCampaignUrl() {
+        long companyId = company("Campaign Persistence", "campaign-persistence.example");
+        Match confirmed = new Match(companyId, MatchStatus.CONFIRMED, 100, "Exact name and domain.");
+        var first = store.upsert(candidate("0001234567-26-000031", "C", LocalDate.now(), "020-54321"),
+                confirmed);
+
+        assertThat(store.attachCampaignUrl(first.offering().id(), "WEFUNDER",
+                "https://wefunder.com/campaign-persistence")).isTrue();
+        store.upsert(candidate("0001234567-26-000032", "C-U", LocalDate.now(), "020-54321"), confirmed);
+
+        assertThat(store.find(first.offering().id())).get().extracting(OfferingDomain.Offering::offeringUrl)
+                .isEqualTo("https://wefunder.com/campaign-persistence");
+    }
+
+    @Test
     void linksAmendmentsByFileNumberAndPersistsLifecycleChanges() {
         long companyId = company("Acme Technologies", "acme.example");
         Match confirmed = new Match(companyId, MatchStatus.CONFIRMED, 90, "Exact name.");

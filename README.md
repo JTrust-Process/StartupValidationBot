@@ -164,6 +164,18 @@ It monitors official SEC Regulation Crowdfunding data through bounded quarterly 
 
 Live SEC access requires the server-only `SEC_EDGAR_USER_AGENT` setting. The client is restricted to official SEC HTTPS hosts and defaults to two requests per second. See [Offering Discovery V1](docs/offering-discovery-v1.md) for the schema, lifecycle rules, matching confidence, APIs, worker cadence, fair-access policy, limitations, and staging procedure.
 
+### Public campaign discovery
+
+The autonomous-diligence job also performs a bounded campaign lookup for eligible SEC-linked companies and high-signal Radar companies that do not yet have an offering URL. This is a separate discovery layer from known-URL platform enrichment. It stores checks and candidate provenance in PostgreSQL, caches unchanged negative checks, and attaches a canonical URL only when exactly one candidate has corroborating name/domain or SEC intermediary evidence. Possible and ambiguous matches remain review-only; the workflow never creates a Deal Scout workspace or investment decision.
+
+The mechanisms were verified against public platform documentation and endpoints:
+
+- Wefunder campaigns use public canonical company URLs and become searchable after public launch, but automated public requests may return `403`; the adapter uses only bounded canonical-slug probes and records `UNAVAILABLE` rather than bypassing access controls. See [Wefunder campaign visibility](https://help.wefunder.com/campaign-visibility-465599f0/how-do-investors-find-my-campaign-476830a4).
+- Republic documents its public investment-opportunity directory at [`/companies`](https://republic.com/companies). If the platform rejects the application request, discovery records `UNAVAILABLE` and asks for a manually supplied canonical URL.
+- StartEngine directs public investors to its [Explore directory](https://www.startengine.com/explore), whose offering links use canonical `/offering/{slug}` paths. The parser considers only exact or strongly similar issuer names and still requires independent corroboration before attachment.
+
+All platform requests remain unauthenticated, HTTPS-only, host-allowlisted, redirect-rejecting, response-size limited, at most one request per second, and bounded per run. No login, captcha, robots, paywall, or anti-bot control is bypassed. Admin diagnostics distinguish `FOUND`, `NONE_FOUND`, `AMBIGUOUS`, `UNAVAILABLE`, `DEGRADED`, and `NOT_CHECKED` outcomes.
+
 ## Optional Radar AI Providers
 
 Radar AI is an enhancement, never a runtime dependency. Groq remains the default provider. Configure these server-side variables in `backend/.env` or the host secret manager:
@@ -459,7 +471,7 @@ Tunable via `RADAR_AUTH_MAX_LOGIN_ATTEMPTS`, `RADAR_AUTH_LOGIN_WINDOW_MINUTES`,
 
 ## Database Schema Ownership
 
-Flyway is the single schema authority. Migrations `V1`-`V12` live in
+Flyway is the single schema authority. Migrations `V1`-`V13` live in
 `backend/src/main/resources/db/migration`:
 
 | Migration | Contents |
@@ -476,6 +488,7 @@ Flyway is the single schema authority. Migrations `V1`-`V12` live in
 | `V10` | Router AI diagnostics |
 | `V11` | SEC offering discovery, filing history, and source diagnostics |
 | `V12` | Autonomous diligence packets, provenance evidence, multi-period financials, platform campaigns, availability checks, and notification events |
+| `V13` | Bounded public campaign discovery checks, candidate provenance, identity decisions, cache state, and platform diagnostics |
 
 The application runs with `spring.jpa.hibernate.ddl-auto=validate`, so **neither the web nor the
 worker process mutates the schema at boot** - important because both start concurrently on deploy.

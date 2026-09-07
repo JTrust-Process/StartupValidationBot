@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.startupvalidationbot.diligence.DiligenceStore.EvidenceDraft;
@@ -21,6 +22,8 @@ import com.startupvalidationbot.diligence.DiligenceStore.PacketDraft;
 import com.startupvalidationbot.diligence.notification.DiligenceNotificationService;
 import com.startupvalidationbot.diligence.notification.DiligenceNotificationService.SendCounts;
 import com.startupvalidationbot.diligence.platform.PlatformOfferingEnricher;
+import com.startupvalidationbot.diligence.discovery.CampaignDiscoveryDomain;
+import com.startupvalidationbot.diligence.discovery.CampaignDiscoveryService;
 import com.startupvalidationbot.offering.OfferingDomain.MatchStatus;
 import com.startupvalidationbot.offering.OfferingDomain.Offering;
 import com.startupvalidationbot.offering.OfferingStore;
@@ -42,18 +45,30 @@ public class AutonomousDiligenceService {
     private final EvidenceReconciler reconciler;
     private final DiligenceNotificationService notifications;
     private final Map<String, PlatformOfferingEnricher> enrichers;
+    private final CampaignDiscoveryService campaignDiscovery;
     private final int maxOfferings;
 
+    @Autowired
     public AutonomousDiligenceService(DiligenceStore store, OfferingStore offerings, RadarStore radar,
             RadarQueryService queries, SecFinancialExtractor financialExtractor, EvidenceReconciler reconciler,
             DiligenceNotificationService notifications, List<PlatformOfferingEnricher> enrichers,
+            CampaignDiscoveryService campaignDiscovery,
             @Value("${diligence.max-offerings-per-run:25}") int maxOfferings) {
         this.store = store; this.offerings = offerings; this.radar = radar; this.queries = queries;
         this.financialExtractor = financialExtractor; this.reconciler = reconciler; this.notifications = notifications;
+        this.campaignDiscovery = campaignDiscovery;
         Map<String, PlatformOfferingEnricher> values = new HashMap<>();
         enrichers.forEach(value -> values.put(value.platform(), value));
         this.enrichers = Map.copyOf(values);
         this.maxOfferings = Math.max(1, Math.min(maxOfferings, 100));
+    }
+
+    AutonomousDiligenceService(DiligenceStore store, OfferingStore offerings, RadarStore radar,
+            RadarQueryService queries, SecFinancialExtractor financialExtractor, EvidenceReconciler reconciler,
+            DiligenceNotificationService notifications, List<PlatformOfferingEnricher> enrichers,
+            int maxOfferings) {
+        this(store, offerings, radar, queries, financialExtractor, reconciler, notifications, enrichers,
+                null, maxOfferings);
     }
 
     public RunResult run() {
@@ -62,6 +77,8 @@ public class AutonomousDiligenceService {
 
     private RunResult run(Long targetOfferingId) {
         List<String> errors = new ArrayList<>();
+        CampaignDiscoveryDomain.RunResult discovery = targetOfferingId == null && campaignDiscovery != null
+                ? campaignDiscovery.discover() : CampaignDiscoveryDomain.RunResult.empty();
         List<Company> companies = radar.listCompanies();
         Map<Long, List<Offering>> byCompany = new HashMap<>();
         offerings.list(null, null, null, null).stream().filter(value -> value.radarCompanyId() != null)
@@ -160,7 +177,7 @@ public class AutonomousDiligenceService {
         }
         SendCounts sends = notifications.sendPending();
         return new RunResult(companies.size(), considered, identities, campaigns, ready, partial, review,
-                platformErrors, aiFallbacks, queued, sends.sent(), sends.failed(), List.copyOf(errors));
+                platformErrors, aiFallbacks, queued, sends.sent(), sends.failed(), List.copyOf(errors), discovery);
     }
 
     public Packet refresh(long packetId) {
@@ -178,9 +195,9 @@ public class AutonomousDiligenceService {
             for (String platform : PLATFORM_SOURCES) {
                 boolean known = found.stream().anyMatch(value -> platform.equals(normalizePlatform(value.platform()))
                         || hostMatches(value.offeringUrl(), platform));
-                store.availability(company.id(), platform, known ? "POSSIBLE" : "COULD_NOT_ESTABLISH",
+                store.availabilityIfAbsent(company.id(), platform, known ? "POSSIBLE" : "NOT_CHECKED",
                         known ? "Platform evidence is queued for targeted verification."
-                                : "No SEC-known or official campaign URL was available for targeted lookup.",
+                                : "No bounded public campaign check has been recorded yet.",
                         known ? null : "Does this company have a public " + platform + " campaign not linked from SEC evidence?");
             }
         }

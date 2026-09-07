@@ -119,6 +119,14 @@ public class OfferingStore {
                 LocalDateTime.now(), offeringId);
     }
 
+    public boolean attachCampaignUrl(long offeringId, String platform, String campaignUrl) {
+        return jdbc.update("""
+                UPDATE radar_offerings SET offering_url=?,platform=CASE WHEN UPPER(platform)='UNKNOWN'
+                  THEN ? ELSE platform END,updated_at=?
+                WHERE id=? AND (offering_url IS NULL OR TRIM(offering_url)='')
+                """, campaignUrl, platform, LocalDateTime.now(), offeringId) == 1;
+    }
+
     @Transactional
     public UpsertResult upsert(Candidate candidate, Match match) {
         LocalDateTime now = LocalDateTime.now();
@@ -157,7 +165,7 @@ public class OfferingStore {
             id = current.id();
             jdbc.update("""
                     UPDATE radar_offerings SET radar_company_id=?, issuer_name=?, issuer_name_normalized=?,
-                      issuer_cik=?, platform=?, intermediary_name=?, intermediary_cik=?, offering_url=?,
+                      issuer_cik=?, platform=?, intermediary_name=?, intermediary_cik=?, offering_url=COALESCE(?,offering_url),
                       sec_filing_url=?, sec_accession_number=?, sec_file_number=?, filing_type=?, filing_date=?,
                       security_type=?, minimum_investment=?, target_amount=?, maximum_amount=?, valuation_or_cap=?,
                       deadline=?, amount_raised=?, status=?, source=?, match_status=?, match_confidence=?,

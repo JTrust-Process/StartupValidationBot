@@ -3711,3 +3711,29 @@ select:focus {
     animation-iteration-count: 1 !important;
   }
 }
+.diligence-queue-section + .diligence-queue-section {
+  margin-top: 24px;
+}
+
+.diligence-card {
+  display: grid;
+  gap: 14px;
+}
+
+.diligence-two-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.radar-status-grid small {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 768px) {
+  .diligence-two-column {
+    grid-template-columns: 1fr;
+  }
+}

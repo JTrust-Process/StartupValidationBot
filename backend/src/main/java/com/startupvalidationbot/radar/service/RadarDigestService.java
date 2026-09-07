@@ -20,6 +20,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.startupvalidationbot.radar.RadarDomain.Company;
 import com.startupvalidationbot.radar.RadarStore;
+import com.startupvalidationbot.diligence.DiligenceDomain.Packet;
+import com.startupvalidationbot.diligence.DiligenceStore;
+import com.startupvalidationbot.diligence.notification.DiligenceEmailSender;
 
 @Service
 public class RadarDigestService {
@@ -33,6 +36,9 @@ public class RadarDigestService {
     private final String dealScoutToken;
     private final String emailSendUrl;
     private final String emailToken;
+    private final DiligenceStore diligenceStore;
+    private final DiligenceEmailSender directEmailSender;
+    private final String intelligenceRecipient;
     private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
     public RadarDigestService(RadarStore store, ObjectMapper objectMapper,
@@ -40,7 +46,9 @@ public class RadarDigestService {
             @Value("${radar.deal-scout-run-url:}") String dealScoutRunUrl,
             @Value("${radar.deal-scout-token:}") String dealScoutToken,
             @Value("${radar.email-send-url:}") String emailSendUrl,
-            @Value("${radar.email-token:}") String emailToken) {
+            @Value("${radar.email-token:}") String emailToken,
+            DiligenceStore diligenceStore, DiligenceEmailSender directEmailSender,
+            @Value("${startup.intelligence.email-recipient:${deal.scout.email-recipient:}}") String intelligenceRecipient) {
         this.store = store;
         this.objectMapper = objectMapper;
         this.appUrl = appUrl;
@@ -48,6 +56,9 @@ public class RadarDigestService {
         this.dealScoutToken = dealScoutToken;
         this.emailSendUrl = emailSendUrl;
         this.emailToken = emailToken;
+        this.diligenceStore = diligenceStore;
+        this.directEmailSender = directEmailSender;
+        this.intelligenceRecipient = intelligenceRecipient == null ? "" : intelligenceRecipient.trim();
     }
 
     public DigestResult generateAndMaybeSend(boolean send) {
@@ -61,16 +72,31 @@ public class RadarDigestService {
                 .limit(5)
                 .toList();
         DealScoutSection dealScout = fetchDealScoutPreview();
+        List<Packet> diligence = diligenceStore.list(null).stream()
+                .filter(packet -> packet.lastRefreshedAt() != null
+                        && packet.lastRefreshedAt().isAfter(java.time.LocalDateTime.now().minusDays(7)))
+                .filter(packet -> List.of("READY", "PARTIAL", "NEEDS_REVIEW").contains(packet.status().name()))
+                .limit(5).toList();
         String subject = "Weekly Startup Intelligence - companies and deals to review";
-        String text = buildText(topRadar, watched, dealScout);
-        String html = buildHtml(topRadar, watched, dealScout);
+        String text = buildText(topRadar, watched, dealScout, diligence);
+        String html = buildHtml(topRadar, watched, dealScout, diligence);
         String periodKey = weeklyPeriodKey();
 
-        if (!send || emailSendUrl.isBlank()) {
+        if (!send) {
             store.saveDigest(periodKey, subject, text, html, "PREVIEW", null,
-                    send && emailSendUrl.isBlank() ? "RADAR_EMAIL_SEND_URL is not configured" : null);
-            return new DigestResult(true, false, periodKey, subject, text, html, null,
-                    send && emailSendUrl.isBlank() ? "Preview generated; email endpoint is not configured." : null);
+                    null);
+            return new DigestResult(true, false, periodKey, subject, text, html, null, null);
+        }
+        if (directEmailSender.configured() && !intelligenceRecipient.isBlank()) {
+            DiligenceEmailSender.SendResult result = directEmailSender.send(intelligenceRecipient, subject, text, html);
+            store.saveDigest(periodKey, subject, text, html, result.ok() ? "SENT" : "FAILED", result.messageId(), result.error());
+            return new DigestResult(result.ok(), result.ok(), periodKey, subject, text, html,
+                    result.messageId(), result.error());
+        }
+        if (emailSendUrl.isBlank()) {
+            String error = "Resend and legacy email endpoint are not configured.";
+            store.saveDigest(periodKey, subject, text, html, "PREVIEW", null, error);
+            return new DigestResult(true, false, periodKey, subject, text, html, null, error);
         }
 
         try {
@@ -136,7 +162,8 @@ public class RadarDigestService {
         }
     }
 
-    private String buildText(List<Company> radar, List<Company> watched, DealScoutSection dealScout) {
+    private String buildText(List<Company> radar, List<Company> watched, DealScoutSection dealScout,
+            List<Packet> diligence) {
         StringBuilder body = new StringBuilder("STARTUP INTELLIGENCE WEEKLY\n\n").append(DISCLAIMER).append("\n\n")
                 .append("NEW STARTUPS TO RESEARCH\n");
         if (radar.isEmpty()) {
@@ -165,11 +192,19 @@ public class RadarDigestService {
         if (dealScout.candidates().isEmpty()) {
             body.append(value(dealScout.error(), "No Deal Scout candidates matched this week.")).append("\n");
         }
+        body.append("\nPUBLIC DILIGENCE UPDATES\n");
+        if (diligence.isEmpty()) body.append("No diligence packets were refreshed this week.\n");
+        for (Packet packet : diligence) {
+            body.append("- ").append(packet.companyName()).append(" — ").append(packet.status())
+                    .append(" / ").append(packet.completeness()).append("% complete\n")
+                    .append(appUrl.replace("#/radar", "#/review/" + packet.id())).append("\n");
+        }
         return body.append("\n").append(DISCLAIMER).append("\n").toString();
     }
 
-    private String buildHtml(List<Company> radar, List<Company> watched, DealScoutSection dealScout) {
-        String text = buildText(radar, watched, dealScout);
+    private String buildHtml(List<Company> radar, List<Company> watched, DealScoutSection dealScout,
+            List<Packet> diligence) {
+        String text = buildText(radar, watched, dealScout, diligence);
         return "<!doctype html><html><body style=\"font-family:Arial,sans-serif;color:#172033;line-height:1.5\">"
                 + "<h1 style=\"font-size:22px\">Startup Intelligence Weekly</h1>"
                 + "<p style=\"padding:12px;border:1px solid #e7b86b;background:#fff8e7\">"

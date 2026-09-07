@@ -1,7 +1,7 @@
 import type { DealInput } from '../models/deal';
 import { createDeal, loadDeals } from '../services/dealService';
 import { getDeals } from '../services/dealService';
-import { getRadarCompany, getRadarOffering } from '../services/radarService';
+import { getDiligencePacket, getRadarCompany, getRadarOffering } from '../services/radarService';
 import { escapeAttribute, escapeHtml } from '../utils/html';
 import { navigateTo } from '../utils/router';
 import { safeExternalUrl } from '../utils/urls';
@@ -167,7 +167,8 @@ export function renderNewDealPage(): string {
 
           <div class="form-field">
             <label for="decision">Decision</label>
-            <select id="decision" name="decision">
+            <select id="decision" name="decision" required>
+              <option value="" selected>Choose after review</option>
               <option value="WATCH">Watch</option>
               <option value="PASS">Pass</option>
               <option value="INVEST_SMALL">Invest Small</option>
@@ -212,7 +213,10 @@ export function bindNewDealPageEvents(root: HTMLElement, path: string): void {
   const params = new URLSearchParams(query);
   const radarCompanyId = Number(params.get('radarCompanyId'));
   const offeringDiscoveryId = Number(params.get('offeringDiscoveryId'));
-  if (Number.isInteger(offeringDiscoveryId) && offeringDiscoveryId > 0) {
+  const diligencePacketId = Number(params.get('diligencePacketId'));
+  if (Number.isInteger(diligencePacketId) && diligencePacketId > 0) {
+    void prefillFromDiligence(root, form, diligencePacketId);
+  } else if (Number.isInteger(offeringDiscoveryId) && offeringDiscoveryId > 0) {
     void prefillFromOffering(root, form, offeringDiscoveryId);
   } else
   if (Number.isInteger(radarCompanyId) && radarCompanyId > 0) {
@@ -237,6 +241,57 @@ export function bindNewDealPageEvents(root: HTMLElement, path: string): void {
       window.alert('Failed to create deal.');
     }
   });
+}
+
+async function prefillFromDiligence(root: HTMLElement, form: HTMLFormElement, packetId: number): Promise<void> {
+  const status = root.querySelector<HTMLElement>('#radar-deal-origin-status');
+  await loadDeals();
+  try {
+    const packet = await getDiligencePacket(packetId);
+    const duplicate = getDeals().find((deal) => deal.offeringDiscoveryId === packet.offeringId
+      || deal.radarCompanyId === packet.radarCompanyId);
+    if (duplicate) {
+      if (status) status.innerHTML = `<div class="notice notice--warning">This public offering already has a Deal Scout workspace.
+        <a href="#/deals/${duplicate.id}">Open ${escapeHtml(duplicate.companyName)}</a>.</div>`;
+      return;
+    }
+    const company = await getRadarCompany(packet.radarCompanyId);
+    const securityType = /safe/i.test(packet.securityType || '') ? 'SAFE'
+      : /note|debt/i.test(packet.securityType || '') ? 'NOTE'
+        : /stock|equity|share/i.test(packet.securityType || '') ? 'EQUITY' : 'UNKNOWN';
+    const financial = packet.financials.map((period) => `${period.period}: revenue ${period.revenue ?? 'unknown'}, net income ${period.netIncome ?? 'unknown'}`).join('; ');
+    const references = packet.evidence.map((item) => item.sourceUrl).filter((value, index, values) => value && values.indexOf(value) === index).slice(0, 5);
+    const fields: Record<string, string> = {
+      radarCompanyId: String(packet.radarCompanyId),
+      offeringDiscoveryId: String(packet.offeringId),
+      secFilingUrl: packet.secFilingUrl || '',
+      offeringDeadline: packet.deadline || '',
+      companyName: packet.companyName,
+      platform: packet.platform || 'Unknown',
+      sector: company.company.sector,
+      offeringUrl: packet.campaignUrl || packet.secFilingUrl || '',
+      minimumInvestment: packet.minimumInvestment === null ? '' : String(packet.minimumInvestment),
+      valuationOrCap: packet.valuationOrCap || '',
+      amountRaised: packet.amountRaised === null ? '' : String(packet.amountRaised),
+      investorEligibility: 'NON_ACCREDITED',
+      offeringExemption: 'REG_CF',
+      securityType,
+      liquidity: 'ILLIQUID',
+      shortDescription: `${packet.summary}${financial ? ` Financial snapshot: ${financial}.` : ''}`,
+      thesis: `${packet.bullCase.join(' ')}${references.length ? ` Public evidence: ${references.join(', ')}` : ''}`,
+      mainRisk: packet.keyRisks.join(' '),
+      nextMilestone: packet.nextMonitoringMilestones.join(' ')
+    };
+    Object.entries(fields).forEach(([name, value]) => {
+      const field = form.elements.namedItem(name);
+      if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement) field.value = value;
+    });
+    if (status) status.innerHTML = `<div class="notice notice--neutral">Public facts were prefilled from
+      <a href="#/review/${packet.id}">diligence packet ${packet.id}</a>. Review every field before explicitly creating a Deal Scout workspace.
+      Filed facts and issuer claims remain separate in the source packet.</div>`;
+  } catch (error) {
+    if (status) status.innerHTML = `<div class="notice notice--warning">Could not load the diligence packet. ${escapeHtml(error instanceof Error ? error.message : '')}</div>`;
+  }
 }
 
 async function prefillFromOffering(root: HTMLElement, form: HTMLFormElement, offeringId: number): Promise<void> {

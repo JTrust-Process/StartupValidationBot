@@ -12,6 +12,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import com.startupvalidationbot.offering.OfferingDiscoveryService;
+import com.startupvalidationbot.diligence.AutonomousDiligenceService;
+import com.startupvalidationbot.diligence.DiligenceDomain.RunResult;
 import com.startupvalidationbot.radar.RadarDomain.JobResult;
 import com.startupvalidationbot.radar.RadarStore;
 import com.startupvalidationbot.radar.RadarStore.JobStart;
@@ -74,5 +76,24 @@ class RadarJobServiceTest {
         assertThat(result.ok()).isFalse();
         verify(store).completeJob(eq("discovery"), eq("run-2"), eq("lease-2"), eq("FAILED"), eq(result),
                 eq("Product Hunt: upstream unavailable"));
+    }
+
+    @Test
+    void autonomousDiligencePersistsNamedSanitizedCountersInJobDiagnostics() {
+        AutonomousDiligenceService diligence = mock(AutonomousDiligenceService.class);
+        when(store.beginJob(eq("autonomous-diligence"), eq("diligence-1"), any()))
+                .thenReturn(new JobStart(true, false, "lease-diligence"));
+        when(diligence.run()).thenReturn(new RunResult(12, 4, 3, 2, 1, 2, 1,
+                1, 2, 3, 2, 1, List.of()));
+        RadarJobService service = new RadarJobService(store, discovery, mock(RadarAnalysisService.class),
+                mock(RadarTrendService.class), mock(RadarDigestService.class),
+                mock(OfferingDiscoveryService.class), diligence, 120);
+
+        JobResult result = service.run("autonomous-diligence", "diligence-1", false);
+
+        assertThat(result.diagnostics()).contains("offeringsConsidered=4", "packetsReady=1",
+                "packetsPartial=2", "emailsSent=2", "emailsFailed=1");
+        verify(store).completeJob(eq("autonomous-diligence"), eq("diligence-1"), eq("lease-diligence"),
+                eq("COMPLETED"), eq(result), eq(null));
     }
 }

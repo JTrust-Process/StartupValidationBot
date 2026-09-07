@@ -6,7 +6,8 @@ import type {
   RadarCompanyDetail,
   RadarRelevanceExplanation,
   RadarSimilarCompany,
-  RadarOffering
+  RadarOffering,
+  CompanyInvestmentAvailability
 } from '../models/radar';
 import {
   getRadarAdminCompany,
@@ -20,7 +21,8 @@ import {
   setRadarCompanyIgnored,
   unwatchRadarCompany,
   watchRadarCompany,
-  listCompanyOfferings
+  listCompanyOfferings,
+  getInvestmentAvailability
 } from '../services/radarService';
 import { escapeAttribute, escapeHtml } from '../utils/html';
 import { safeExternalUrl } from '../utils/urls';
@@ -139,6 +141,7 @@ function renderProfile(detail: RadarCompanyDetail | RadarAdminCompanyDetail): st
     <div id="radar-company-status" aria-live="polite"></div>
 
     <div id="radar-company-offerings"></div>
+    <div id="radar-company-availability"><section class="radar-panel"><div class="radar-empty">Checking investment availability...</div></section></div>
 
     <section class="radar-panel radar-profile-overview">
       <div class="radar-section-heading"><p class="page-eyebrow">Company research</p><h3>Overview</h3></div>
@@ -233,6 +236,15 @@ function renderProfile(detail: RadarCompanyDetail | RadarAdminCompanyDetail): st
       <div class="radar-analysis">${renderDeepDiveMemo(analysis)}</div>
     </details>
   `;
+}
+
+function renderAvailability(value: CompanyInvestmentAvailability): string {
+  return `<section class="radar-panel"><div class="radar-section-heading"><p class="page-eyebrow">Automated search</p><h3>Investment Availability</h3></div>
+    <p class="radar-muted">Last full check: ${escapeHtml(formatRadarDate(value.lastFullCheck))}</p>
+    <div class="radar-status-grid">${value.checks.length ? value.checks.map((check) => `<div>
+      <span>${escapeHtml(check.sourceType.replaceAll('_', ' '))}</span><strong>${escapeHtml(check.status.replaceAll('_', ' '))}</strong>
+      <small>${escapeHtml(check.resultSummary)}</small>${check.unresolvedQuestion ? `<small>Unresolved: ${escapeHtml(check.unresolvedQuestion)}</small>` : ''}</div>`).join('')
+      : '<div><span>Coverage</span><strong>Not checked yet</strong></div>'}</div></section>`;
 }
 
 function renderRelevance(explanation: RadarRelevanceExplanation): string {
@@ -343,6 +355,7 @@ export function bindRadarCompanyPageEvents(root: HTMLElement, path: string): voi
     void fillPanel('#radar-change-block', () => listRadarCompanyChanges(companyId, 12).then(renderChanges));
     void fillPanel('#radar-similar-block', () => listSimilarRadarCompanies(companyId, 6).then(renderSimilar));
     void fillPanel('#radar-company-offerings', () => listCompanyOfferings(companyId).then(renderOfferings));
+    void fillPanel('#radar-company-availability', () => getInvestmentAvailability(companyId).then(renderAvailability));
 
     if (!session.authenticated || !('watchlistNotes' in detail)) return;
     bindAdminActions(detail as RadarAdminCompanyDetail);

@@ -21,7 +21,7 @@ Normal tests use local fixtures and never require SEC connectivity. A live stagi
 
 ## Fair Access And URL Safety
 
-`SEC_EDGAR_USER_AGENT` must identify the application and provide a monitored contact. Requests are restricted to official HTTPS SEC hosts, default to two requests per second, use bounded retries/backoff, reject redirects, and enforce response-size limits. This is intentionally below the SEC's published ten-request-per-second ceiling.
+`SEC_EDGAR_USER_AGENT` must identify the application and provide a monitored contact. Requests are restricted to official HTTPS SEC hosts, default to two requests per second, use bounded retries/backoff, reject redirects, and enforce response-size limits. The current-quarter index defaults to a 32 MB limit through `SEC_EDGAR_INDEX_MAX_RESPONSE_BYTES` and is hard-capped at 50 MB. This is intentionally below the SEC's published ten-request-per-second ceiling.
 
 Platform offering URLs are retained only when they pass the existing public HTTP URL policy, including DNS checks against private, loopback, link-local, multicast, and metadata-style destinations. The application does not scrape platform pages or bypass login, bot, or rate-limit controls.
 

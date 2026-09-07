@@ -32,8 +32,8 @@ class OfferingStoreIntegrationTest {
     @Autowired MockMvc mockMvc;
 
     @Test
-    void v11AppliesAndOfferingUpsertIsAccessionIdempotent() {
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM \"flyway_schema_history\" WHERE \"version\"='11'", Integer.class)).isEqualTo(1);
+    void v12AppliesAndOfferingUpsertIsAccessionIdempotent() {
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM \"flyway_schema_history\" WHERE \"version\"='12'", Integer.class)).isEqualTo(1);
         long companyId = company("Acme Technologies", "acme.example");
         Match confirmed = new Match(companyId, MatchStatus.CONFIRMED, 100, "Exact name and domain.");
         var first = store.upsert(candidate("0001234567-26-000001", "C", LocalDate.now(), "020-12345"), confirmed);

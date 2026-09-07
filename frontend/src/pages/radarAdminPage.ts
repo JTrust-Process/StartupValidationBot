@@ -1,4 +1,4 @@
-import type { OfferingDiagnostics, RadarInterest, RadarSystemStatus } from '../models/radar';
+import type { AutonomousDiligenceDiagnostics, OfferingDiagnostics, RadarInterest, RadarSystemStatus } from '../models/radar';
 import {
   RadarApiError,
   addManualRadarCompany,
@@ -7,6 +7,7 @@ import {
   getRadarInterests,
   getRadarSystemStatus,
   getOfferingDiagnostics,
+  getAutonomousDiligenceDiagnostics,
   listRadarAdminSources,
   loginRadarAdmin,
   logoutRadarAdmin,
@@ -80,7 +81,7 @@ function statusHtml(status: RadarSystemStatus): string {
 }
 
 function adminHtml(status: RadarSystemStatus, sources: Awaited<ReturnType<typeof listRadarAdminSources>>,
-  offerings: OfferingDiagnostics): string {
+  offerings: OfferingDiagnostics, diligence: AutonomousDiligenceDiagnostics): string {
   return `
     <div class="radar-admin-heading"><span class="status-pill status-pill--green">Authenticated</span><button id="radar-logout-button" class="button button--secondary" type="button">Log out</button></div>
     ${statusHtml(status)}
@@ -99,8 +100,26 @@ function adminHtml(status: RadarSystemStatus, sources: Awaited<ReturnType<typeof
     <section class="radar-panel">
       <h3>Run jobs</h3>
       <div class="form-actions form-actions--start">
-        ${['discovery', 'offering-discovery', 'watchlist', 'trends', 'digest-preview'].map((job) => `<button class="button button--secondary" type="button" data-radar-job="${job}">${escapeHtml(job.replaceAll('-', ' '))}</button>`).join('')}
+        ${['discovery', 'offering-discovery', 'autonomous-diligence', 'watchlist', 'trends', 'digest-preview'].map((job) => `<button class="button button--secondary" type="button" data-radar-job="${job}">${escapeHtml(job.replaceAll('-', ' '))}</button>`).join('')}
       </div>
+    </section>
+    <section class="radar-panel">
+      <h3>Autonomous Diligence</h3>
+      <div class="radar-status-grid">
+        <div><span>Last run</span><strong>${escapeHtml(diligence.lastRunStatus)}</strong><small>${escapeHtml(formatRadarDate(diligence.lastRunCompletedAt || diligence.lastRunStartedAt))}</small></div>
+        <div><span>Duration</span><strong>${diligence.lastRunDurationMs === null ? 'Unknown' : `${Math.round(diligence.lastRunDurationMs / 1000)}s`}</strong></div>
+        <div><span>Companies / offerings</span><strong>${diligence.companiesConsidered} / ${diligence.offeringsConsidered}</strong></div>
+        <div><span>Identity / campaign resolved</span><strong>${diligence.identitiesResolved} / ${diligence.campaignsResolved}</strong></div>
+        <div><span>Ready / partial / review</span><strong>${diligence.packetsReady} / ${diligence.packetsPartial} / ${diligence.needsReview}</strong></div>
+        <div><span>Platform errors / AI fallback</span><strong>${diligence.platformErrors} / ${diligence.aiFallbacks}</strong></div>
+        <div><span>Emails queued / sent / failed</span><strong>${diligence.emailsQueued} / ${diligence.emailsSent} / ${diligence.emailsFailed}</strong></div>
+        <div><span>Resend</span><strong>${diligence.resend.configured ? 'Configured' : 'Not configured'}</strong><small>${escapeHtml(diligence.resend.lastStatus)}${diligence.resend.lastMessageId ? ` / ${escapeHtml(diligence.resend.lastMessageId)}` : ''}</small></div>
+      </div>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Platform</th><th>Last checked</th><th>Status</th><th>Requests</th><th>Campaigns</th><th>Error</th></tr></thead><tbody>
+        ${diligence.platforms.length ? diligence.platforms.map((platform) => `<tr><td>${escapeHtml(platform.platform)}</td><td>${escapeHtml(formatRadarDate(platform.lastCheckedAt))}</td><td>${escapeHtml(platform.status)}</td><td>${platform.requests}</td><td>${platform.campaignsFound}</td><td class="table-subtext">${escapeHtml(platform.error || '')}</td></tr>`).join('')
+          : '<tr><td colspan="6">No platform checks recorded yet.</td></tr>'}
+      </tbody></table></div>
+      ${diligence.resend.lastError ? `<p class="radar-muted">Last email error: ${escapeHtml(diligence.resend.lastError)}</p>` : ''}
     </section>
     <section class="radar-panel">
       <h3>Offering Discovery</h3>
@@ -316,10 +335,10 @@ export function bindRadarAdminPageEvents(root: HTMLElement): void {
         bindLogin();
         return;
       }
-      const [status, sources, offerings] = await Promise.all([
-        getRadarSystemStatus(), listRadarAdminSources(), getOfferingDiagnostics()
+      const [status, sources, offerings, diligence] = await Promise.all([
+        getRadarSystemStatus(), listRadarAdminSources(), getOfferingDiagnostics(), getAutonomousDiligenceDiagnostics()
       ]);
-      content.innerHTML = adminHtml(status, sources, offerings);
+      content.innerHTML = adminHtml(status, sources, offerings, diligence);
       bindAdmin();
     } catch (error) {
       content.innerHTML = renderRadarError(error);

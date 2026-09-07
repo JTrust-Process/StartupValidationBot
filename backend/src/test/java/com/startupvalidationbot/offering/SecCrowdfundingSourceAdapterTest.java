@@ -13,6 +13,13 @@ import org.junit.jupiter.api.Test;
 
 class SecCrowdfundingSourceAdapterTest {
     @Test
+    void boundsRecentIndexResponseSizeConfiguration() {
+        assertThat(SecCrowdfundingSourceAdapter.boundedIndexBytes(32_000_000)).isEqualTo(32_000_000);
+        assertThat(SecCrowdfundingSourceAdapter.boundedIndexBytes(100)).isEqualTo(1_000_000);
+        assertThat(SecCrowdfundingSourceAdapter.boundedIndexBytes(100_000_000)).isEqualTo(50_000_000);
+    }
+
+    @Test
     void parsesRecentIndexAndCompleteSubmissionWithoutGuessingLifecycle() {
         String index = "Header\n0001234567|Acme Technologies Inc.|C/A|2026-08-20|edgar/data/1234567/000123456726000002/0001234567-26-000002.txt\n"
                 + "0001234567|Acme Technologies Inc.|C-W|2026-08-21|edgar/data/1234567/000123456726000003/0001234567-26-000003.txt\n"

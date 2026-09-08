@@ -169,7 +169,8 @@ public class OfferingStore {
                       sec_filing_url=?, sec_accession_number=?, sec_file_number=?, filing_type=?, filing_date=?,
                       security_type=?, minimum_investment=?, target_amount=?, maximum_amount=?, valuation_or_cap=?,
                       deadline=?, amount_raised=?, status=?, source=?, match_status=?, match_confidence=?,
-                      match_reason=?, raw_facts_json=?, last_seen_at=?, updated_at=? WHERE id=?
+                      match_reason=?, raw_facts_json=?, provenance='SEC_EDGAR',
+                      reconciliation_status='SEC_RECONCILED', last_seen_at=?, updated_at=? WHERE id=?
                     """, match.companyId(), candidate.issuerName(), normalize(candidate.issuerName()),
                     candidate.issuerCik(), candidate.platform(), nullIfBlank(candidate.intermediaryName()),
                     nullIfBlank(candidate.intermediaryCik()), nullIfBlank(candidate.offeringUrl()),
@@ -257,8 +258,14 @@ public class OfferingStore {
                     offeringMapper(), candidate.issuerCik(), candidate.fileNumber()).stream().findFirst();
             if (byFile.isPresent()) return byFile;
         }
-        return jdbc.query(SELECT + " WHERE o.sec_accession_number=?", offeringMapper(), candidate.accessionNumber())
-                .stream().findFirst();
+        Optional<Offering> byAccession = jdbc.query(SELECT + " WHERE o.sec_accession_number=?",
+                offeringMapper(), candidate.accessionNumber()).stream().findFirst();
+        if (byAccession.isPresent()) return byAccession;
+        if (!blank(candidate.offeringUrl())) {
+            return jdbc.query(SELECT + " WHERE o.offering_url=?", offeringMapper(), candidate.offeringUrl())
+                    .stream().findFirst();
+        }
+        return Optional.empty();
     }
 
     private void recordChange(long companyId, boolean created, Status before, Status after, Candidate candidate) {
@@ -284,6 +291,7 @@ public class OfferingStore {
     }
 
     private static boolean isOlder(Candidate candidate, Offering current) {
+        if ("PLATFORM_OFFERING".equals(current.provenance())) return false;
         int dateOrder = candidate.filingDate().compareTo(current.filingDate());
         return dateOrder < 0 || (dateOrder == 0
                 && candidate.accessionNumber().compareTo(current.accessionNumber()) < 0);
@@ -319,7 +327,8 @@ public class OfferingStore {
                 rs.getBigDecimal("target_amount"), rs.getBigDecimal("maximum_amount"), rs.getString("valuation_or_cap"),
                 rs.getObject("deadline", LocalDate.class), rs.getBigDecimal("amount_raised"), Status.valueOf(rs.getString("status")),
                 rs.getString("source"), MatchStatus.valueOf(rs.getString("match_status")), rs.getInt("match_confidence"),
-                rs.getString("match_reason"), timestamp(rs.getTimestamp("first_seen_at")), timestamp(rs.getTimestamp("last_seen_at")));
+                rs.getString("match_reason"), timestamp(rs.getTimestamp("first_seen_at")), timestamp(rs.getTimestamp("last_seen_at")),
+                rs.getString("provenance"), rs.getString("reconciliation_status"), rs.getString("platform_status"));
     }
 
     private static void addFilter(StringBuilder sql, List<Object> args, String column, String value) {

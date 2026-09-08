@@ -110,6 +110,7 @@ public class RadarJobService {
         }
         com.startupvalidationbot.diligence.DiligenceDomain.RunResult result = autonomousDiligenceService.run();
         var campaign = result.campaignDiscovery();
+        var nativeIntake = result.nativeIntake();
         return new JobResult(result.errors().isEmpty(), jobType, key, false, result.companiesConsidered(),
                 result.packetsReady(), result.packetsPartial() + result.needsReview(), result.errors().size(),
                 result.errors(), List.of(
@@ -135,7 +136,22 @@ public class RadarJobService {
                         "campaignPossible=" + campaign.campaignsPossible(),
                         "campaignRejected=" + campaign.campaignsRejected(),
                         "campaignCacheHits=" + campaign.cacheHits(),
-                        "campaignDiscoveryErrors=" + campaign.errors()),
+                        "campaignDiscoveryErrors=" + campaign.errors(),
+                        "nativeCandidatesFound=" + nativeIntake.candidatesFound(),
+                        "nativeActiveCandidates=" + nativeIntake.activeCandidates(),
+                        "nativeNewCompanies=" + nativeIntake.newCompanies(),
+                        "nativeMatchedCompanies=" + nativeIntake.matchedCompanies(),
+                        "nativeNewOfferings=" + nativeIntake.newOfferings(),
+                        "nativeUpdatedOfferings=" + nativeIntake.updatedOfferings(),
+                        "nativeDuplicatesPrevented=" + nativeIntake.duplicatesPrevented(),
+                        "nativePossible=" + nativeIntake.possible(),
+                        "nativeRejected=" + nativeIntake.rejected(),
+                        "nativeErrors=" + nativeIntake.errors(),
+                        "nativeSecRecentInspected=" + nativeIntake.secRecentInspected(),
+                        "nativeSecPlatformClassified=" + nativeIntake.secPlatformClassified(),
+                        "nativeSecReconciled=" + nativeIntake.secReconciled(),
+                        "reviewQueueBefore=" + result.reviewQueueBefore(),
+                        "reviewQueueAfter=" + result.reviewQueueAfter()),
                 "Autonomous diligence completed: " + result.packetsReady() + " ready, "
                         + result.packetsPartial() + " partial, " + result.needsReview() + " need review.");
     }

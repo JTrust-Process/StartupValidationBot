@@ -37,7 +37,8 @@ public class SecNativeOfferingAdapter implements NativeOfferingSourceAdapter {
             for (Candidate candidate : recent.stream().limit(limit).toList()) {
                 Candidate enriched = candidate;
                 if (details < detailLimit) {
-                    try { enriched = sec.enrich(candidate); details++; }
+                    details++;
+                    try { enriched = sec.enrich(candidate); }
                     catch (RuntimeException error) {
                         errors.add("SEC filing " + candidate.accessionNumber() + ": " + safe(error));
                     }

@@ -4,11 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
 import com.startupvalidationbot.offering.OfferingDomain.Candidate;
+import com.startupvalidationbot.offering.OfferingSourceAdapter;
 import com.startupvalidationbot.offering.intake.NativeOfferingDomain.Status;
 
 class SecNativeOfferingAdapterTest {
@@ -45,6 +47,23 @@ class SecNativeOfferingAdapterTest {
         assertThat(recent.reviewableRecentSecRegCf()).isTrue();
         assertThat(update.reviewableRecentSecRegCf()).isFalse();
         assertThat(old.reviewableRecentSecRegCf()).isFalse();
+    }
+
+    @Test
+    void failedDetailRequestsStillCountTowardTheConfiguredBound() {
+        Candidate candidate = candidate("Republic", "C", null);
+        OfferingSourceAdapter failingSource = new OfferingSourceAdapter() {
+            @Override public List<Candidate> fetchRecent() { return java.util.Collections.nCopies(25, candidate); }
+            @Override public List<Candidate> fetchBaseline() { return List.of(); }
+            @Override public Candidate enrich(Candidate value) { throw new IllegalStateException("not found"); }
+        };
+
+        var result = new SecNativeOfferingAdapter(failingSource).discover(25, 10);
+
+        assertThat(result.requests()).isEqualTo(11);
+        assertThat(result.detailRequests()).isEqualTo(10);
+        assertThat(result.candidates()).hasSize(25);
+        assertThat(result.errors()).hasSize(10);
     }
 
     private static Candidate candidate(String intermediary, String form, LocalDate deadline) {

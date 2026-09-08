@@ -20,6 +20,18 @@ class SecCrowdfundingSourceAdapterTest {
     }
 
     @Test
+    void resolvesFlatMasterIndexSubmissionPathThroughItsAccessionDirectory() {
+        assertThat(SecCrowdfundingSourceAdapter.submissionTextUrl(
+                "edgar/data/2147324/0001872856-26-000296.txt"))
+                .isEqualTo("https://www.sec.gov/Archives/edgar/data/2147324/"
+                        + "000187285626000296/0001872856-26-000296.txt");
+        assertThat(SecCrowdfundingSourceAdapter.submissionTextUrl(
+                "edgar/data/2147324/000187285626000296/0001872856-26-000296.txt"))
+                .isEqualTo("https://www.sec.gov/Archives/edgar/data/2147324/"
+                        + "000187285626000296/0001872856-26-000296.txt");
+    }
+
+    @Test
     void parsesRecentIndexAndCompleteSubmissionWithoutGuessingLifecycle() {
         String index = "Header\n0001234567|Acme Technologies Inc.|C/A|2026-08-20|edgar/data/1234567/000123456726000002/0001234567-26-000002.txt\n"
                 + "0001234567|Acme Technologies Inc.|C-W|2026-08-21|edgar/data/1234567/000123456726000003/0001234567-26-000003.txt\n"

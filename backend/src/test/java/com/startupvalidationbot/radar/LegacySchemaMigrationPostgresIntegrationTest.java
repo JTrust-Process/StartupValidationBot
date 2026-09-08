@@ -21,7 +21,7 @@ class LegacySchemaMigrationPostgresIntegrationTest {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @Test
-    void migratesLegacyDiligenceSchemaThroughV13WithoutLosingRows() throws Exception {
+    void migratesLegacyDiligenceSchemaThroughV14WithoutLosingRows() throws Exception {
         createLegacySchemaAndRows();
 
         var result = Flyway.configure()
@@ -33,7 +33,7 @@ class LegacySchemaMigrationPostgresIntegrationTest {
                 .load()
                 .migrate();
 
-        assertThat(result.targetSchemaVersion).isEqualTo("13");
+        assertThat(result.targetSchemaVersion).isEqualTo("14");
         try (Connection connection = connection(); Statement statement = connection.createStatement()) {
             assertThat(singleInt(statement, "SELECT COUNT(*) FROM deals WHERE company_name='Legacy Grid'"))
                     .isEqualTo(1);
@@ -41,7 +41,7 @@ class LegacySchemaMigrationPostgresIntegrationTest {
             assertThat(singleInt(statement, "SELECT COUNT(*) FROM decisions WHERE deal_id=1")).isEqualTo(1);
             assertThat(singleInt(statement, "SELECT COUNT(*) FROM deep_diligence WHERE deal_id=1")).isEqualTo(1);
             assertThat(singleInt(statement, "SELECT COUNT(*) FROM reviews WHERE deal_id=1")).isEqualTo(1);
-            assertThat(singleInt(statement, "SELECT COUNT(*) FROM flyway_schema_history WHERE success")).isEqualTo(14);
+            assertThat(singleInt(statement, "SELECT COUNT(*) FROM flyway_schema_history WHERE success")).isEqualTo(15);
             assertThat(singleInt(statement, """
                     SELECT COUNT(*) FROM information_schema.tables
                      WHERE table_schema='public' AND table_name='radar_offerings'
@@ -53,6 +53,14 @@ class LegacySchemaMigrationPostgresIntegrationTest {
             assertThat(singleInt(statement, """
                     SELECT COUNT(*) FROM information_schema.tables
                      WHERE table_schema='public' AND table_name='radar_campaign_discovery_results'
+                    """)).isEqualTo(1);
+            assertThat(singleInt(statement, """
+                    SELECT COUNT(*) FROM information_schema.tables
+                     WHERE table_schema='public' AND table_name='radar_native_offering_candidates'
+                    """)).isEqualTo(1);
+            assertThat(singleInt(statement, """
+                    SELECT COUNT(*) FROM information_schema.tables
+                     WHERE table_schema='public' AND table_name='radar_native_offering_source_state'
                     """)).isEqualTo(1);
         }
     }

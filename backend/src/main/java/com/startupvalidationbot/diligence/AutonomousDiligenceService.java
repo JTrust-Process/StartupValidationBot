@@ -27,6 +27,8 @@ import com.startupvalidationbot.diligence.discovery.CampaignDiscoveryService;
 import com.startupvalidationbot.offering.OfferingDomain.MatchStatus;
 import com.startupvalidationbot.offering.OfferingDomain.Offering;
 import com.startupvalidationbot.offering.OfferingStore;
+import com.startupvalidationbot.offering.intake.NativeOfferingDomain;
+import com.startupvalidationbot.offering.intake.NativeOfferingIntakeService;
 import com.startupvalidationbot.radar.ContentHash;
 import com.startupvalidationbot.radar.RadarDomain.Analysis;
 import com.startupvalidationbot.radar.RadarDomain.Company;
@@ -46,17 +48,19 @@ public class AutonomousDiligenceService {
     private final DiligenceNotificationService notifications;
     private final Map<String, PlatformOfferingEnricher> enrichers;
     private final CampaignDiscoveryService campaignDiscovery;
+    private final NativeOfferingIntakeService nativeIntake;
     private final int maxOfferings;
 
     @Autowired
     public AutonomousDiligenceService(DiligenceStore store, OfferingStore offerings, RadarStore radar,
             RadarQueryService queries, SecFinancialExtractor financialExtractor, EvidenceReconciler reconciler,
             DiligenceNotificationService notifications, List<PlatformOfferingEnricher> enrichers,
-            CampaignDiscoveryService campaignDiscovery,
+            CampaignDiscoveryService campaignDiscovery, NativeOfferingIntakeService nativeIntake,
             @Value("${diligence.max-offerings-per-run:25}") int maxOfferings) {
         this.store = store; this.offerings = offerings; this.radar = radar; this.queries = queries;
         this.financialExtractor = financialExtractor; this.reconciler = reconciler; this.notifications = notifications;
         this.campaignDiscovery = campaignDiscovery;
+        this.nativeIntake = nativeIntake;
         Map<String, PlatformOfferingEnricher> values = new HashMap<>();
         enrichers.forEach(value -> values.put(value.platform(), value));
         this.enrichers = Map.copyOf(values);
@@ -68,7 +72,7 @@ public class AutonomousDiligenceService {
             DiligenceNotificationService notifications, List<PlatformOfferingEnricher> enrichers,
             int maxOfferings) {
         this(store, offerings, radar, queries, financialExtractor, reconciler, notifications, enrichers,
-                null, maxOfferings);
+                null, null, maxOfferings);
     }
 
     public RunResult run() {
@@ -77,6 +81,8 @@ public class AutonomousDiligenceService {
 
     private RunResult run(Long targetOfferingId) {
         List<String> errors = new ArrayList<>();
+        NativeOfferingDomain.RunResult nativeResult = targetOfferingId == null && nativeIntake != null
+                ? nativeIntake.run() : NativeOfferingDomain.RunResult.empty();
         CampaignDiscoveryDomain.RunResult discovery = targetOfferingId == null && campaignDiscovery != null
                 ? campaignDiscovery.discover() : CampaignDiscoveryDomain.RunResult.empty();
         List<Company> companies = radar.listCompanies();
@@ -103,9 +109,11 @@ public class AutonomousDiligenceService {
             if (offering == null || offering.radarCompanyId() == null) continue;
             if (offering.matchStatus() == MatchStatus.CONFIRMED) identities++;
             Map<String, String> secFacts = offerings.facts(offering.id());
-            List<String> sourcesChecked = new ArrayList<>(List.of("SEC_EDGAR"));
-            PlatformCampaign campaign = null;
             PlatformCampaign previousCampaign = store.findCampaign(offering.id()).orElse(null);
+            PlatformCampaign campaign = previousCampaign;
+            List<String> sourcesChecked = new ArrayList<>();
+            if (offering.secFilingUrl() != null) sourcesChecked.add("SEC_EDGAR");
+            if (campaign != null) sourcesChecked.add(campaign.platform());
             String platform = normalizePlatform(offering.platform());
             PlatformOfferingEnricher enricher = enrichers.get(platform);
             if (enricher != null && offering.offeringUrl() != null) {
@@ -114,7 +122,8 @@ public class AutonomousDiligenceService {
                     if (enricher.supports(url)) {
                         campaign = store.upsertCampaign(enricher.enrich(offering, url));
                         platformRequests.merge(platform, 1, Integer::sum);
-                        campaigns++; sourcesChecked.add(platform);
+                        campaigns++;
+                        if (!sourcesChecked.contains(platform)) sourcesChecked.add(platform);
                         platformCampaigns.merge(platform, 1, Integer::sum);
                         successfulCoverage.add(offering.radarCompanyId() + "|" + platform);
                         store.availability(offering.radarCompanyId(), platform, "FOUND",
@@ -137,8 +146,10 @@ public class AutonomousDiligenceService {
                 }
             }
 
-            List<FinancialPeriod> financials = financialExtractor.extract(offering, secFacts);
-            List<EvidenceDraft> evidence = secEvidence(offering, secFacts, financials);
+            List<FinancialPeriod> financials = offering.secFilingUrl() == null
+                    ? List.of() : financialExtractor.extract(offering, secFacts);
+            List<EvidenceDraft> evidence = offering.secFilingUrl() == null
+                    ? new ArrayList<>() : secEvidence(offering, secFacts, financials);
             Map<String, String> platformFacts = campaign == null ? Map.of() : campaign.facts();
             if (campaign != null) evidence.addAll(platformEvidence(campaign));
             List<String> discrepancies = reconciler.reconcile(secFacts, platformFacts);
@@ -176,8 +187,10 @@ public class AutonomousDiligenceService {
                     requests, platformCampaigns.getOrDefault(platform, 0), failure);
         }
         SendCounts sends = notifications.sendPending();
+        int queueAfter = store.actionablePacketCount();
         return new RunResult(companies.size(), considered, identities, campaigns, ready, partial, review,
-                platformErrors, aiFallbacks, queued, sends.sent(), sends.failed(), List.copyOf(errors), discovery);
+                platformErrors, aiFallbacks, queued, sends.sent(), sends.failed(), List.copyOf(errors), discovery,
+                nativeResult, nativeResult.reviewQueueBefore(), queueAfter);
     }
 
     public Packet refresh(long packetId) {
@@ -189,16 +202,21 @@ public class AutonomousDiligenceService {
     private void initializeAvailability(List<Company> companies, Map<Long,List<Offering>> byCompany) {
         for (Company company : companies) {
             List<Offering> found = byCompany.getOrDefault(company.id(), List.of());
-            store.availability(company.id(), "SEC_REG_CF", found.isEmpty() ? "NONE_FOUND" : "FOUND",
-                    found.isEmpty() ? "SEC Reg CF records checked; no matched offering found."
-                            : found.size() + " matched SEC Reg CF offering record(s).", null);
+            List<Offering> secFound = found.stream().filter(value -> value.secFilingUrl() != null).toList();
+            store.availability(company.id(), "SEC_REG_CF", secFound.isEmpty() ? "NONE_FOUND" : "FOUND",
+                    secFound.isEmpty() ? "SEC Reg CF records checked; no matched offering found."
+                            : secFound.size() + " matched SEC Reg CF offering record(s).", null);
             for (String platform : PLATFORM_SOURCES) {
                 boolean known = found.stream().anyMatch(value -> platform.equals(normalizePlatform(value.platform()))
                         || hostMatches(value.offeringUrl(), platform));
-                store.availabilityIfAbsent(company.id(), platform, known ? "POSSIBLE" : "NOT_CHECKED",
-                        known ? "Platform evidence is queued for targeted verification."
-                                : "No bounded public campaign check has been recorded yet.",
-                        known ? null : "Does this company have a public " + platform + " campaign not linked from SEC evidence?");
+                if (known) {
+                    store.availability(company.id(), platform, "FOUND",
+                            "A current public offering record was captured by native intake or SEC evidence.", null);
+                } else {
+                    store.availabilityIfAbsent(company.id(), platform, "NOT_CHECKED",
+                            "No bounded public campaign check has been recorded yet.",
+                            "Does this company have a public " + platform + " campaign not linked from SEC evidence?");
+                }
             }
         }
     }
@@ -283,7 +301,9 @@ public class AutonomousDiligenceService {
     }
 
     private static String summary(Offering offering, Analysis analysis, PacketStatus status) {
-        String base = analysis == null ? offering.issuerName() + " has an SEC-filed Regulation Crowdfunding offering."
+        String base = analysis == null ? offering.issuerName() + (offering.secFilingUrl() == null
+                ? " has a public platform Regulation Crowdfunding listing; SEC reconciliation is not yet established."
+                : " has an SEC-filed Regulation Crowdfunding offering.")
                 : analysis.summary();
         return base + " Diligence status: " + status.name().replace('_', ' ') + ".";
     }

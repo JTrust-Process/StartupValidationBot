@@ -203,12 +203,12 @@ export interface RadarOffering {
   radarCompanyId: number | null;
   companyName: string | null;
   issuerName: string;
-  issuerCik: string;
+  issuerCik: string | null;
   platform: string;
   intermediaryName: string | null;
   offeringUrl: string | null;
-  secFilingUrl: string;
-  accessionNumber: string;
+  secFilingUrl: string | null;
+  accessionNumber: string | null;
   fileNumber: string | null;
   filingType: string;
   filingDate: string;
@@ -227,6 +227,9 @@ export interface RadarOffering {
   matchReason: string;
   firstSeenAt: string;
   lastSeenAt: string;
+  provenance: 'SEC_EDGAR' | 'PLATFORM_OFFERING';
+  reconciliationStatus: 'PLATFORM_CONFIRMED' | 'SEC_RECONCILED' | 'POSSIBLE' | 'NEEDS_REVIEW';
+  platformStatus: 'ACTIVE' | 'RESERVATION' | 'CLOSING_SOON' | 'CLOSED' | 'WITHDRAWN' | 'TERMINATED' | 'UNKNOWN' | null;
 }
 
 export interface OfferingDiagnostics {
@@ -377,6 +380,36 @@ export interface CompanyInvestmentAvailability {
       requests: number;
       candidates: number;
       resolved: number;
+      error: string | null;
+    }>;
+    nativeCandidatesFound: number;
+    nativeActiveCandidates: number;
+    nativeNewCompanies: number;
+    nativeMatchedCompanies: number;
+    nativeNewOfferings: number;
+    nativeUpdatedOfferings: number;
+    nativeDuplicatesPrevented: number;
+    nativePossible: number;
+    nativeRejected: number;
+    nativeErrors: number;
+    nativeSecRecentInspected: number;
+    nativeSecPlatformClassified: number;
+    nativeSecReconciled: number;
+    reviewQueueBefore: number;
+    reviewQueueAfter: number;
+    nativeSources: Array<{
+      source: string;
+      capability: string;
+      status: string;
+      lastCheckedAt: string | null;
+      directoryFetched: boolean;
+      requests: number;
+      detailRequests: number;
+      candidates: number;
+      activeCandidates: number;
+      inserted: number;
+      matched: number;
+      rejected: number;
       error: string | null;
     }>;
     platforms: Array<{

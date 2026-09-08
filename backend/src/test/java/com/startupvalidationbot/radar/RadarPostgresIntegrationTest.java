@@ -53,6 +53,10 @@ import com.startupvalidationbot.offering.OfferingDomain.Match;
 import com.startupvalidationbot.offering.OfferingDomain.MatchStatus;
 import com.startupvalidationbot.offering.OfferingMatchService;
 import com.startupvalidationbot.offering.OfferingStore;
+import com.startupvalidationbot.offering.intake.NativeOfferingDomain.NativeOfferingCandidate;
+import com.startupvalidationbot.offering.intake.NativeOfferingDomain.ReconciliationStatus;
+import com.startupvalidationbot.offering.intake.NativeOfferingDomain.Status;
+import com.startupvalidationbot.offering.intake.NativeOfferingStore;
 
 /**
  * Production-representative persistence coverage.
@@ -123,6 +127,9 @@ class RadarPostgresIntegrationTest {
     private DiligenceStore diligenceStore;
 
     @Autowired
+    private NativeOfferingStore nativeOfferingStore;
+
+    @Autowired
     private CampaignDiscoveryStore campaignDiscoveryStore;
 
     @Test
@@ -142,6 +149,7 @@ class RadarPostgresIntegrationTest {
         assertThat(applied).anyMatch(script -> script.contains("V11__"));
         assertThat(applied).anyMatch(script -> script.contains("V12__"));
         assertThat(applied).anyMatch(script -> script.contains("V13__"));
+        assertThat(applied).anyMatch(script -> script.contains("V14__"));
 
         // V4 brought the legacy diligence tables under Flyway. The context booting with
         // ddl-auto=validate is itself the assertion that the JPA mapping matches them.
@@ -155,6 +163,8 @@ class RadarPostgresIntegrationTest {
         assertThat(tableExists("radar_diligence_packets")).isTrue();
         assertThat(tableExists("radar_notification_events")).isTrue();
         assertThat(tableExists("radar_campaign_discovery_results")).isTrue();
+        assertThat(tableExists("radar_native_offering_candidates")).isTrue();
+        assertThat(tableExists("radar_native_offering_source_state")).isTrue();
     }
 
     @Test
@@ -542,6 +552,40 @@ class RadarPostgresIntegrationTest {
         // The export must never carry raw discovery text or source configuration.
         assertThat(export.discoveries()).allSatisfy(discovery ->
                 assertThat(discovery.rawTextHash()).isNotNull());
+    }
+
+    @Test
+    void persistsNativePlatformOfferingIdempotentlyOnPostgres() {
+        Company company = store.upsertCompany(new Candidate("postgres-native", "native-one",
+                "Postgres Native Co", "https://postgres-native.example", "Public Reg CF offering.",
+                "Infrastructure", List.of("Infrastructure", "Reg CF"), null, null,
+                "https://republic.com/postgres-native", LocalDateTime.now(), "Reg CF active")).company();
+        LocalDateTime now = LocalDateTime.now();
+        NativeOfferingCandidate candidate = new NativeOfferingCandidate("REPUBLIC_DIRECTORY", "Republic",
+                "postgres-native", "Postgres Native Co", "https://republic.com/postgres-native",
+                company.websiteUrl(), company.domain(), Status.ACTIVE, "REG_CF", "Republic Funding Portal",
+                "Crowd SAFE", new BigDecimal("250000"), new BigDecimal("100000"),
+                new BigDecimal("1235000"), "$12M valuation cap", new BigDecimal("100"), null,
+                LocalDate.now().plusDays(30), "Infrastructure", "Public Reg CF offering.", null,
+                null, null, null, null, null, Map.of("listingText", "Reg CF active"), now);
+        Match match = new Match(company.id(), MatchStatus.CONFIRMED, 100, "Exact domain.");
+
+        assertThat(nativeOfferingStore.saveCandidate(candidate, ReconciliationStatus.PLATFORM_CONFIRMED,
+                "CONFIRMED", 100, true)).isTrue();
+        assertThat(nativeOfferingStore.saveCandidate(candidate, ReconciliationStatus.PLATFORM_CONFIRMED,
+                "CONFIRMED", 100, true)).isFalse();
+        long first = nativeOfferingStore.upsertPlatformOffering(candidate, match,
+                ReconciliationStatus.PLATFORM_CONFIRMED).offeringId();
+        long second = nativeOfferingStore.upsertPlatformOffering(candidate, match,
+                ReconciliationStatus.PLATFORM_CONFIRMED).offeringId();
+
+        assertThat(second).isEqualTo(first);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_offerings WHERE native_candidate_key IS NOT NULL",
+                Integer.class)).isEqualTo(1);
+        assertThat(offeringStore.find(first)).get().satisfies(offering -> {
+            assertThat(offering.provenance()).isEqualTo("PLATFORM_OFFERING");
+            assertThat(offering.accessionNumber()).isNull();
+        });
     }
 
     private RadarLoginThrottle newThrottle() {

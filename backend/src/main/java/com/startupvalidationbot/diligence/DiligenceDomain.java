@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.startupvalidationbot.diligence.discovery.CampaignDiscoveryDomain;
+import com.startupvalidationbot.offering.intake.NativeOfferingDomain;
 
 public final class DiligenceDomain {
     private DiligenceDomain() { }
@@ -57,7 +58,18 @@ public final class DiligenceDomain {
     public record RunResult(int companiesConsidered, int offeringsConsidered, int identitiesResolved,
             int campaignsResolved, int packetsReady, int packetsPartial, int needsReview,
             int platformErrors, int aiFallbacks, int emailsQueued, int emailsSent, int emailsFailed,
-            List<String> errors, CampaignDiscoveryDomain.RunResult campaignDiscovery) { }
+            List<String> errors, CampaignDiscoveryDomain.RunResult campaignDiscovery,
+            NativeOfferingDomain.RunResult nativeIntake, int reviewQueueBefore, int reviewQueueAfter) {
+
+        public RunResult(int companiesConsidered, int offeringsConsidered, int identitiesResolved,
+                int campaignsResolved, int packetsReady, int packetsPartial, int needsReview,
+                int platformErrors, int aiFallbacks, int emailsQueued, int emailsSent, int emailsFailed,
+                List<String> errors, CampaignDiscoveryDomain.RunResult campaignDiscovery) {
+            this(companiesConsidered, offeringsConsidered, identitiesResolved, campaignsResolved,
+                    packetsReady, packetsPartial, needsReview, platformErrors, aiFallbacks, emailsQueued,
+                    emailsSent, emailsFailed, errors, campaignDiscovery, NativeOfferingDomain.RunResult.empty(), 0, 0);
+        }
+    }
 
     public record PlatformDiagnostic(String platform, LocalDateTime lastCheckedAt, String status,
             int requests, int campaignsFound, String error) { }
@@ -74,5 +86,11 @@ public final class DiligenceDomain {
             int campaignCompaniesEligible, int campaignCompaniesSearched,
             int campaignCandidatesFound, int campaignConfirmed, int campaignPossible,
             int campaignRejected, int campaignCacheHits, int campaignDiscoveryErrors,
-            List<CampaignDiscoveryDomain.PlatformDiagnostic> campaignDiscoveryPlatforms) { }
+            List<CampaignDiscoveryDomain.PlatformDiagnostic> campaignDiscoveryPlatforms,
+            int nativeCandidatesFound, int nativeActiveCandidates, int nativeNewCompanies,
+            int nativeMatchedCompanies, int nativeNewOfferings, int nativeUpdatedOfferings,
+            int nativeDuplicatesPrevented, int nativePossible, int nativeRejected, int nativeErrors,
+            int nativeSecRecentInspected, int nativeSecPlatformClassified, int nativeSecReconciled,
+            int reviewQueueBefore, int reviewQueueAfter,
+            List<NativeOfferingDomain.SourceDiagnostic> nativeSources) { }
 }

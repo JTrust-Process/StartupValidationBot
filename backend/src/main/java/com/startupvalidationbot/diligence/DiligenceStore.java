@@ -40,9 +40,21 @@ public class DiligenceStore {
                   o.match_status='CONFIRMED' OR
                   (o.match_status='LIKELY' AND o.match_confidence >= 75) OR
                   w.company_id IS NOT NULL)
+                  AND (o.status IN ('ACTIVE','POSSIBLY_ACTIVE')
+                    OR (o.status='UNKNOWN' AND o.updated_at >= ?))
                 ORDER BY CASE o.match_status WHEN 'CONFIRMED' THEN 0 ELSE 1 END,
                   o.updated_at DESC LIMIT ?
-                """, Long.class, Math.max(1, Math.min(limit, 100)));
+                """, Long.class, LocalDateTime.now().minusDays(30), Math.max(1, Math.min(limit, 100)));
+    }
+
+    public int actionablePacketCount() {
+        Integer value = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM radar_diligence_packets p
+                JOIN radar_offerings o ON o.id=p.offering_id
+                WHERE o.status IN ('ACTIVE','POSSIBLY_ACTIVE')
+                  OR (o.status='UNKNOWN' AND o.updated_at >= ?)
+                """, Integer.class, LocalDateTime.now().minusDays(30));
+        return value == null ? 0 : value;
     }
 
     @Transactional
@@ -317,7 +329,15 @@ public class DiligenceStore {
                 jobInt(job.json,"campaignCandidatesFound"), jobInt(job.json,"campaignConfirmed"),
                 jobInt(job.json,"campaignPossible"), jobInt(job.json,"campaignRejected"),
                 jobInt(job.json,"campaignCacheHits"), jobInt(job.json,"campaignDiscoveryErrors"),
-                campaignDiscoveryDiagnostics());
+                campaignDiscoveryDiagnostics(),
+                jobInt(job.json,"nativeCandidatesFound"), jobInt(job.json,"nativeActiveCandidates"),
+                jobInt(job.json,"nativeNewCompanies"), jobInt(job.json,"nativeMatchedCompanies"),
+                jobInt(job.json,"nativeNewOfferings"), jobInt(job.json,"nativeUpdatedOfferings"),
+                jobInt(job.json,"nativeDuplicatesPrevented"), jobInt(job.json,"nativePossible"),
+                jobInt(job.json,"nativeRejected"), jobInt(job.json,"nativeErrors"),
+                jobInt(job.json,"nativeSecRecentInspected"), jobInt(job.json,"nativeSecPlatformClassified"),
+                jobInt(job.json,"nativeSecReconciled"), jobInt(job.json,"reviewQueueBefore"),
+                jobInt(job.json,"reviewQueueAfter"), nativeOfferingDiagnostics());
     }
 
     private List<com.startupvalidationbot.diligence.discovery.CampaignDiscoveryDomain.PlatformDiagnostic>
@@ -330,6 +350,18 @@ public class DiligenceStore {
                 rs.getString(1), rs.getString(2), time(rs.getTimestamp(3)), time(rs.getTimestamp(4)),
                 time(rs.getTimestamp(5)), rs.getString(6), rs.getInt(7), rs.getInt(8), rs.getInt(9),
                 rs.getString(10)));
+    }
+
+    private List<com.startupvalidationbot.offering.intake.NativeOfferingDomain.SourceDiagnostic>
+            nativeOfferingDiagnostics() {
+        return jdbc.query("SELECT * FROM radar_native_offering_source_state ORDER BY source",
+                (rs, row) -> new com.startupvalidationbot.offering.intake.NativeOfferingDomain.SourceDiagnostic(
+                rs.getString("source"), rs.getString("capability"), rs.getString("last_status"),
+                time(rs.getTimestamp("last_checked_at")), rs.getBoolean("directory_fetched"),
+                rs.getInt("requests_made"), rs.getInt("detail_requests"),
+                rs.getInt("candidates_found"), rs.getInt("active_candidates"),
+                rs.getInt("offerings_inserted"), rs.getInt("companies_matched"),
+                rs.getInt("candidates_rejected"), rs.getString("last_error")));
     }
 
     private Packet packet(PacketRow row) {

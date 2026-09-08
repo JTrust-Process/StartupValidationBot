@@ -258,8 +258,16 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
         return matcher.find() ? matcher.group(1).trim() : null;
     }
 
-    private static String submissionTextUrl(String path) {
-        String normalized = path.startsWith("edgar/") ? path.substring(6) : path;
+    static String submissionTextUrl(String path) {
+        String normalized = path.startsWith("/") ? path.substring(1) : path;
+        Matcher flatSubmission = Pattern.compile(
+                "^edgar/data/(\\d+)/(\\d{10}-\\d{2}-\\d{6})\\.txt$",
+                Pattern.CASE_INSENSITIVE).matcher(normalized);
+        if (flatSubmission.matches()) {
+            String accession = flatSubmission.group(2);
+            normalized = "edgar/data/" + flatSubmission.group(1) + "/"
+                    + accession.replace("-", "") + "/" + accession + ".txt";
+        }
         return "https://www.sec.gov/Archives/" + normalized;
     }
 

@@ -60,6 +60,12 @@ public class DiligenceStore {
     @Transactional
     public synchronized PlatformCampaign upsertCampaign(PlatformCampaign campaign) {
         lockOffering(campaign.offeringId());
+        PlatformCampaign existing = findCampaign(campaign.offeringId()).orElse(null);
+        if (existing != null && java.util.Objects.equals(existing.platform(), campaign.platform())
+                && java.util.Objects.equals(existing.campaignUrl(), campaign.campaignUrl())
+                && sourceRank(existing.campaignUrlSource()) > sourceRank(campaign.campaignUrlSource())) {
+            return existing;
+        }
         LocalDateTime now = LocalDateTime.now();
         int updated = jdbc.update("""
                 UPDATE radar_platform_campaigns SET offering_id=?, campaign_url_source=?,
@@ -365,13 +371,16 @@ public class DiligenceStore {
     }
 
     private Packet packet(PacketRow row) {
+        EffectiveOfferingTerms.Projection terms = EffectiveOfferingTerms.resolve(row.offeringTerms, row.campaign);
         return new Packet(row.id, row.companyId, row.companyName, row.offeringId, row.platform,
-                row.campaignUrl, row.secFilingUrl, PacketStatus.valueOf(row.status), row.identityStatus,
+                terms.campaignUrl(), row.secFilingUrl, PacketStatus.valueOf(row.status), row.identityStatus,
                 row.completeness, row.confidence, row.summary, readList(row.bullCase), readList(row.bearCase),
                 readList(row.keyRisks), readList(row.questions), readList(row.discrepancies), readList(row.milestones),
                 readList(row.sources), readList(row.dataNotFound), row.generatedAt, row.refreshedAt, row.reviewedAt,
-                row.securityType, row.minimum, row.target, row.maximum, row.raised, row.valuationOrCap, row.deadline,
-                evidence(row.id), financials(row.id));
+                terms.securityType(), terms.minimumInvestment(), terms.targetAmount(), terms.maximumAmount(),
+                terms.amountRaised(), terms.valuationOrCap(), terms.deadline(), evidence(row.id), financials(row.id),
+                terms.valuation(), terms.valuationCap(), terms.platformStatus(), terms.platformIdentityStatus(),
+                terms.secReconciliationStatus(), terms.provenance());
     }
 
     private List<Evidence> evidence(long packetId) {
@@ -395,9 +404,22 @@ public class DiligenceStore {
     }
 
     private String packetSelect() { return """
-            SELECT p.*,c.name company_name,o.platform,o.offering_url,o.sec_filing_url,o.security_type,
-              o.minimum_investment,o.target_amount,o.maximum_amount,o.amount_raised,o.valuation_or_cap,o.deadline,
-              pc.campaign_url
+            SELECT p.*,c.name company_name,o.platform,o.offering_url,o.sec_filing_url,
+              o.provenance offering_provenance,o.platform_status offering_platform_status,
+              o.security_type offering_security_type,o.minimum_investment offering_minimum_investment,
+              o.target_amount offering_target_amount,o.maximum_amount offering_maximum_amount,
+              o.amount_raised offering_amount_raised,o.valuation_or_cap offering_valuation_or_cap,
+              o.deadline offering_deadline,
+              pc.id campaign_id,pc.platform campaign_platform,pc.campaign_url,pc.campaign_url_source,
+              pc.campaign_url_confidence,pc.campaign_status,pc.issuer_name campaign_issuer_name,
+              pc.security_type campaign_security_type,pc.minimum_investment campaign_minimum_investment,
+              pc.price_per_share campaign_price_per_share,pc.valuation campaign_valuation,
+              pc.valuation_cap campaign_valuation_cap,pc.discount_percent campaign_discount_percent,
+              pc.target_amount campaign_target_amount,pc.maximum_amount campaign_maximum_amount,
+              pc.amount_raised campaign_amount_raised,pc.investor_count campaign_investor_count,
+              pc.deadline campaign_deadline,pc.headline campaign_headline,pc.facts_json campaign_facts_json,
+              pc.source_fingerprint campaign_source_fingerprint,pc.last_checked_at campaign_last_checked_at,
+              pc.last_verified_at campaign_last_verified_at
             FROM radar_diligence_packets p JOIN radar_companies c ON c.id=p.radar_company_id
             JOIN radar_offerings o ON o.id=p.offering_id LEFT JOIN radar_platform_campaigns pc ON pc.id=(
               SELECT x.id FROM radar_platform_campaigns x WHERE x.offering_id=o.id
@@ -405,17 +427,36 @@ public class DiligenceStore {
             """; }
 
     private org.springframework.jdbc.core.RowMapper<PacketRow> packetRowMapper() {
-        return (rs, row) -> new PacketRow(rs.getLong("id"), rs.getLong("radar_company_id"), rs.getString("company_name"),
-                rs.getLong("offering_id"), rs.getString("platform"), rs.getString("campaign_url"),
-                rs.getString("sec_filing_url"), rs.getString("status"), rs.getString("identity_status"),
+        return (rs, row) -> {
+            Long campaignId = (Long) rs.getObject("campaign_id");
+            PlatformCampaign campaign = campaignId == null ? null : new PlatformCampaign(campaignId,
+                    rs.getLong("offering_id"), rs.getString("campaign_platform"), rs.getString("campaign_url"),
+                    rs.getString("campaign_url_source"), rs.getInt("campaign_url_confidence"),
+                    CampaignStatus.valueOf(rs.getString("campaign_status")), rs.getString("campaign_issuer_name"),
+                    rs.getString("campaign_security_type"), rs.getBigDecimal("campaign_minimum_investment"),
+                    rs.getBigDecimal("campaign_price_per_share"), rs.getBigDecimal("campaign_valuation"),
+                    rs.getBigDecimal("campaign_valuation_cap"), rs.getBigDecimal("campaign_discount_percent"),
+                    rs.getBigDecimal("campaign_target_amount"), rs.getBigDecimal("campaign_maximum_amount"),
+                    rs.getBigDecimal("campaign_amount_raised"), (Integer) rs.getObject("campaign_investor_count"),
+                    rs.getObject("campaign_deadline", LocalDate.class), rs.getString("campaign_headline"),
+                    readMap(rs.getString("campaign_facts_json")), rs.getString("campaign_source_fingerprint"),
+                    time(rs.getTimestamp("campaign_last_checked_at")), time(rs.getTimestamp("campaign_last_verified_at")));
+            EffectiveOfferingTerms.SourceValues offeringTerms = new EffectiveOfferingTerms.SourceValues(
+                    rs.getString("offering_provenance"), rs.getString("platform"), rs.getString("offering_url"),
+                    rs.getString("sec_filing_url"), rs.getString("offering_security_type"),
+                    rs.getBigDecimal("offering_minimum_investment"), rs.getBigDecimal("offering_target_amount"),
+                    rs.getBigDecimal("offering_maximum_amount"), rs.getBigDecimal("offering_amount_raised"),
+                    rs.getString("offering_valuation_or_cap"), rs.getObject("offering_deadline", LocalDate.class),
+                    rs.getString("offering_platform_status"));
+            return new PacketRow(rs.getLong("id"), rs.getLong("radar_company_id"), rs.getString("company_name"),
+                rs.getLong("offering_id"), rs.getString("platform"), rs.getString("sec_filing_url"),
+                offeringTerms, campaign, rs.getString("status"), rs.getString("identity_status"),
                 rs.getInt("completeness"), rs.getInt("confidence"), rs.getString("summary"), rs.getString("bull_case"),
                 rs.getString("bear_case"), rs.getString("key_risks"), rs.getString("unanswered_questions"),
                 rs.getString("material_discrepancies"), rs.getString("next_monitoring_milestones"),
                 rs.getString("sources_checked"), rs.getString("data_not_found"), time(rs.getTimestamp("generated_at")),
-                time(rs.getTimestamp("last_refreshed_at")), time(rs.getTimestamp("reviewed_at")),
-                rs.getString("security_type"), rs.getBigDecimal("minimum_investment"), rs.getBigDecimal("target_amount"),
-                rs.getBigDecimal("maximum_amount"), rs.getBigDecimal("amount_raised"), rs.getString("valuation_or_cap"),
-                rs.getObject("deadline", LocalDate.class));
+                time(rs.getTimestamp("last_refreshed_at")), time(rs.getTimestamp("reviewed_at")));
+        };
     }
 
     private int jobInt(String value, String field) {
@@ -435,6 +476,14 @@ public class DiligenceStore {
     private Map<String,Object> readObjectMap(String value) { try { return json.readValue(value, new TypeReference<>() { }); } catch (Exception error) { return Map.of(); } }
     private static String bounded(String value, int max) { return value == null ? null : value.substring(0, Math.min(max, value.length())); }
     private static LocalDateTime time(Timestamp value) { return value == null ? null : value.toLocalDateTime(); }
+    private static int sourceRank(String value) {
+        return switch (value == null ? "" : value) {
+            case "PUBLIC_CAMPAIGN_URL" -> 3;
+            case "SEC_OFFERING_URL" -> 2;
+            case "PUBLIC_LIVE_DIRECTORY" -> 1;
+            default -> 0;
+        };
+    }
 
     public record PacketDraft(long companyId, long offeringId, PacketStatus status, String identityStatus,
             int completeness, int confidence, String summary, List<String> bullCase, List<String> bearCase,
@@ -446,10 +495,10 @@ public class DiligenceStore {
             String rawExcerpt, Map<String,Object> metadata) { }
     public record NotificationEvent(long id, String recipient, String subject, String text, String html, int attempts) { }
     private record JobSummary(String status, LocalDateTime startedAt, LocalDateTime completedAt, String json) { }
-    private record PacketRow(long id,long companyId,String companyName,long offeringId,String platform,String campaignUrl,
-            String secFilingUrl,String status,String identityStatus,int completeness,int confidence,String summary,
+    private record PacketRow(long id,long companyId,String companyName,long offeringId,String platform,
+            String secFilingUrl,EffectiveOfferingTerms.SourceValues offeringTerms,PlatformCampaign campaign,
+            String status,String identityStatus,int completeness,int confidence,String summary,
             String bullCase,String bearCase,String keyRisks,String questions,String discrepancies,String milestones,
-            String sources,String dataNotFound,LocalDateTime generatedAt,LocalDateTime refreshedAt,LocalDateTime reviewedAt,
-            String securityType,BigDecimal minimum,BigDecimal target,BigDecimal maximum,BigDecimal raised,
-            String valuationOrCap,LocalDate deadline) { }
+            String sources,String dataNotFound,LocalDateTime generatedAt,LocalDateTime refreshedAt,
+            LocalDateTime reviewedAt) { }
 }

@@ -19,6 +19,13 @@ function list(items: string[], empty: string): string {
     : `<p class="radar-muted">${escapeHtml(empty)}</p>`;
 }
 
+function termSource(packet: DiligencePacket, key: string): string {
+  const source = packet.termProvenance[key];
+  if (!source) return '<small class="radar-muted">Source not established</small>';
+  const classification = source.classification === 'SEC_FILED_FACT' ? 'SEC-filed fact' : 'Platform issuer claim';
+  return `<small class="radar-muted">Source: ${escapeHtml(source.sourceType)} · ${classification}</small>`;
+}
+
 function evidenceTable(items: DiligenceEvidence[]): string {
   if (!items.length) return '<p class="radar-muted">No evidence in this source class.</p>';
   return `<div class="table-wrap"><table class="data-table"><thead><tr><th>Fact</th><th>Value</th><th>Period</th><th>Source</th></tr></thead><tbody>
@@ -47,13 +54,16 @@ function packetView(packet: DiligencePacket, availability: CompanyInvestmentAvai
     ${packet.materialDiscrepancies.length ? `<div class="notice notice--warning"><strong>Material discrepancies require review.</strong>${list(packet.materialDiscrepancies, '')}</div>` : ''}
     <section class="radar-panel"><h3>Offering Terms</h3><dl class="offering-facts">
       <div><dt>Platform</dt><dd>${escapeHtml(packet.platform || 'Could not establish')}</dd></div>
-      <div><dt>Security</dt><dd>${escapeHtml(packet.securityType || 'Could not establish')}</dd></div>
-      <div><dt>Valuation / cap</dt><dd>${escapeHtml(packet.valuationOrCap || 'Could not establish')}</dd></div>
-      <div><dt>Minimum</dt><dd>${money(packet.minimumInvestment)}</dd></div>
-      <div><dt>Target / maximum</dt><dd>${money(packet.targetAmount)} / ${money(packet.maximumAmount)}</dd></div>
-      <div><dt>Raised</dt><dd>${money(packet.amountRaised)}</dd></div>
-      <div><dt>Deadline</dt><dd>${escapeHtml(packet.deadline ? formatRadarDate(packet.deadline) : 'Could not establish')}</dd></div>
-      <div><dt>Identity</dt><dd>${escapeHtml(packet.identityStatus)}</dd></div></dl></section>
+      <div><dt>Security</dt><dd>${escapeHtml(packet.securityType || 'Could not establish')}${termSource(packet, 'securityType')}</dd></div>
+      <div><dt>Valuation / cap</dt><dd>${escapeHtml(packet.valuationOrCap || 'Could not establish')}${termSource(packet, packet.valuationCap !== null ? 'valuationCap' : 'valuation')}</dd></div>
+      <div><dt>Minimum</dt><dd>${money(packet.minimumInvestment)}${termSource(packet, 'minimumInvestment')}</dd></div>
+      <div><dt>Target / maximum</dt><dd>${money(packet.targetAmount)} / ${money(packet.maximumAmount)}${termSource(packet, packet.targetAmount !== null ? 'targetAmount' : 'maximumAmount')}</dd></div>
+      <div><dt>Raised</dt><dd>${money(packet.amountRaised)}${termSource(packet, 'amountRaised')}</dd></div>
+      <div><dt>Deadline</dt><dd>${escapeHtml(packet.deadline ? formatRadarDate(packet.deadline) : 'Could not establish')}${termSource(packet, 'deadline')}</dd></div>
+      <div><dt>Platform status</dt><dd>${escapeHtml(packet.platformStatus?.replaceAll('_', ' ') || 'Could not establish')}${termSource(packet, 'platformStatus')}</dd></div>
+      <div><dt>Platform identity</dt><dd>${escapeHtml(packet.platformIdentityStatus)}</dd></div>
+      <div><dt>SEC reconciliation</dt><dd>${escapeHtml(packet.secReconciliationStatus)}</dd></div>
+      <div><dt>Radar match</dt><dd>${escapeHtml(packet.identityStatus)}</dd></div></dl></section>
     <section class="radar-panel"><h3>Financial Snapshot</h3>${packet.financials.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Period</th><th>Revenue</th><th>COGS</th><th>Net income</th><th>Cash</th><th>Assets</th><th>Liabilities</th><th>Debt</th></tr></thead><tbody>
       ${packet.financials.map((period) => `<tr><td>${escapeHtml(period.period)}</td><td>${money(period.revenue)}</td><td>${money(period.costOfGoods)}</td><td>${money(period.netIncome)}</td><td>${money(period.cash)}</td><td>${money(period.assets)}</td><td>${money(period.liabilities)}</td><td>${money(totalDebt(period.shortTermDebt, period.longTermDebt))}</td></tr>`).join('')}</tbody></table></div>` : '<p class="radar-muted">Could not establish structured multi-period financials.</p>'}</section>
     <section class="radar-panel"><h3>SEC-Filed Facts</h3>${evidenceTable(secEvidence)}</section>

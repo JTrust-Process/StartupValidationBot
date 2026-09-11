@@ -288,7 +288,9 @@ async function prefillFromDiligence(root: HTMLElement, form: HTMLFormElement, pa
     });
     if (status) status.innerHTML = `<div class="notice notice--neutral">Public facts were prefilled from
       <a href="#/review/${packet.id}">diligence packet ${packet.id}</a>. Review every field before explicitly creating a Deal Scout workspace.
-      Filed facts and issuer claims remain separate in the source packet.</div>`;
+      Filed facts and issuer claims remain separate in the source packet. Effective terms retain their source classification;
+      platform identity is ${escapeHtml(packet.platformIdentityStatus.toLowerCase())}, while SEC reconciliation is
+      ${escapeHtml(packet.secReconciliationStatus.toLowerCase())}.</div>`;
   } catch (error) {
     if (status) status.innerHTML = `<div class="notice notice--warning">Could not load the diligence packet. ${escapeHtml(error instanceof Error ? error.message : '')}</div>`;
   }

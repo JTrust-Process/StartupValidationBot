@@ -38,7 +38,8 @@ class RepublicNativeOfferingAdapterTest {
             assertThat(value.amountRaised()).isEqualByComparingTo("642000");
             assertThat(value.minimumInvestment()).isEqualByComparingTo("250");
             assertThat(value.valuationOrCap()).isEqualTo("$18M valuation cap");
-            assertThat(value.securityType()).contains("SAFE");
+            assertThat(value.securityType()).isEqualTo("SAFE");
+            assertThat(value.sourceEvidence().get("securityTypeRaw")).contains("SAFE");
         });
         assertThat(candidates.get(1).status()).isEqualTo(Status.RESERVATION);
         assertThat(candidates.get(1).actionableRegCf()).isTrue();
@@ -83,5 +84,23 @@ class RepublicNativeOfferingAdapterTest {
         assertThat(result.status()).isEqualTo("UNAVAILABLE");
         assertThat(result.candidates()).isEmpty();
         assertThat(result.errors()).singleElement().asString().contains("HTTP 403");
+    }
+
+    @Test
+    void normalizesExplicitSecuritiesAndRejectsNearbySentenceFragments() {
+        String html = """
+                <a href="/hope"><h3>Hope Neuron</h3><p>Republic Funding Portal · Reg CF
+                Common Stock shares Common stock issued by the company security type $500 minimum investment</p></a>
+                <a href="/olo"><h3>Olo Test</h3><p>Republic Funding Portal · Reg CF
+                offered on or off this investment platform security type $100 minimum investment</p></a>
+                """;
+
+        var candidates = RepublicNativeOfferingAdapter.parseDirectory(html, 25, LocalDateTime.now());
+
+        assertThat(candidates).hasSize(2);
+        assertThat(candidates.get(0).securityType()).isEqualTo("Common Stock");
+        assertThat(candidates.get(1).securityType()).isNull();
+        assertThat(candidates.get(1).sourceEvidence().get("securityTypeRaw"))
+                .contains("offered on or off this investment platform");
     }
 }

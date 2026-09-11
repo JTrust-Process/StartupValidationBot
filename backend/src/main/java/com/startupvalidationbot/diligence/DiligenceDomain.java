@@ -17,7 +17,12 @@ public final class DiligenceDomain {
         SEC_FILED_FACT, PLATFORM_ISSUER_CLAIM, ISSUER_WEBSITE_CLAIM,
         PUBLIC_REPORTING, DETERMINISTIC_INFERENCE, AI_SYNTHESIS
     }
-    public enum CampaignStatus { ACTIVE, FUNDED, CLOSED, RESERVATION, UNKNOWN, UNAVAILABLE }
+    public enum CampaignStatus {
+        ACTIVE, RESERVATION, CLOSING_SOON, FUNDED, CLOSED, WITHDRAWN, TERMINATED, UNKNOWN, UNAVAILABLE
+    }
+
+    public record TermProvenance(String sourceType, String sourceUrl,
+            EvidenceClassification classification) { }
 
     public record Evidence(long id, String sourceType, String sourceUrl, String sourceTitle,
             String factKey, String factValue, String period, EvidenceClassification classification,
@@ -47,7 +52,9 @@ public final class DiligenceDomain {
             LocalDateTime reviewedAt, String securityType, BigDecimal minimumInvestment,
             BigDecimal targetAmount, BigDecimal maximumAmount, BigDecimal amountRaised,
             String valuationOrCap, LocalDate deadline, List<Evidence> evidence,
-            List<FinancialPeriod> financials) { }
+            List<FinancialPeriod> financials, BigDecimal valuation, BigDecimal valuationCap,
+            String platformStatus, String platformIdentityStatus, String secReconciliationStatus,
+            Map<String, TermProvenance> termProvenance) { }
 
     public record AvailabilityCheck(String sourceType, String status, String resultSummary,
             String unresolvedQuestion, LocalDateTime checkedAt) { }

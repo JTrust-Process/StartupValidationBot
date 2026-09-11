@@ -296,6 +296,12 @@ export interface DiligenceFinancialPeriod {
   sourceUrl: string | null;
 }
 
+export interface DiligenceTermProvenance {
+  sourceType: string;
+  sourceUrl: string | null;
+  classification: 'SEC_FILED_FACT' | 'PLATFORM_ISSUER_CLAIM';
+}
+
 export interface DiligencePacket {
   id: number;
   radarCompanyId: number;
@@ -329,6 +335,12 @@ export interface DiligencePacket {
   deadline: string | null;
   evidence: DiligenceEvidence[];
   financials: DiligenceFinancialPeriod[];
+  valuation: number | null;
+  valuationCap: number | null;
+  platformStatus: string | null;
+  platformIdentityStatus: string;
+  secReconciliationStatus: string;
+  termProvenance: Record<string, DiligenceTermProvenance>;
 }
 
 export interface InvestmentAvailabilityCheck {

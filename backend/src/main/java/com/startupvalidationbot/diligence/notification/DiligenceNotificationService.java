@@ -8,6 +8,7 @@ import com.startupvalidationbot.diligence.DiligenceDomain.PlatformCampaign;
 import com.startupvalidationbot.diligence.DiligenceStore;
 import com.startupvalidationbot.offering.OfferingDomain.MatchStatus;
 import com.startupvalidationbot.offering.OfferingDomain.Offering;
+import com.startupvalidationbot.offering.OfferingDomain.Status;
 import com.startupvalidationbot.radar.ContentHash;
 
 @Service
@@ -43,8 +44,9 @@ public class DiligenceNotificationService {
     }
 
     public boolean queueNewConfirmed(Offering offering, Packet packet) {
-        if (recipient.isBlank() || offering.matchStatus() != MatchStatus.CONFIRMED) return false;
-        String fingerprint = ContentHash.sha256("NEW_CONFIRMED_OFFERING|" + offering.id());
+        if (recipient.isBlank() || offering.matchStatus() != MatchStatus.CONFIRMED
+                || offering.status() != Status.ACTIVE) return false;
+        String fingerprint = ContentHash.sha256("NEW_CONFIRMED_OFFERING|ACTIVE|" + offering.id());
         String subject = "Startup Intelligence - New confirmed offering: " + packet.companyName();
         String text = packet.companyName() + " has a newly confirmed public Regulation Crowdfunding offering.\n\n"
                 + "Platform: " + value(packet.platform()) + "\nSecurity: " + value(packet.securityType())
@@ -58,7 +60,8 @@ public class DiligenceNotificationService {
     }
 
     public boolean queueMaterialChange(PlatformCampaign previous, PlatformCampaign current, Packet packet) {
-        if (recipient.isBlank() || previous == null || !materiallyChanged(previous, current)) return false;
+        if (recipient.isBlank() || !comparableBaseline(previous, current)
+                || !materiallyChanged(previous, current)) return false;
         String fingerprint = ContentHash.sha256("MATERIAL_OFFERING_CHANGE|" + current.offeringId() + "|"
                 + current.sourceFingerprint());
         String subject = "Startup Intelligence - Offering changed: " + packet.companyName();
@@ -85,6 +88,15 @@ public class DiligenceNotificationService {
 
     public boolean configured() { return sender.configured() && !recipient.isBlank(); }
     private String reviewUrl(long packetId) { return appUrl.replace("#/radar", "#/review/" + packetId); }
+    private static boolean comparableBaseline(PlatformCampaign previous, PlatformCampaign current) {
+        return previous != null && current != null
+                && java.util.Objects.equals(previous.platform(), current.platform())
+                && java.util.Objects.equals(previous.campaignUrl(), current.campaignUrl())
+                && java.util.Objects.equals(previous.campaignUrlSource(), current.campaignUrlSource())
+                && rawFingerprint(previous.sourceFingerprint()) && rawFingerprint(current.sourceFingerprint())
+                && !java.util.Objects.equals(previous.sourceFingerprint(), current.sourceFingerprint());
+    }
+    private static boolean rawFingerprint(String value) { return value != null && value.startsWith("raw:"); }
     private static boolean materiallyChanged(PlatformCampaign left, PlatformCampaign right) {
         return !java.util.Objects.equals(left.status(), right.status())
                 || !java.util.Objects.equals(left.securityType(), right.securityType())

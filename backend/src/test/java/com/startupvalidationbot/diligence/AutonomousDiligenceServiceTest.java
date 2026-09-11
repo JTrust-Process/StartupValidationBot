@@ -98,6 +98,10 @@ class AutonomousDiligenceServiceTest {
         when(offerings.facts(1L)).thenReturn(Map.of("REVENUEMOSTRECENTFISCALYEAR", "1000"));
         when(store.findCampaign(1L)).thenReturn(Optional.of(campaign));
         when(campaign.platform()).thenReturn("REPUBLIC");
+        when(campaign.campaignUrl()).thenReturn("https://republic.com/acme");
+        when(campaign.campaignUrlConfidence()).thenReturn(95);
+        when(campaign.status()).thenReturn(DiligenceDomain.CampaignStatus.ACTIVE);
+        when(campaign.securityType()).thenReturn("SAFE");
         when(campaign.facts()).thenReturn(Map.of("amountRaised", "640000"));
         when(campaign.sourceFingerprint()).thenReturn("native-campaign");
         when(financials.extract(any(), any())).thenReturn(List.of(new FinancialPeriod("2025",

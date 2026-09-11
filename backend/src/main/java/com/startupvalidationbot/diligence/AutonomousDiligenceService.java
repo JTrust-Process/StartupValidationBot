@@ -108,7 +108,9 @@ public class AutonomousDiligenceService {
             Offering offering = offerings.find(offeringId).orElse(null);
             if (offering == null || offering.radarCompanyId() == null) continue;
             if (offering.matchStatus() == MatchStatus.CONFIRMED) identities++;
-            Map<String, String> secFacts = offerings.facts(offering.id());
+            Map<String, String> storedFacts = offerings.facts(offering.id());
+            Map<String, String> secFacts = "SEC_EDGAR".equals(offering.provenance())
+                    ? storedFacts : Map.of();
             PlatformCampaign previousCampaign = store.findCampaign(offering.id()).orElse(null);
             PlatformCampaign campaign = previousCampaign;
             List<String> sourcesChecked = new ArrayList<>();
@@ -152,20 +154,22 @@ public class AutonomousDiligenceService {
                     ? new ArrayList<>() : secEvidence(offering, secFacts, financials);
             Map<String, String> platformFacts = campaign == null ? Map.of() : campaign.facts();
             if (campaign != null) evidence.addAll(platformEvidence(campaign));
-            List<String> discrepancies = reconciler.reconcile(secFacts, platformFacts);
+            EffectiveOfferingTerms.Projection terms = EffectiveOfferingTerms.resolve(offering, campaign);
+            List<String> discrepancies = new ArrayList<>(reconciler.reconcile(secFacts, platformFacts));
+            discrepancies.addAll(terms.issues());
             Analysis analysis = queries.detail(offering.radarCompanyId()).latestAnalysis();
             if (analysis == null || "DETERMINISTIC".equals(analysis.analysisOrigin())) aiFallbacks++;
-            PacketStatus status = status(offering, campaign, financials);
+            PacketStatus status = status(offering, terms, financials, discrepancies);
             if (status == PacketStatus.READY) ready++;
             else if (status == PacketStatus.PARTIAL) partial++;
             else if (status == PacketStatus.NEEDS_REVIEW) review++;
-            List<String> missing = missing(offering, campaign, financials);
-            List<String> questions = questions(offering, campaign, financials, discrepancies);
+            List<String> missing = missing(terms, financials);
+            List<String> questions = questions(offering, terms, financials, discrepancies);
             String summary = summary(offering, analysis, status);
             String fingerprint = ContentHash.sha256(offering.id() + "|" + offering.matchStatus() + "|"
                     + secFacts + "|" + (campaign == null ? "" : campaign.sourceFingerprint()) + "|" + status);
             Packet packet = store.savePacket(new PacketDraft(offering.radarCompanyId(), offering.id(), status,
-                    offering.matchStatus().name(), completeness(offering, campaign, financials), confidence(offering, campaign),
+                    offering.matchStatus().name(), completeness(offering, terms, financials), confidence(offering, campaign),
                     summary, analysis == null ? List.of() : analysis.bullCase(),
                     analysis == null ? List.of() : analysis.bearCase(),
                     analysis == null ? deterministicRisks(offering) : analysis.risks(), questions, discrepancies,
@@ -221,9 +225,18 @@ public class AutonomousDiligenceService {
         }
     }
 
-    private static PacketStatus status(Offering offering, PlatformCampaign campaign, List<FinancialPeriod> financials) {
-        if (offering.matchStatus() != MatchStatus.CONFIRMED) return PacketStatus.NEEDS_REVIEW;
-        return campaign != null && !financials.isEmpty() ? PacketStatus.READY : PacketStatus.PARTIAL;
+    static PacketStatus status(Offering offering, EffectiveOfferingTerms.Projection terms,
+            List<FinancialPeriod> financials, List<String> discrepancies) {
+        if (List.of(MatchStatus.AMBIGUOUS, MatchStatus.UNMATCHED, MatchStatus.REJECTED)
+                .contains(offering.matchStatus()) || "NEEDS_REVIEW".equals(offering.reconciliationStatus())
+                || !discrepancies.isEmpty()) return PacketStatus.NEEDS_REVIEW;
+        boolean secReconciled = "Established from SEC-filed offering".equals(terms.secReconciliationStatus());
+        if (offering.matchStatus() == MatchStatus.CONFIRMED && secReconciled
+                && terms.officialCampaignVerified() && !financials.isEmpty()) return PacketStatus.READY;
+        if (offering.matchStatus() == MatchStatus.CONFIRMED) return PacketStatus.PARTIAL;
+        if (offering.matchStatus() == MatchStatus.LIKELY && nativePlatformLinked(offering, terms)
+                && terms.hasUsablePlatformTerms()) return PacketStatus.PARTIAL;
+        return PacketStatus.NEEDS_REVIEW;
     }
 
     private static List<EvidenceDraft> secEvidence(Offering offering, Map<String,String> facts,
@@ -264,14 +277,17 @@ public class AutonomousDiligenceService {
         return evidence;
     }
 
-    private static int completeness(Offering offering, PlatformCampaign campaign, List<FinancialPeriod> financials) {
-        int score = 25;
-        if (offering.matchStatus() == MatchStatus.CONFIRMED) score += 20;
-        if (offering.securityType() != null) score += 10;
-        if (offering.targetAmount() != null || offering.maximumAmount() != null) score += 10;
-        if (offering.deadline() != null) score += 5;
+    static int completeness(Offering offering, EffectiveOfferingTerms.Projection terms,
+            List<FinancialPeriod> financials) {
+        int score = 20;
+        if (offering.matchStatus() == MatchStatus.CONFIRMED) score += 15;
+        if (terms.securityType() != null) score += 10;
+        if (terms.minimumInvestment() != null) score += 5;
+        if (terms.targetAmount() != null || terms.maximumAmount() != null) score += 10;
+        if (terms.valuation() != null || terms.valuationCap() != null) score += 5;
+        if (terms.deadline() != null) score += 5;
         if (!financials.isEmpty()) score += 20;
-        if (campaign != null) score += 10;
+        if (terms.officialCampaignVerified()) score += 10;
         return Math.min(100, score);
     }
 
@@ -281,23 +297,36 @@ public class AutonomousDiligenceService {
         return value;
     }
 
-    private static List<String> missing(Offering offering, PlatformCampaign campaign, List<FinancialPeriod> financials) {
+    static List<String> missing(EffectiveOfferingTerms.Projection terms, List<FinancialPeriod> financials) {
         List<String> missing = new ArrayList<>();
-        if (campaign == null) missing.add("Verified public campaign page");
+        if (!terms.officialCampaignVerified()) missing.add("Verified public campaign page");
         if (financials.isEmpty()) missing.add("Structured multi-period SEC financials");
-        if (offering.minimumInvestment() == null) missing.add("Minimum investment");
-        if (offering.valuationOrCap() == null) missing.add("Valuation or valuation cap");
+        if (terms.securityType() == null) missing.add("Security type");
+        if (terms.minimumInvestment() == null) missing.add("Minimum investment");
+        if (terms.targetAmount() == null && terms.maximumAmount() == null) missing.add("Target or maximum amount");
+        if (terms.valuation() == null && terms.valuationCap() == null) missing.add("Valuation or valuation cap");
+        if (terms.deadline() == null) missing.add("Offering deadline");
         return List.copyOf(missing);
     }
 
-    private static List<String> questions(Offering offering, PlatformCampaign campaign,
+    static List<String> questions(Offering offering, EffectiveOfferingTerms.Projection terms,
             List<FinancialPeriod> financials, List<String> discrepancies) {
         List<String> questions = new ArrayList<>();
-        if (offering.matchStatus() != MatchStatus.CONFIRMED) questions.add("Does the issuer website domain independently match the tracked company?");
-        if (campaign == null) questions.add("What is the canonical public campaign URL, if one exists?");
+        if (offering.matchStatus() != MatchStatus.CONFIRMED && !nativePlatformLinked(offering, terms)) {
+            questions.add("Does the issuer website domain independently match the tracked company?");
+        }
+        if (!terms.officialCampaignVerified()) questions.add("What is the canonical public campaign URL, if one exists?");
+        if ("Not established".equals(terms.secReconciliationStatus())) {
+            questions.add("Can the platform issuer be reconciled to an SEC Form C legal issuer?");
+        }
         if (financials.isEmpty()) questions.add("Which financial periods are disclosed in the filed Form C exhibits?");
         if (!discrepancies.isEmpty()) questions.add("Which source reflects the current filed offering terms?");
         return List.copyOf(questions);
+    }
+
+    private static boolean nativePlatformLinked(Offering offering, EffectiveOfferingTerms.Projection terms) {
+        return "PLATFORM_OFFERING".equals(offering.provenance()) && terms.officialCampaignVerified()
+                && List.of("PLATFORM_CONFIRMED", "SEC_RECONCILED").contains(offering.reconciliationStatus());
     }
 
     private static String summary(Offering offering, Analysis analysis, PacketStatus status) {

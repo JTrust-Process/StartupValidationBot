@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 
 import com.startupvalidationbot.diligence.platform.PlatformHttpClient;
 import com.startupvalidationbot.diligence.platform.PlatformUrlPolicy;
+import com.startupvalidationbot.offering.OfferingTermNormalizer;
 
 @Component
 public class RepublicNativeOfferingAdapter implements NativeOfferingSourceAdapter {
@@ -66,16 +67,21 @@ public class RepublicNativeOfferingAdapter implements NativeOfferingSourceAdapte
             Status status = withDeadline(status(text), deadline);
             Map<String, String> evidence = new LinkedHashMap<>();
             evidence.put("listingText", OfferingHtml.bounded(text, 1800));
+            String rawSecurity = rawSecurity(text);
+            String security = OfferingTermNormalizer.security(rawSecurity);
+            put(evidence, "securityTypeRaw", rawSecurity);
+            put(evidence, "securityType", security);
             put(evidence, "investorCount", OfferingHtml.field(text, "", "([0-9][0-9,]*)\\s+investors?"));
             put(evidence, "statusEvidence", status.name());
             if (!"REG_CF".equals(exemption)) put(evidence, "actionableExclusion", exclusion(text, exemption));
 
             NativeOfferingCandidate candidate = new NativeOfferingCandidate("REPUBLIC_DIRECTORY", "Republic",
                     pathId(canonical), companyName, canonical.toString(), null, null, status, exemption,
-                    intermediary(text), security(text),
-                    OfferingHtml.money(OfferingHtml.field(text, "", "(\\$[0-9][0-9,.]*[KMB]?)\\s+(?:raised|reserved|committed)")),
-                    null, null, valuation(text),
-                    OfferingHtml.money(OfferingHtml.field(text, "", "(\\$[0-9][0-9,.]*[KMB]?)\\s+(?:min\\.?|minimum)\\s+investment")),
+                    intermediary(text), security,
+                    money(text, "raised|reserved|committed"),
+                    money(text, "target(?: offering)? amount|target raise|funding goal"),
+                    money(text, "maximum(?: offering)? amount|maximum raise|max raise"), valuation(text),
+                    money(text, "min\\.? investment|minimum investment"),
                     null, deadline,
                     null, OfferingHtml.bounded(text, 800), null, null, null, null, null, null,
                     Map.copyOf(evidence), retrievedAt);
@@ -135,8 +141,15 @@ public class RepublicNativeOfferingAdapter implements NativeOfferingSourceAdapte
         return "Republic";
     }
 
-    private static String security(String text) {
+    private static String rawSecurity(String text) {
         return OfferingHtml.field(text, "", "([A-Za-z][A-Za-z /-]{1,80})\\s+security type");
+    }
+
+    private static java.math.BigDecimal money(String text, String label) {
+        String raw = OfferingHtml.field(text, "", "(\\$[0-9][0-9,.]*[KMB]?)\\s+(?:" + label + ")");
+        if (raw == null) raw = OfferingHtml.field(text, "(?:" + label + ")",
+                "(\\$[0-9][0-9,.]*[KMB]?)");
+        return OfferingTermNormalizer.money(raw);
     }
 
     private static String valuation(String text) {

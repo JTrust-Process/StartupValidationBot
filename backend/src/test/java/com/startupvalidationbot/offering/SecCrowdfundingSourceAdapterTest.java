@@ -52,6 +52,10 @@ class SecCrowdfundingSourceAdapterTest {
         assertThat(candidate.targetAmount()).isEqualByComparingTo("100000");
         assertThat(candidate.deadline()).isEqualTo(LocalDate.of(2026, 12, 31));
 
+        var usDeadline = SecCrowdfundingSourceAdapter.parseSubmission(records.get(1), submission
+                .replace("2026-12-31", "12-31-2026"));
+        assertThat(usDeadline.deadline()).isEqualTo(LocalDate.of(2026, 12, 31));
+
         var malformed = SecCrowdfundingSourceAdapter.parseSubmission(records.get(4), "<unexpected><xml/></unexpected>");
         assertThat(malformed.issuerName()).isEqualTo("Acme Technologies Inc.");
         assertThat(malformed.filingType()).isEqualTo("C-TR");

@@ -322,9 +322,12 @@ public class NativeOfferingIntakeService {
 
     private static CampaignStatus campaignStatus(Status status) {
         return switch (status) {
-            case ACTIVE, CLOSING_SOON -> CampaignStatus.ACTIVE;
+            case ACTIVE -> CampaignStatus.ACTIVE;
             case RESERVATION -> CampaignStatus.RESERVATION;
-            case CLOSED, WITHDRAWN, TERMINATED -> CampaignStatus.CLOSED;
+            case CLOSING_SOON -> CampaignStatus.CLOSING_SOON;
+            case CLOSED -> CampaignStatus.CLOSED;
+            case WITHDRAWN -> CampaignStatus.WITHDRAWN;
+            case TERMINATED -> CampaignStatus.TERMINATED;
             case UNKNOWN -> CampaignStatus.UNKNOWN;
         };
     }

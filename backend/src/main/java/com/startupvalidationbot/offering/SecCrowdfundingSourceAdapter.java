@@ -295,8 +295,8 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
     private static String value(String first, String second) { return blank(first) ? second : first; }
     private static String padCik(String cik) { return cik == null ? null : String.format("%010d", Long.parseLong(cik.trim())); }
     private static BigDecimal decimal(String value) { try { return blank(value) ? null : new BigDecimal(value.replace(",", "").replace("$", "")); } catch (NumberFormatException e) { return null; } }
-    private static LocalDate date(String value) { try { return blank(value) ? null : LocalDate.parse(value); } catch (RuntimeException e) { return compactDate(value); } }
-    private static LocalDate compactDate(String value) { try { return blank(value) ? null : LocalDate.parse(value, java.time.format.DateTimeFormatter.BASIC_ISO_DATE); } catch (RuntimeException e) { return null; } }
+    private static LocalDate date(String value) { return OfferingTermNormalizer.date(value); }
+    private static LocalDate compactDate(String value) { return OfferingTermNormalizer.date(value); }
     private static boolean blank(String value) { return value == null || value.isBlank(); }
 
     record IndexRecord(String cik, String issuerName, String form, LocalDate filingDate, String path, String accession) { }

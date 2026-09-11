@@ -86,6 +86,9 @@ test('Review Queue and detail keep filed facts separate and never auto-create a 
   assert.match(queue, /Partial/);
   assert.match(detail, /SEC-Filed Facts/);
   assert.match(detail, /Platform \/ Issuer Claims/);
+  assert.match(detail, /termProvenance/);
+  assert.match(detail, /SEC reconciliation/);
+  assert.match(detail, /Platform identity/);
   assert.match(detail, /Material discrepancies require review/);
   assert.match(detail, /Automated Search Coverage/);
   assert.match(detail, /shortTerm === null && longTerm === null/);
@@ -93,6 +96,7 @@ test('Review Queue and detail keep filed facts separate and never auto-create a 
   assert.match(detail, /diligencePacketId=/);
   assert.match(newDeal, /prefillFromDiligence/);
   assert.match(newDeal, /Review every field before explicitly creating/);
+  assert.match(newDeal, /Effective terms retain their source classification/);
   assert.equal((newDeal.match(/createDeal\(/g) || []).length, 1);
   assert.match(newDeal, /form\.addEventListener\('submit'[\s\S]*createDeal\(input\)/);
 });

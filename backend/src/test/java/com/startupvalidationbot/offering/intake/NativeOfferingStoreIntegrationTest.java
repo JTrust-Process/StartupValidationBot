@@ -82,17 +82,24 @@ class NativeOfferingStoreIntegrationTest {
                 platform.platform(), platform.intermediaryName(), null, platform.canonicalUrl(),
                 "https://www.sec.gov/Archives/edgar/data/1234567/filing-index.html",
                 "0001234567-26-000001", "020-12345", "C", LocalDate.now().minusDays(2),
-                platform.securityType(), platform.minimumInvestment(), platform.targetAmount(),
-                platform.maximumAmount(), platform.valuationOrCap(), platform.deadline(),
+                "Preferred Stock", new BigDecimal("500"), new BigDecimal("200000"),
+                new BigDecimal("1000000"), "$20M valuation", platform.deadline(),
                 platform.amountRaised(), "SEC_EDGAR_RECENT", Map.of("issuerWebsite", platform.issuerWebsite()));
 
         var reconciled = offerings.upsert(sec, match);
+        nativeStore.upsertPlatformOffering(platform, match, ReconciliationStatus.PLATFORM_CONFIRMED);
+        var afterPlatformRefresh = offerings.find(platformId).orElseThrow();
 
         assertThat(reconciled.created()).isFalse();
         assertThat(reconciled.offering().id()).isEqualTo(platformId);
-        assertThat(reconciled.offering().provenance()).isEqualTo("SEC_EDGAR");
-        assertThat(reconciled.offering().reconciliationStatus()).isEqualTo("SEC_RECONCILED");
-        assertThat(reconciled.offering().accessionNumber()).isEqualTo("0001234567-26-000001");
+        assertThat(afterPlatformRefresh.provenance()).isEqualTo("SEC_EDGAR");
+        assertThat(afterPlatformRefresh.reconciliationStatus()).isEqualTo("SEC_RECONCILED");
+        assertThat(afterPlatformRefresh.accessionNumber()).isEqualTo("0001234567-26-000001");
+        assertThat(afterPlatformRefresh.securityType()).isEqualTo("Preferred Stock");
+        assertThat(afterPlatformRefresh.minimumInvestment()).isEqualByComparingTo("500");
+        assertThat(afterPlatformRefresh.targetAmount()).isEqualByComparingTo("200000");
+        assertThat(afterPlatformRefresh.maximumAmount()).isEqualByComparingTo("1000000");
+        assertThat(afterPlatformRefresh.valuationOrCap()).isEqualTo("$20M valuation");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_offerings", Integer.class)).isEqualTo(1);
     }
 

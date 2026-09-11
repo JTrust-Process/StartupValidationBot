@@ -3,12 +3,13 @@ package com.startupvalidationbot.offering.intake;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import com.startupvalidationbot.offering.OfferingTermNormalizer;
 
 final class OfferingHtml {
     private static final Pattern ANCHOR = Pattern.compile(
@@ -54,14 +55,7 @@ final class OfferingHtml {
     }
 
     static BigDecimal money(String value) {
-        if (value == null) return null;
-        String cleaned = value.replace("$", "").replace(",", "").trim().toUpperCase(Locale.ROOT);
-        BigDecimal multiplier = BigDecimal.ONE;
-        if (cleaned.endsWith("K")) { multiplier = new BigDecimal("1000"); cleaned = chop(cleaned); }
-        else if (cleaned.endsWith("M")) { multiplier = new BigDecimal("1000000"); cleaned = chop(cleaned); }
-        else if (cleaned.endsWith("B")) { multiplier = new BigDecimal("1000000000"); cleaned = chop(cleaned); }
-        try { return new BigDecimal(cleaned).multiply(multiplier); }
-        catch (NumberFormatException error) { return null; }
+        return OfferingTermNormalizer.money(value);
     }
 
     static Integer integer(String value) {
@@ -70,10 +64,7 @@ final class OfferingHtml {
     }
 
     static LocalDate date(String value) {
-        if (value == null) return null;
-        try { return LocalDate.parse(value); } catch (RuntimeException ignored) { }
-        try { return LocalDate.parse(value, DateTimeFormatter.ofPattern("MMMM d, uuuu", Locale.US)); }
-        catch (RuntimeException ignored) { return null; }
+        return OfferingTermNormalizer.date(value);
     }
 
     static URI absolute(URI base, String href) {
@@ -118,7 +109,6 @@ final class OfferingHtml {
         return blank(value) ? null : text(value).replaceAll("\\s+", " ").trim();
     }
 
-    private static String chop(String value) { return value.substring(0, value.length() - 1); }
     private static boolean blank(String value) { return value == null || value.isBlank(); }
 
     record Link(String href, String name, String text) { }

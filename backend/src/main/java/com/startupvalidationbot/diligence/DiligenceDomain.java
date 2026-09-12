@@ -6,9 +6,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
-import com.startupvalidationbot.diligence.discovery.CampaignDiscoveryDomain;
-import com.startupvalidationbot.offering.intake.NativeOfferingDomain;
-
 public final class DiligenceDomain {
     private DiligenceDomain() { }
 
@@ -17,12 +14,7 @@ public final class DiligenceDomain {
         SEC_FILED_FACT, PLATFORM_ISSUER_CLAIM, ISSUER_WEBSITE_CLAIM,
         PUBLIC_REPORTING, DETERMINISTIC_INFERENCE, AI_SYNTHESIS
     }
-    public enum CampaignStatus {
-        ACTIVE, RESERVATION, CLOSING_SOON, FUNDED, CLOSED, WITHDRAWN, TERMINATED, UNKNOWN, UNAVAILABLE
-    }
-
-    public record TermProvenance(String sourceType, String sourceUrl,
-            EvidenceClassification classification) { }
+    public enum CampaignStatus { ACTIVE, FUNDED, CLOSED, RESERVATION, UNKNOWN, UNAVAILABLE }
 
     public record Evidence(long id, String sourceType, String sourceUrl, String sourceTitle,
             String factKey, String factValue, String period, EvidenceClassification classification,
@@ -52,9 +44,7 @@ public final class DiligenceDomain {
             LocalDateTime reviewedAt, String securityType, BigDecimal minimumInvestment,
             BigDecimal targetAmount, BigDecimal maximumAmount, BigDecimal amountRaised,
             String valuationOrCap, LocalDate deadline, List<Evidence> evidence,
-            List<FinancialPeriod> financials, BigDecimal valuation, BigDecimal valuationCap,
-            String platformStatus, String platformIdentityStatus, String secReconciliationStatus,
-            Map<String, TermProvenance> termProvenance) { }
+            List<FinancialPeriod> financials) { }
 
     public record AvailabilityCheck(String sourceType, String status, String resultSummary,
             String unresolvedQuestion, LocalDateTime checkedAt) { }
@@ -65,18 +55,7 @@ public final class DiligenceDomain {
     public record RunResult(int companiesConsidered, int offeringsConsidered, int identitiesResolved,
             int campaignsResolved, int packetsReady, int packetsPartial, int needsReview,
             int platformErrors, int aiFallbacks, int emailsQueued, int emailsSent, int emailsFailed,
-            List<String> errors, CampaignDiscoveryDomain.RunResult campaignDiscovery,
-            NativeOfferingDomain.RunResult nativeIntake, int reviewQueueBefore, int reviewQueueAfter) {
-
-        public RunResult(int companiesConsidered, int offeringsConsidered, int identitiesResolved,
-                int campaignsResolved, int packetsReady, int packetsPartial, int needsReview,
-                int platformErrors, int aiFallbacks, int emailsQueued, int emailsSent, int emailsFailed,
-                List<String> errors, CampaignDiscoveryDomain.RunResult campaignDiscovery) {
-            this(companiesConsidered, offeringsConsidered, identitiesResolved, campaignsResolved,
-                    packetsReady, packetsPartial, needsReview, platformErrors, aiFallbacks, emailsQueued,
-                    emailsSent, emailsFailed, errors, campaignDiscovery, NativeOfferingDomain.RunResult.empty(), 0, 0);
-        }
-    }
+            List<String> errors) { }
 
     public record PlatformDiagnostic(String platform, LocalDateTime lastCheckedAt, String status,
             int requests, int campaignsFound, String error) { }
@@ -89,15 +68,5 @@ public final class DiligenceDomain {
             int offeringsConsidered, int identitiesResolved, int campaignsResolved,
             int packetsReady, int packetsPartial, int needsReview, int platformErrors,
             int aiFallbacks, int emailsQueued, int emailsSent, int emailsFailed,
-            List<PlatformDiagnostic> platforms, NotificationDiagnostic resend,
-            int campaignCompaniesEligible, int campaignCompaniesSearched,
-            int campaignCandidatesFound, int campaignConfirmed, int campaignPossible,
-            int campaignRejected, int campaignCacheHits, int campaignDiscoveryErrors,
-            List<CampaignDiscoveryDomain.PlatformDiagnostic> campaignDiscoveryPlatforms,
-            int nativeCandidatesFound, int nativeActiveCandidates, int nativeNewCompanies,
-            int nativeMatchedCompanies, int nativeNewOfferings, int nativeUpdatedOfferings,
-            int nativeDuplicatesPrevented, int nativePossible, int nativeRejected, int nativeErrors,
-            int nativeSecRecentInspected, int nativeSecPlatformClassified, int nativeSecReconciled,
-            int reviewQueueBefore, int reviewQueueAfter,
-            List<NativeOfferingDomain.SourceDiagnostic> nativeSources) { }
+            List<PlatformDiagnostic> platforms, NotificationDiagnostic resend) { }
 }

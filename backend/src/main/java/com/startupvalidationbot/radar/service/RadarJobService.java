@@ -109,8 +109,6 @@ public class RadarJobService {
             throw new IllegalStateException("Autonomous diligence is not configured.");
         }
         com.startupvalidationbot.diligence.DiligenceDomain.RunResult result = autonomousDiligenceService.run();
-        var campaign = result.campaignDiscovery();
-        var nativeIntake = result.nativeIntake();
         return new JobResult(result.errors().isEmpty(), jobType, key, false, result.companiesConsidered(),
                 result.packetsReady(), result.packetsPartial() + result.needsReview(), result.errors().size(),
                 result.errors(), List.of(
@@ -125,33 +123,7 @@ public class RadarJobService {
                         "aiFallbacks=" + result.aiFallbacks(),
                         "emailsQueued=" + result.emailsQueued(),
                         "emailsSent=" + result.emailsSent(),
-                        "emailsFailed=" + result.emailsFailed(),
-                        "campaignCompaniesEligible=" + campaign.companiesEligible(),
-                        "campaignCompaniesSearched=" + campaign.companiesSearched(),
-                        "wefunderSearches=" + campaign.wefunderSearches(),
-                        "republicSearches=" + campaign.republicSearches(),
-                        "startEngineSearches=" + campaign.startEngineSearches(),
-                        "campaignCandidatesFound=" + campaign.candidatesFound(),
-                        "campaignConfirmed=" + campaign.campaignsConfirmed(),
-                        "campaignPossible=" + campaign.campaignsPossible(),
-                        "campaignRejected=" + campaign.campaignsRejected(),
-                        "campaignCacheHits=" + campaign.cacheHits(),
-                        "campaignDiscoveryErrors=" + campaign.errors(),
-                        "nativeCandidatesFound=" + nativeIntake.candidatesFound(),
-                        "nativeActiveCandidates=" + nativeIntake.activeCandidates(),
-                        "nativeNewCompanies=" + nativeIntake.newCompanies(),
-                        "nativeMatchedCompanies=" + nativeIntake.matchedCompanies(),
-                        "nativeNewOfferings=" + nativeIntake.newOfferings(),
-                        "nativeUpdatedOfferings=" + nativeIntake.updatedOfferings(),
-                        "nativeDuplicatesPrevented=" + nativeIntake.duplicatesPrevented(),
-                        "nativePossible=" + nativeIntake.possible(),
-                        "nativeRejected=" + nativeIntake.rejected(),
-                        "nativeErrors=" + nativeIntake.errors(),
-                        "nativeSecRecentInspected=" + nativeIntake.secRecentInspected(),
-                        "nativeSecPlatformClassified=" + nativeIntake.secPlatformClassified(),
-                        "nativeSecReconciled=" + nativeIntake.secReconciled(),
-                        "reviewQueueBefore=" + result.reviewQueueBefore(),
-                        "reviewQueueAfter=" + result.reviewQueueAfter()),
+                        "emailsFailed=" + result.emailsFailed()),
                 "Autonomous diligence completed: " + result.packetsReady() + " ready, "
                         + result.packetsPartial() + " partial, " + result.needsReview() + " need review.");
     }

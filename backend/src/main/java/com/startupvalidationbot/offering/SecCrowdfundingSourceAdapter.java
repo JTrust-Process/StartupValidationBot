@@ -258,16 +258,8 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
         return matcher.find() ? matcher.group(1).trim() : null;
     }
 
-    static String submissionTextUrl(String path) {
-        String normalized = path.startsWith("/") ? path.substring(1) : path;
-        Matcher flatSubmission = Pattern.compile(
-                "^edgar/data/(\\d+)/(\\d{10}-\\d{2}-\\d{6})\\.txt$",
-                Pattern.CASE_INSENSITIVE).matcher(normalized);
-        if (flatSubmission.matches()) {
-            String accession = flatSubmission.group(2);
-            normalized = "edgar/data/" + flatSubmission.group(1) + "/"
-                    + accession.replace("-", "") + "/" + accession + ".txt";
-        }
+    private static String submissionTextUrl(String path) {
+        String normalized = path.startsWith("edgar/") ? path.substring(6) : path;
         return "https://www.sec.gov/Archives/" + normalized;
     }
 
@@ -295,8 +287,8 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
     private static String value(String first, String second) { return blank(first) ? second : first; }
     private static String padCik(String cik) { return cik == null ? null : String.format("%010d", Long.parseLong(cik.trim())); }
     private static BigDecimal decimal(String value) { try { return blank(value) ? null : new BigDecimal(value.replace(",", "").replace("$", "")); } catch (NumberFormatException e) { return null; } }
-    private static LocalDate date(String value) { return OfferingTermNormalizer.date(value); }
-    private static LocalDate compactDate(String value) { return OfferingTermNormalizer.date(value); }
+    private static LocalDate date(String value) { try { return blank(value) ? null : LocalDate.parse(value); } catch (RuntimeException e) { return compactDate(value); } }
+    private static LocalDate compactDate(String value) { try { return blank(value) ? null : LocalDate.parse(value, java.time.format.DateTimeFormatter.BASIC_ISO_DATE); } catch (RuntimeException e) { return null; } }
     private static boolean blank(String value) { return value == null || value.isBlank(); }
 
     record IndexRecord(String cik, String issuerName, String form, LocalDate filingDate, String path, String accession) { }

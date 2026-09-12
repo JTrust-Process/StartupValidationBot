@@ -203,12 +203,12 @@ export interface RadarOffering {
   radarCompanyId: number | null;
   companyName: string | null;
   issuerName: string;
-  issuerCik: string | null;
+  issuerCik: string;
   platform: string;
   intermediaryName: string | null;
   offeringUrl: string | null;
-  secFilingUrl: string | null;
-  accessionNumber: string | null;
+  secFilingUrl: string;
+  accessionNumber: string;
   fileNumber: string | null;
   filingType: string;
   filingDate: string;
@@ -227,9 +227,6 @@ export interface RadarOffering {
   matchReason: string;
   firstSeenAt: string;
   lastSeenAt: string;
-  provenance: 'SEC_EDGAR' | 'PLATFORM_OFFERING';
-  reconciliationStatus: 'PLATFORM_CONFIRMED' | 'SEC_RECONCILED' | 'POSSIBLE' | 'NEEDS_REVIEW';
-  platformStatus: 'ACTIVE' | 'RESERVATION' | 'CLOSING_SOON' | 'CLOSED' | 'WITHDRAWN' | 'TERMINATED' | 'UNKNOWN' | null;
 }
 
 export interface OfferingDiagnostics {
@@ -296,12 +293,6 @@ export interface DiligenceFinancialPeriod {
   sourceUrl: string | null;
 }
 
-export interface DiligenceTermProvenance {
-  sourceType: string;
-  sourceUrl: string | null;
-  classification: 'SEC_FILED_FACT' | 'PLATFORM_ISSUER_CLAIM';
-}
-
 export interface DiligencePacket {
   id: number;
   radarCompanyId: number;
@@ -335,12 +326,6 @@ export interface DiligencePacket {
   deadline: string | null;
   evidence: DiligenceEvidence[];
   financials: DiligenceFinancialPeriod[];
-  valuation: number | null;
-  valuationCap: number | null;
-  platformStatus: string | null;
-  platformIdentityStatus: string;
-  secReconciliationStatus: string;
-  termProvenance: Record<string, DiligenceTermProvenance>;
 }
 
 export interface InvestmentAvailabilityCheck {
@@ -357,7 +342,7 @@ export interface CompanyInvestmentAvailability {
   checks: InvestmentAvailabilityCheck[];
 }
 
-  export interface AutonomousDiligenceDiagnostics {
+export interface AutonomousDiligenceDiagnostics {
   lastRunStatus: string;
   lastRunStartedAt: string | null;
   lastRunCompletedAt: string | null;
@@ -372,59 +357,9 @@ export interface CompanyInvestmentAvailability {
   platformErrors: number;
   aiFallbacks: number;
   emailsQueued: number;
-    emailsSent: number;
-    emailsFailed: number;
-    campaignCompaniesEligible: number;
-    campaignCompaniesSearched: number;
-    campaignCandidatesFound: number;
-    campaignConfirmed: number;
-    campaignPossible: number;
-    campaignRejected: number;
-    campaignCacheHits: number;
-    campaignDiscoveryErrors: number;
-    campaignDiscoveryPlatforms: Array<{
-      platform: string;
-      capability: string;
-      lastCheckedAt: string | null;
-      lastSuccessAt: string | null;
-      lastFailureAt: string | null;
-      status: string;
-      requests: number;
-      candidates: number;
-      resolved: number;
-      error: string | null;
-    }>;
-    nativeCandidatesFound: number;
-    nativeActiveCandidates: number;
-    nativeNewCompanies: number;
-    nativeMatchedCompanies: number;
-    nativeNewOfferings: number;
-    nativeUpdatedOfferings: number;
-    nativeDuplicatesPrevented: number;
-    nativePossible: number;
-    nativeRejected: number;
-    nativeErrors: number;
-    nativeSecRecentInspected: number;
-    nativeSecPlatformClassified: number;
-    nativeSecReconciled: number;
-    reviewQueueBefore: number;
-    reviewQueueAfter: number;
-    nativeSources: Array<{
-      source: string;
-      capability: string;
-      status: string;
-      lastCheckedAt: string | null;
-      directoryFetched: boolean;
-      requests: number;
-      detailRequests: number;
-      candidates: number;
-      activeCandidates: number;
-      inserted: number;
-      matched: number;
-      rejected: number;
-      error: string | null;
-    }>;
-    platforms: Array<{
+  emailsSent: number;
+  emailsFailed: number;
+  platforms: Array<{
     platform: string;
     lastCheckedAt: string | null;
     status: string;

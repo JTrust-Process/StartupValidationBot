@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.net.URI;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -13,7 +14,6 @@ import java.util.regex.Pattern;
 import com.startupvalidationbot.diligence.DiligenceDomain.CampaignStatus;
 import com.startupvalidationbot.diligence.DiligenceDomain.PlatformCampaign;
 import com.startupvalidationbot.offering.OfferingDomain.Offering;
-import com.startupvalidationbot.offering.OfferingTermNormalizer;
 import com.startupvalidationbot.radar.ContentHash;
 
 abstract class AbstractPlatformOfferingEnricher implements PlatformOfferingEnricher {
@@ -43,28 +43,25 @@ abstract class AbstractPlatformOfferingEnricher implements PlatformOfferingEnric
         if (issuer == null) issuer = firstNonGenericJsonName(html);
         if (issuer == null) issuer = first(html, TITLE);
         issuer = cleanTitle(issuer);
-        String rawSecurity = field(text, "(?:security(?: type)?|instrument)", "([A-Za-z][A-Za-z /-]{2,80})");
-        String security = OfferingTermNormalizer.security(rawSecurity);
-        String money = "(\\$?[0-9][0-9,]*(?:\\.[0-9]+)?[KMB]?)";
-        BigDecimal minimum = money(field(text, "(?:minimum investment|min\\.? investment|minimum)", money));
-        BigDecimal price = money(field(text, "(?:price per share|share price|price per unit)", money));
-        BigDecimal cap = money(field(text, "(?:valuation cap|post-money cap)", money));
-        BigDecimal valuation = money(field(text, "(?:pre-money valuation|post-money valuation|valuation)", money));
-        BigDecimal target = money(field(text, "(?:target raise|target offering amount|funding goal)", money));
-        BigDecimal maximum = money(field(text, "(?:maximum raise|maximum offering amount|max raise)", money));
-        BigDecimal raised = money(field(text, "(?:amount raised|raised|committed)", money));
+        String security = field(text, "(?:security(?: type)?|instrument)", "([A-Za-z][A-Za-z /-]{2,80})");
+        BigDecimal minimum = money(field(text, "(?:minimum investment|min\\.? investment|minimum)", "(\\$?[0-9][0-9,.]*[KMB]?)"));
+        BigDecimal price = money(field(text, "(?:price per share|share price|price per unit)", "(\\$?[0-9][0-9,.]*)"));
+        BigDecimal cap = money(field(text, "(?:valuation cap|post-money cap)", "(\\$?[0-9][0-9,.]*[KMB]?)"));
+        BigDecimal valuation = money(field(text, "(?:pre-money valuation|post-money valuation|valuation)", "(\\$?[0-9][0-9,.]*[KMB]?)"));
+        BigDecimal target = money(field(text, "(?:target raise|target offering amount|funding goal)", "(\\$?[0-9][0-9,.]*[KMB]?)"));
+        BigDecimal maximum = money(field(text, "(?:maximum raise|maximum offering amount|max raise)", "(\\$?[0-9][0-9,.]*[KMB]?)"));
+        BigDecimal raised = money(field(text, "(?:amount raised|raised|committed)", "(\\$?[0-9][0-9,.]*[KMB]?)"));
         Integer investors = integer(field(text, "(?:investors|investor count)", "([0-9][0-9,]*)"));
         BigDecimal discount = decimal(field(text, "(?:discount)", "([0-9]{1,3}(?:\\.[0-9]+)?)%"));
         LocalDate deadline = date(field(text, "(?:deadline|closes|closing date)", "([A-Za-z]+ \\d{1,2}, \\d{4}|\\d{4}-\\d{2}-\\d{2})"));
         put(facts, "headline", cleanTitle(first(html, TITLE)));
-        put(facts, "issuerName", issuer); put(facts, "securityTypeRaw", rawSecurity);
-        put(facts, "securityType", security);
+        put(facts, "issuerName", issuer); put(facts, "securityType", security);
         put(facts, "minimumInvestment", minimum); put(facts, "pricePerShare", price);
         put(facts, "valuation", valuation); put(facts, "valuationCap", cap); put(facts, "discountPercent", discount);
         put(facts, "targetAmount", target); put(facts, "maximumAmount", maximum);
         put(facts, "amountRaised", raised); put(facts, "investorCount", investors); put(facts, "deadline", deadline);
         CampaignStatus status = status(text);
-        String fingerprint = "raw:" + ContentHash.sha256(platform() + "|" + campaignUrl + "|" + text);
+        String fingerprint = ContentHash.sha256(platform() + "|" + campaignUrl + "|" + facts + "|" + status);
         LocalDateTime now = LocalDateTime.now();
         return new PlatformCampaign(null, offering.id(), platform(), campaignUrl.toString(),
                 "PUBLIC_CAMPAIGN_URL", 95, status, issuer, security, minimum, price, valuation, cap,
@@ -74,14 +71,11 @@ abstract class AbstractPlatformOfferingEnricher implements PlatformOfferingEnric
 
     private static CampaignStatus status(String text) {
         String lower = text.toLowerCase(Locale.ROOT);
-        if (lower.contains("offering withdrawn") || lower.contains("has been withdrawn")) return CampaignStatus.WITHDRAWN;
-        if (lower.contains("offering terminated") || lower.contains("has been terminated")) return CampaignStatus.TERMINATED;
         if (lower.contains("successfully funded") || lower.contains("funded and closed")) return CampaignStatus.FUNDED;
         if (lower.contains("campaign ended") || lower.contains("offering closed") || lower.contains("closed offering")) return CampaignStatus.CLOSED;
         if (lower.contains("accepting reservations") || lower.contains("reservation")
                 || lower.contains("reserve your investment")) return CampaignStatus.RESERVATION;
-        if (lower.matches(".*\\b(?:hours?|days?) (?:left|remaining)\\b.*")) return CampaignStatus.CLOSING_SOON;
-        if (lower.contains("invest now") || lower.contains("open for investment")) return CampaignStatus.ACTIVE;
+        if (lower.contains("invest now") || lower.contains("days left") || lower.contains("open for investment")) return CampaignStatus.ACTIVE;
         return CampaignStatus.UNKNOWN;
     }
 
@@ -121,13 +115,22 @@ abstract class AbstractPlatformOfferingEnricher implements PlatformOfferingEnric
     }
 
     private static BigDecimal money(String value) {
-        return OfferingTermNormalizer.money(value);
+        if (value == null) return null;
+        String cleaned = value.replace("$", "").replace(",", "").trim().toUpperCase(Locale.ROOT);
+        BigDecimal multiplier = BigDecimal.ONE;
+        if (cleaned.endsWith("K")) { multiplier = new BigDecimal("1000"); cleaned = cleaned.substring(0, cleaned.length() - 1); }
+        else if (cleaned.endsWith("M")) { multiplier = new BigDecimal("1000000"); cleaned = cleaned.substring(0, cleaned.length() - 1); }
+        else if (cleaned.endsWith("B")) { multiplier = new BigDecimal("1000000000"); cleaned = cleaned.substring(0, cleaned.length() - 1); }
+        try { return new BigDecimal(cleaned).multiply(multiplier); } catch (NumberFormatException error) { return null; }
     }
 
     private static BigDecimal decimal(String value) { try { return value == null ? null : new BigDecimal(value); } catch (NumberFormatException error) { return null; } }
     private static Integer integer(String value) { try { return value == null ? null : Integer.valueOf(value.replace(",", "")); } catch (NumberFormatException error) { return null; } }
     private static LocalDate date(String value) {
-        return OfferingTermNormalizer.date(value);
+        if (value == null) return null;
+        try { return LocalDate.parse(value); } catch (RuntimeException ignored) { }
+        try { return LocalDate.parse(value, DateTimeFormatter.ofPattern("MMMM d, uuuu", Locale.US)); }
+        catch (RuntimeException ignored) { return null; }
     }
     private static void put(Map<String, String> facts, String key, Object value) { if (value != null && !value.toString().isBlank()) facts.put(key, value.toString()); }
 }

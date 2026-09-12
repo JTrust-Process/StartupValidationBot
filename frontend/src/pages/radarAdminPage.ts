@@ -122,40 +122,6 @@ function adminHtml(status: RadarSystemStatus, sources: Awaited<ReturnType<typeof
       ${diligence.resend.lastError ? `<p class="radar-muted">Last email error: ${escapeHtml(diligence.resend.lastError)}</p>` : ''}
     </section>
     <section class="radar-panel">
-      <h3>Native Offering Intake</h3>
-      <p class="radar-muted">Current public Reg CF opportunities enter Radar before autonomous diligence. Platform-only evidence remains distinct from SEC-reconciled evidence.</p>
-      <div class="radar-status-grid">
-        <div><span>Candidates / active</span><strong>${diligence.nativeCandidatesFound ?? 0} / ${diligence.nativeActiveCandidates ?? 0}</strong></div>
-        <div><span>New / matched companies</span><strong>${diligence.nativeNewCompanies ?? 0} / ${diligence.nativeMatchedCompanies ?? 0}</strong></div>
-        <div><span>New / updated offerings</span><strong>${diligence.nativeNewOfferings ?? 0} / ${diligence.nativeUpdatedOfferings ?? 0}</strong></div>
-        <div><span>Duplicates prevented</span><strong>${diligence.nativeDuplicatesPrevented ?? 0}</strong></div>
-        <div><span>Possible / rejected / errors</span><strong>${diligence.nativePossible ?? 0} / ${diligence.nativeRejected ?? 0} / ${diligence.nativeErrors ?? 0}</strong></div>
-        <div><span>SEC inspected / classified</span><strong>${diligence.nativeSecRecentInspected ?? 0} / ${diligence.nativeSecPlatformClassified ?? 0}</strong></div>
-        <div><span>SEC reconciled</span><strong>${diligence.nativeSecReconciled ?? 0}</strong></div>
-        <div><span>Review Queue before / after</span><strong>${diligence.reviewQueueBefore ?? 0} / ${diligence.reviewQueueAfter ?? 0}</strong></div>
-      </div>
-      <div class="table-wrap"><table class="data-table"><thead><tr><th>Source</th><th>Capability</th><th>Status</th><th>Directory</th><th>Requests / details</th><th>Candidates / active</th><th>Inserted / matched</th><th>Rejected</th><th>Error</th></tr></thead><tbody>
-        ${(diligence.nativeSources ?? []).length ? diligence.nativeSources.map((source) => `<tr><td>${escapeHtml(source.source)}</td><td>${escapeHtml(source.capability)}</td><td>${escapeHtml(source.status)}</td><td>${source.directoryFetched ? 'Fetched' : 'No'}</td><td>${source.requests} / ${source.detailRequests}</td><td>${source.candidates} / ${source.activeCandidates}</td><td>${source.inserted} / ${source.matched}</td><td>${source.rejected}</td><td class="table-subtext">${escapeHtml(source.error || '')}</td></tr>`).join('')
-          : '<tr><td colspan="9">No native offering intake has run yet.</td></tr>'}
-      </tbody></table></div>
-    </section>
-    <section class="radar-panel">
-      <h3>Campaign Discovery</h3>
-      <p class="radar-muted">Bounded public checks connect eligible Radar or SEC identities to canonical campaign pages. Possible or ambiguous matches are never attached automatically.</p>
-      <div class="radar-status-grid">
-        <div><span>Eligible / searched</span><strong>${diligence.campaignCompaniesEligible ?? 0} / ${diligence.campaignCompaniesSearched ?? 0}</strong></div>
-        <div><span>Candidates</span><strong>${diligence.campaignCandidatesFound ?? 0}</strong></div>
-        <div><span>Confirmed / possible</span><strong>${diligence.campaignConfirmed ?? 0} / ${diligence.campaignPossible ?? 0}</strong></div>
-        <div><span>Rejected</span><strong>${diligence.campaignRejected ?? 0}</strong></div>
-        <div><span>Cache hits</span><strong>${diligence.campaignCacheHits ?? 0}</strong></div>
-        <div><span>Errors</span><strong>${diligence.campaignDiscoveryErrors ?? 0}</strong></div>
-      </div>
-      <div class="table-wrap"><table class="data-table"><thead><tr><th>Platform</th><th>Capability</th><th>Last checked</th><th>Status</th><th>Requests</th><th>Candidates</th><th>Resolved</th><th>Error</th></tr></thead><tbody>
-        ${(diligence.campaignDiscoveryPlatforms ?? []).length ? diligence.campaignDiscoveryPlatforms.map((platform) => `<tr><td>${escapeHtml(platform.platform)}</td><td>${escapeHtml(platform.capability)}</td><td>${escapeHtml(formatRadarDate(platform.lastCheckedAt))}</td><td>${escapeHtml(platform.status)}</td><td>${platform.requests}</td><td>${platform.candidates}</td><td>${platform.resolved}</td><td class="table-subtext">${escapeHtml(platform.error || '')}</td></tr>`).join('')
-          : '<tr><td colspan="8">No campaign discovery checks recorded yet.</td></tr>'}
-      </tbody></table></div>
-    </section>
-    <section class="radar-panel">
       <h3>Offering Discovery</h3>
       <div class="radar-status-grid">
         <div><span>Source health</span><strong>${escapeHtml(offerings.sourceStatus)}</strong></div>

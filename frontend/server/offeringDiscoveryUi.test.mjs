@@ -55,24 +55,6 @@ test('Admin persists the latest offering discovery run counts', async () => {
   assert.match(page, /Autonomous Diligence/);
   assert.match(page, /Emails queued \/ sent \/ failed/);
   assert.match(page, /diligence\.resend\.configured/);
-  assert.match(page, /Native Offering Intake/);
-  assert.match(page, /diligence\.nativeCandidatesFound/);
-  assert.match(page, /diligence\.nativeSources/);
-  assert.match(page, /Review Queue before \/ after/);
-});
-
-test('native platform offerings remain distinct from SEC-filed evidence in the UI', async () => {
-  const [offerings, profile, newDeal] = await Promise.all([
-    source('pages/offeringsPage.ts'),
-    source('pages/radarCompanyPage.ts'),
-    source('pages/newDealPage.ts')
-  ]);
-  assert.match(offerings, /offering\.secFilingUrl/);
-  assert.match(offerings, /public listing/);
-  assert.match(offerings, /offering\.reconciliationStatus/);
-  assert.match(profile, /Public platform evidence/);
-  assert.match(newDeal, /Public \$\{offering\.platform\} Regulation Crowdfunding offering/);
-  assert.match(newDeal, /SEC reconciliation/);
 });
 
 test('Review Queue and detail keep filed facts separate and never auto-create a Deal', async () => {
@@ -86,9 +68,6 @@ test('Review Queue and detail keep filed facts separate and never auto-create a 
   assert.match(queue, /Partial/);
   assert.match(detail, /SEC-Filed Facts/);
   assert.match(detail, /Platform \/ Issuer Claims/);
-  assert.match(detail, /termProvenance/);
-  assert.match(detail, /SEC reconciliation/);
-  assert.match(detail, /Platform identity/);
   assert.match(detail, /Material discrepancies require review/);
   assert.match(detail, /Automated Search Coverage/);
   assert.match(detail, /shortTerm === null && longTerm === null/);
@@ -96,7 +75,6 @@ test('Review Queue and detail keep filed facts separate and never auto-create a 
   assert.match(detail, /diligencePacketId=/);
   assert.match(newDeal, /prefillFromDiligence/);
   assert.match(newDeal, /Review every field before explicitly creating/);
-  assert.match(newDeal, /Effective terms retain their source classification/);
   assert.equal((newDeal.match(/createDeal\(/g) || []).length, 1);
   assert.match(newDeal, /form\.addEventListener\('submit'[\s\S]*createDeal\(input\)/);
 });

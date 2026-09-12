@@ -40,22 +40,14 @@ class DiligenceStoreIntegrationTest {
         PlatformCampaign campaign = campaign(offeringId, "fingerprint-one");
         store.upsertCampaign(campaign);
         store.upsertCampaign(campaign(offeringId, "fingerprint-two"));
-        store.upsertCampaign(campaign(offeringId, "PUBLIC_CAMPAIGN_URL", "raw:detail"));
-        store.upsertCampaign(campaign(offeringId, "PUBLIC_LIVE_DIRECTORY", "raw:directory"));
 
         PacketDraft packet = packet(companyId, offeringId, "packet-one");
         long firstId = store.savePacket(packet).id();
-        var stored = store.savePacket(packet(companyId, offeringId, "packet-two"));
-        long secondId = stored.id();
+        long secondId = store.savePacket(packet(companyId, offeringId, "packet-two")).id();
 
         assertThat(secondId).isEqualTo(firstId);
         assertThat(store.findCampaign(offeringId)).get().extracting(PlatformCampaign::sourceFingerprint)
-                .isEqualTo("raw:detail");
-        assertThat(stored.securityType()).isEqualTo("SAFE");
-        assertThat(stored.minimumInvestment()).isEqualByComparingTo("100");
-        assertThat(stored.valuationCap()).isEqualByComparingTo("12000000");
-        assertThat(stored.termProvenance().get("minimumInvestment").classification())
-                .isEqualTo(EvidenceClassification.SEC_FILED_FACT);
+                .isEqualTo("fingerprint-two");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_platform_campaigns", Integer.class)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_diligence_packets", Integer.class)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_diligence_evidence", Integer.class)).isEqualTo(1);
@@ -79,12 +71,8 @@ class DiligenceStoreIntegrationTest {
     }
 
     private PlatformCampaign campaign(long offeringId, String fingerprint) {
-        return campaign(offeringId, "SEC_OFFERING_URL", fingerprint);
-    }
-
-    private PlatformCampaign campaign(long offeringId, String source, String fingerprint) {
         LocalDateTime now = LocalDateTime.now();
-        return new PlatformCampaign(null, offeringId, "WEFUNDER", "https://wefunder.com/acme", source,
+        return new PlatformCampaign(null, offeringId, "WEFUNDER", "https://wefunder.com/acme", "SEC_OFFERING_URL",
                 100, CampaignStatus.ACTIVE, "Acme Technologies, Inc.", "Crowd SAFE", new BigDecimal("100"),
                 null, null, new BigDecimal("12000000"), null, new BigDecimal("100000"),
                 new BigDecimal("1235000"), new BigDecimal("640000"), 814, LocalDate.of(2026, 10, 31),

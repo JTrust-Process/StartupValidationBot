@@ -288,9 +288,7 @@ async function prefillFromDiligence(root: HTMLElement, form: HTMLFormElement, pa
     });
     if (status) status.innerHTML = `<div class="notice notice--neutral">Public facts were prefilled from
       <a href="#/review/${packet.id}">diligence packet ${packet.id}</a>. Review every field before explicitly creating a Deal Scout workspace.
-      Filed facts and issuer claims remain separate in the source packet. Effective terms retain their source classification;
-      platform identity is ${escapeHtml(packet.platformIdentityStatus.toLowerCase())}, while SEC reconciliation is
-      ${escapeHtml(packet.secReconciliationStatus.toLowerCase())}.</div>`;
+      Filed facts and issuer claims remain separate in the source packet.</div>`;
   } catch (error) {
     if (status) status.innerHTML = `<div class="notice notice--warning">Could not load the diligence packet. ${escapeHtml(error instanceof Error ? error.message : '')}</div>`;
   }
@@ -313,11 +311,11 @@ async function prefillFromOffering(root: HTMLElement, form: HTMLFormElement, off
     const fields: Record<string, string> = {
       radarCompanyId: String(offering.radarCompanyId || ''),
       offeringDiscoveryId: String(offering.id),
-      secFilingUrl: offering.secFilingUrl || '',
+      secFilingUrl: offering.secFilingUrl,
       offeringDeadline: offering.deadline || '',
       companyName: offering.companyName || offering.issuerName,
       platform: offering.platform,
-      offeringUrl: offering.offeringUrl || offering.secFilingUrl || '',
+      offeringUrl: offering.offeringUrl || offering.secFilingUrl,
       minimumInvestment: offering.minimumInvestment === null ? '' : String(offering.minimumInvestment),
       valuationOrCap: offering.valuationOrCap || '',
       amountRaised: offering.amountRaised === null ? '' : String(offering.amountRaised),
@@ -325,9 +323,7 @@ async function prefillFromOffering(root: HTMLElement, form: HTMLFormElement, off
       offeringExemption: 'REG_CF',
       securityType,
       liquidity: 'ILLIQUID',
-      shortDescription: offering.secFilingUrl
-        ? `SEC-filed Regulation Crowdfunding offering (${offering.filingType}). Filing: ${offering.secFilingUrl}`
-        : `Public ${offering.platform} Regulation Crowdfunding offering. SEC reconciliation: ${offering.reconciliationStatus.replaceAll('_', ' ')}`
+      shortDescription: `SEC-filed Regulation Crowdfunding offering (${offering.filingType}). Filing: ${offering.secFilingUrl}`
     };
     Object.entries(fields).forEach(([name, value]) => {
       const field = form.elements.namedItem(name);
@@ -339,10 +335,9 @@ async function prefillFromOffering(root: HTMLElement, form: HTMLFormElement, off
       if (sector instanceof HTMLInputElement) sector.value = company.company.sector;
     }
     const filingUrl = safeExternalUrl(offering.secFilingUrl);
-    if (status) status.innerHTML = `<div class="notice notice--neutral">Public offering facts were prefilled from
-      ${filingUrl ? `<a href="${escapeAttribute(filingUrl)}" target="_blank" rel="noreferrer">an SEC-filed offering statement</a>`
-        : `a public ${escapeHtml(offering.platform)} campaign listing`}.
-      Review every field before saving. Public source evidence does not verify every issuer claim.</div>`;
+    if (status) status.innerHTML = `<div class="notice notice--neutral">Public offering facts were prefilled from an
+      ${filingUrl ? `<a href="${escapeAttribute(filingUrl)}" target="_blank" rel="noreferrer">SEC-filed offering statement</a>` : 'SEC-filed offering statement'}.
+      Review every field before saving. The filing does not verify issuer claims.</div>`;
   } catch (error) {
     if (status) status.innerHTML = `<div class="notice notice--warning">Could not load offering evidence. ${escapeHtml(error instanceof Error ? error.message : '')}</div>`;
   }

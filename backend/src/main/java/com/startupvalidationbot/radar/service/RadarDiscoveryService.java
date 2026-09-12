@@ -127,18 +127,6 @@ public class RadarDiscoveryService {
         return store.findCompany(result.company().id()).orElseThrow();
     }
 
-    public CompanyUpsert ingestOfficialOffering(Candidate candidate, String sourceName, String sourceUrl) {
-        if (candidate.evidenceClassification() != EvidenceClassification.PUBLIC_OFFICIAL) {
-            throw new IllegalArgumentException("Native offering evidence must be classified PUBLIC_OFFICIAL");
-        }
-        // Native offering intake owns this source's schedule. Keep it out of the ordinary
-        // Radar discovery loop, which only knows StartupSourceAdapter-backed source types.
-        Source source = store.upsertSource(candidate.sourceKey(), "PLATFORM_OFFERING", sourceName, sourceUrl, false);
-        IngestResult result = ingest(source, candidate);
-        analysisService.analyzeDeterministic(result.company(), "RADAR");
-        return result.upsert();
-    }
-
     private IngestResult ingest(Source source, Candidate candidate) {
         CompanyUpsert upsert = store.upsertCompany(candidate);
         DiscoverySaveResult discovery = store.saveDiscoveryAndSnapshot(upsert.company().id(), source, candidate);
@@ -153,7 +141,7 @@ public class RadarDiscoveryService {
     private static EvidenceClassification evidenceClassification(Source source, Candidate candidate) {
         return switch (source.sourceType().toUpperCase()) {
             case "RSS", "PRODUCT_HUNT", "HACKER_NEWS" -> EvidenceClassification.PUBLIC_NEWS;
-            case "MANUAL", "PLATFORM_OFFERING", "SEC_REG_CF" -> candidate.evidenceClassification();
+            case "MANUAL" -> candidate.evidenceClassification();
             default -> EvidenceClassification.UNKNOWN;
         };
     }

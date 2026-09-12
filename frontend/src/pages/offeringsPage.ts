@@ -28,7 +28,9 @@ function card(offering: RadarOffering): string {
   return `<article class="radar-panel offering-card">
     <div class="offering-card__head"><div><span class="radar-badge radar-badge--offering">${escapeHtml(offering.matchStatus)}</span>
       <h3>${escapeHtml(offering.companyName || offering.issuerName)}</h3>
-      <p>${escapeHtml(offering.platform)} · ${escapeHtml(offering.filingType)} filed ${escapeHtml(formatRadarDate(offering.filingDate))}</p></div>
+      <p>${escapeHtml(offering.platform)} · ${offering.secFilingUrl
+        ? `${escapeHtml(offering.filingType)} filed ${escapeHtml(formatRadarDate(offering.filingDate))}`
+        : `${escapeHtml((offering.platformStatus || offering.status).replaceAll('_', ' '))} public listing`}</p></div>
       <span class="status-pill">${escapeHtml(offering.status.replaceAll('_', ' '))}</span></div>
     <dl class="offering-facts">
       <div><dt>Exemption</dt><dd>Regulation Crowdfunding</dd></div>
@@ -38,7 +40,7 @@ function card(offering: RadarOffering): string {
       <div><dt>Match confidence</dt><dd>${offering.matchConfidence}/100</dd></div>
       <div><dt>Last verified</dt><dd>${escapeHtml(formatRadarDate(offering.lastSeenAt))}</dd></div>
     </dl>
-    <p class="radar-muted">${escapeHtml(offering.matchReason)}</p>
+    <p class="radar-muted">${escapeHtml(offering.matchReason)} Evidence: ${escapeHtml(offering.reconciliationStatus.replaceAll('_', ' '))}.</p>
     <div class="form-actions form-actions--start">
       ${offering.radarCompanyId ? `<a class="button button--secondary button--compact" href="#/radar/company/${offering.radarCompanyId}">View Radar Profile</a>` : ''}
       ${filing ? `<a class="button button--secondary button--compact" href="${escapeAttribute(filing)}" target="_blank" rel="noreferrer">Open SEC Filing</a>` : ''}

@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
@@ -29,8 +29,14 @@ import com.startupvalidationbot.radar.ContentHash;
 public class DiligenceStore {
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
+    private final boolean postgres;
 
-    public DiligenceStore(JdbcTemplate jdbc, ObjectMapper json) { this.jdbc = jdbc; this.json = json; }
+    public DiligenceStore(JdbcTemplate jdbc, ObjectMapper json) {
+        this.jdbc = jdbc;
+        this.json = json;
+        this.postgres = Boolean.TRUE.equals(jdbc.execute((ConnectionCallback<Boolean>) connection ->
+                "PostgreSQL".equalsIgnoreCase(connection.getMetaData().getDatabaseProductName())));
+    }
 
     public List<Long> eligibleOfferingIds(int limit) {
         return jdbc.queryForList("""
@@ -274,16 +280,19 @@ public class DiligenceStore {
 
     public boolean queueNotification(String eventType, String entityType, long entityId, String fingerprint,
             String recipient, String subject, String text, String html) {
-        try {
-            return jdbc.update("""
-                    INSERT INTO radar_notification_events (event_type,entity_type,entity_id,fingerprint,recipient,
-                      status,subject,text_body,html_body,created_at,updated_at)
-                    VALUES (?,?,?,?,?,'PENDING',?,?,?,?,?)
-                    """, eventType, entityType, entityId, fingerprint, recipient, subject, text, html,
-                    LocalDateTime.now(), LocalDateTime.now()) == 1;
-        } catch (DuplicateKeyException duplicate) {
-            return false;
+        String insert = """
+                INSERT INTO radar_notification_events (event_type,entity_type,entity_id,fingerprint,recipient,
+                  status,subject,text_body,html_body,created_at,updated_at)
+                """;
+        Object[] args = { eventType, entityType, entityId, fingerprint, recipient, subject, text, html,
+                LocalDateTime.now(), LocalDateTime.now() };
+        if (postgres) {
+            return jdbc.update(insert + " VALUES (?,?,?,?,?,'PENDING',?,?,?,?,?) ON CONFLICT (fingerprint) DO NOTHING", args) == 1;
         }
+        List<Object> fallback = new ArrayList<>(java.util.Arrays.asList(args));
+        fallback.add(fingerprint);
+        return jdbc.update(insert + " SELECT ?,?,?,?,?,'PENDING',?,?,?,?,? WHERE NOT EXISTS"
+                + " (SELECT 1 FROM radar_notification_events WHERE fingerprint=?)", fallback.toArray()) == 1;
     }
 
     public List<NotificationEvent> pendingNotifications(int limit) {

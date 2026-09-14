@@ -13,8 +13,10 @@ final class CampaignRefreshMerge {
     static PlatformCampaign merge(PlatformCampaign old, PlatformCampaign next) {
         if (old != null && (!Objects.equals(old.platform(), next.platform())
                 || !Objects.equals(old.campaignUrl(), next.campaignUrl()))) old = null;
+        // PostgreSQL rounds timestamps to microseconds; replaying the same nanosecond observation
+        // must not look older merely because its stored timestamp rounded up.
         if (old != null && next.lastCheckedAt() != null && old.lastCheckedAt() != null
-                && next.lastCheckedAt().isBefore(old.lastCheckedAt())) return old;
+                && next.lastCheckedAt().isBefore(old.lastCheckedAt().minusNanos(1000))) return old;
         if (old != null && next.status() == CampaignStatus.UNAVAILABLE) return old;
         var values = new Values(old == null ? Map.of() : old.facts(), next.facts(), next.lastCheckedAt());
         String issuer = values.field("issuerName", known(next.issuerName()), old == null ? null : old.issuerName());

@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
@@ -29,8 +29,14 @@ import com.startupvalidationbot.radar.ContentHash;
 public class DiligenceStore {
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
+    private final boolean postgres;
 
-    public DiligenceStore(JdbcTemplate jdbc, ObjectMapper json) { this.jdbc = jdbc; this.json = json; }
+    public DiligenceStore(JdbcTemplate jdbc, ObjectMapper json) {
+        this.jdbc = jdbc;
+        this.json = json;
+        this.postgres = Boolean.TRUE.equals(jdbc.execute((ConnectionCallback<Boolean>) connection ->
+                "PostgreSQL".equalsIgnoreCase(connection.getMetaData().getDatabaseProductName())));
+    }
 
     public List<Long> eligibleOfferingIds(int limit) {
         return jdbc.queryForList("""
@@ -66,6 +72,7 @@ public class DiligenceStore {
                 && sourceRank(existing.campaignUrlSource()) > sourceRank(campaign.campaignUrlSource())) {
             return existing;
         }
+        campaign = CampaignRefreshMerge.merge(existing, campaign);
         LocalDateTime now = LocalDateTime.now();
         int updated = jdbc.update("""
                 UPDATE radar_platform_campaigns SET offering_id=?, campaign_url_source=?,
@@ -73,13 +80,13 @@ public class DiligenceStore {
                   minimum_investment=?, price_per_share=?, valuation=?, valuation_cap=?, discount_percent=?,
                   target_amount=?, maximum_amount=?, amount_raised=?, investor_count=?, deadline=?, headline=?,
                   facts_json=?, source_fingerprint=?, last_checked_at=?, last_verified_at=?, updated_at=?
-                WHERE platform=? AND campaign_url=?
+                WHERE offering_id=? AND platform=? AND campaign_url=?
                 """, campaign.offeringId(), campaign.campaignUrlSource(), campaign.campaignUrlConfidence(),
                 campaign.status().name(), campaign.issuerName(), campaign.securityType(), campaign.minimumInvestment(),
                 campaign.pricePerShare(), campaign.valuation(), campaign.valuationCap(), campaign.discountPercent(),
                 campaign.targetAmount(), campaign.maximumAmount(), campaign.amountRaised(), campaign.investorCount(),
                 campaign.deadline(), campaign.headline(), write(campaign.facts()), campaign.sourceFingerprint(),
-                campaign.lastCheckedAt(), campaign.lastVerifiedAt(), now, campaign.platform(), campaign.campaignUrl());
+                campaign.lastCheckedAt(), campaign.lastVerifiedAt(), now, campaign.offeringId(), campaign.platform(), campaign.campaignUrl());
         if (updated == 0) {
             jdbc.update("""
                     INSERT INTO radar_platform_campaigns (offering_id, platform, campaign_url,
@@ -273,16 +280,19 @@ public class DiligenceStore {
 
     public boolean queueNotification(String eventType, String entityType, long entityId, String fingerprint,
             String recipient, String subject, String text, String html) {
-        try {
-            return jdbc.update("""
-                    INSERT INTO radar_notification_events (event_type,entity_type,entity_id,fingerprint,recipient,
-                      status,subject,text_body,html_body,created_at,updated_at)
-                    VALUES (?,?,?,?,?,'PENDING',?,?,?,?,?)
-                    """, eventType, entityType, entityId, fingerprint, recipient, subject, text, html,
-                    LocalDateTime.now(), LocalDateTime.now()) == 1;
-        } catch (DuplicateKeyException duplicate) {
-            return false;
+        String insert = """
+                INSERT INTO radar_notification_events (event_type,entity_type,entity_id,fingerprint,recipient,
+                  status,subject,text_body,html_body,created_at,updated_at)
+                """;
+        Object[] args = { eventType, entityType, entityId, fingerprint, recipient, subject, text, html,
+                LocalDateTime.now(), LocalDateTime.now() };
+        if (postgres) {
+            return jdbc.update(insert + " VALUES (?,?,?,?,?,'PENDING',?,?,?,?,?) ON CONFLICT (fingerprint) DO NOTHING", args) == 1;
         }
+        List<Object> fallback = new ArrayList<>(java.util.Arrays.asList(args));
+        fallback.add(fingerprint);
+        return jdbc.update(insert + " SELECT ?,?,?,?,?,'PENDING',?,?,?,?,? WHERE NOT EXISTS"
+                + " (SELECT 1 FROM radar_notification_events WHERE fingerprint=?)", fallback.toArray()) == 1;
     }
 
     public List<NotificationEvent> pendingNotifications(int limit) {
@@ -409,7 +419,7 @@ public class DiligenceStore {
               o.security_type offering_security_type,o.minimum_investment offering_minimum_investment,
               o.target_amount offering_target_amount,o.maximum_amount offering_maximum_amount,
               o.amount_raised offering_amount_raised,o.valuation_or_cap offering_valuation_or_cap,
-              o.deadline offering_deadline,
+              o.deadline offering_deadline,o.raw_facts_json offering_facts_json,
               pc.id campaign_id,pc.platform campaign_platform,pc.campaign_url,pc.campaign_url_source,
               pc.campaign_url_confidence,pc.campaign_status,pc.issuer_name campaign_issuer_name,
               pc.security_type campaign_security_type,pc.minimum_investment campaign_minimum_investment,
@@ -447,7 +457,7 @@ public class DiligenceStore {
                     rs.getBigDecimal("offering_minimum_investment"), rs.getBigDecimal("offering_target_amount"),
                     rs.getBigDecimal("offering_maximum_amount"), rs.getBigDecimal("offering_amount_raised"),
                     rs.getString("offering_valuation_or_cap"), rs.getObject("offering_deadline", LocalDate.class),
-                    rs.getString("offering_platform_status"));
+                    rs.getString("offering_platform_status"), readMap(rs.getString("offering_facts_json")));
             return new PacketRow(rs.getLong("id"), rs.getLong("radar_company_id"), rs.getString("company_name"),
                 rs.getLong("offering_id"), rs.getString("platform"), rs.getString("sec_filing_url"),
                 offeringTerms, campaign, rs.getString("status"), rs.getString("identity_status"),

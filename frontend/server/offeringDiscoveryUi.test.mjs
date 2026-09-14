@@ -87,6 +87,8 @@ test('Review Queue and detail keep filed facts separate and never auto-create a 
   assert.match(detail, /SEC-Filed Facts/);
   assert.match(detail, /Platform \/ Issuer Claims/);
   assert.match(detail, /termProvenance/);
+  assert.match(detail, /source\.observedAt/);
+  assert.match(detail, /Last observed/);
   assert.match(detail, /SEC reconciliation/);
   assert.match(detail, /Platform identity/);
   assert.match(detail, /Material discrepancies require review/);

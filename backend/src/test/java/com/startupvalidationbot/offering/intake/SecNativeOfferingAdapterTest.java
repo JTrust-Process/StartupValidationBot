@@ -10,6 +10,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 import com.startupvalidationbot.offering.OfferingDomain.Candidate;
+import com.startupvalidationbot.offering.OfferingDomain.RetrievalQuality;
 import com.startupvalidationbot.offering.OfferingSourceAdapter;
 import com.startupvalidationbot.offering.intake.NativeOfferingDomain.Status;
 
@@ -51,7 +52,10 @@ class SecNativeOfferingAdapterTest {
 
     @Test
     void failedDetailRequestsStillCountTowardTheConfiguredBound() {
-        Candidate candidate = candidate("Republic", "C", null);
+        Candidate candidate = new Candidate("GridCool Systems, Inc.", "0001234567", null,
+                "UNKNOWN", null, null, null, "https://www.sec.gov/Archives/example",
+                "0001234567-26-000001", null, "C", LocalDate.now(), null, null, null, null, null, null, null,
+                "SEC_EDGAR_RECENT_INDEX", Map.of(), RetrievalQuality.INDEX_ONLY);
         OfferingSourceAdapter failingSource = new OfferingSourceAdapter() {
             @Override public List<Candidate> fetchRecent() { return java.util.Collections.nCopies(25, candidate); }
             @Override public List<Candidate> fetchBaseline() { return List.of(); }
@@ -64,6 +68,10 @@ class SecNativeOfferingAdapterTest {
         assertThat(result.detailRequests()).isEqualTo(10);
         assertThat(result.candidates()).hasSize(25);
         assertThat(result.errors()).hasSize(10);
+        assertThat(result.candidates()).allSatisfy(value -> {
+            assertThat(value.retrievalQuality()).isEqualTo(RetrievalQuality.INDEX_ONLY);
+            assertThat(value.securityType()).isNull();
+        });
     }
 
     private static Candidate candidate(String intermediary, String form, LocalDate deadline) {

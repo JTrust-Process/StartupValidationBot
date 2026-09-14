@@ -27,6 +27,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.startupvalidationbot.offering.OfferingDomain.Candidate;
+import com.startupvalidationbot.offering.OfferingDomain.RetrievalQuality;
 import com.startupvalidationbot.radar.source.PublicSourceUrlPolicy;
 import com.startupvalidationbot.radar.source.SourceFetchException;
 
@@ -65,7 +66,7 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
                 padCik(record.cik()), null, "UNKNOWN", null, null, null,
                 filingIndexUrl(record.cik(), record.accession()), record.accession(), null, record.form(),
                 record.filingDate(), null, null, null, null, null, null, null,
-                "SEC_EDGAR_RECENT_INDEX", Map.of("submissionPath", record.path()))).toList();
+                "SEC_EDGAR_RECENT_INDEX", Map.of("submissionPath", record.path()), RetrievalQuality.INDEX_ONLY)).toList();
     }
 
     @Override
@@ -129,7 +130,8 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
                 facts.get("fileNumber"), record.form(), record.filingDate(), facts.get("securityType"),
                 decimal(facts.get("minimumInvestment")), decimal(facts.get("targetAmount")),
                 decimal(facts.get("maximumAmount")), tag(xml, "valuation", "valuationCap"),
-                date(facts.get("deadline")), decimal(facts.get("amountRaised")), "SEC_EDGAR_RECENT", Map.copyOf(facts));
+                date(facts.get("deadline")), decimal(facts.get("amountRaised")), "SEC_EDGAR_RECENT", Map.copyOf(facts),
+                xml.isEmpty() ? RetrievalQuality.INDEX_ONLY : RetrievalQuality.DETAIL_COMPLETE);
     }
 
     static List<Candidate> parseDatasetZip(byte[] zipBytes) {
@@ -156,7 +158,8 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
                     compactDate(submission.get("FILING_DATE")), disclosure.get("SECURITYOFFEREDTYPE"), null,
                     decimal(disclosure.get("OFFERINGAMOUNT")), decimal(disclosure.get("MAXIMUMOFFERINGAMOUNT")),
                     null, compactDate(disclosure.get("DEADLINEDATE")),
-                    decimal(disclosure.get("TOTALOFFERINGAMOUNT")), "SEC_CF_DATASET", Map.copyOf(facts)));
+                    decimal(disclosure.get("TOTALOFFERINGAMOUNT")), "SEC_CF_DATASET", Map.copyOf(facts),
+                    disclosure.isEmpty() ? RetrievalQuality.PARTIAL_DETAIL : RetrievalQuality.DETAIL_COMPLETE));
         });
         return candidates;
     }

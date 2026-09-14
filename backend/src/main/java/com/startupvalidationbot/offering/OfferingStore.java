@@ -95,7 +95,16 @@ public class OfferingStore {
                 WHERE match_status IN ('LIKELY','AMBIGUOUS')
                 ORDER BY COALESCE(last_resolution_attempt_at, TIMESTAMP '1970-01-01 00:00:00'), updated_at DESC
                 LIMIT ?
-                """, (rs, row) -> {
+                """, storedCandidateMapper(), Math.max(1, Math.min(limit, 50)));
+    }
+
+    public Candidate storedCandidate(long id) {
+        return jdbc.query("SELECT * FROM radar_offerings WHERE id=?", storedCandidateMapper(), id)
+                .stream().findFirst().orElseThrow().candidate();
+    }
+
+    private org.springframework.jdbc.core.RowMapper<StoredCandidate> storedCandidateMapper() {
+        return (rs, row) -> {
             Map<String, String> facts = factsFromJson(rs.getString("raw_facts_json"));
             Candidate candidate = new Candidate(rs.getString("issuer_name"), rs.getString("issuer_cik"),
                     issuerWebsite(rs.getString("raw_facts_json")), rs.getString("platform"),
@@ -106,12 +115,16 @@ public class OfferingStore {
                     rs.getString("security_type"), rs.getBigDecimal("minimum_investment"),
                     rs.getBigDecimal("target_amount"), rs.getBigDecimal("maximum_amount"),
                     rs.getString("valuation_or_cap"), rs.getObject("deadline", LocalDate.class),
-                    rs.getBigDecimal("amount_raised"), rs.getString("source"), facts);
+                    rs.getBigDecimal("amount_raised"), rs.getString("source"), facts, RetrievalQuality.PARTIAL_DETAIL);
             return new StoredCandidate(rs.getLong("id"), candidate);
-        }, Math.max(1, Math.min(limit, 50)));
+        };
     }
 
+    @Transactional
     public void updateMatch(long offeringId, Match match) {
+        jdbc.queryForObject("SELECT id FROM radar_offerings WHERE id=? FOR UPDATE", Long.class, offeringId);
+        Offering current = find(offeringId).orElseThrow();
+        match = OfferingRefreshMerge.match(current, match, null, null);
         jdbc.update("""
                 UPDATE radar_offerings SET radar_company_id=?, match_status=?, match_confidence=?,
                   match_reason=?, updated_at=? WHERE id=?
@@ -128,20 +141,37 @@ public class OfferingStore {
     }
 
     @Transactional
-    public UpsertResult upsert(Candidate candidate, Match match) {
+    public UpsertResult upsert(Candidate incoming, Match proposedMatch) {
         LocalDateTime now = LocalDateTime.now();
-        Status nextStatus = status(candidate);
-        Optional<Offering> existing = findExisting(candidate);
+        Optional<Offering> existing = findExisting(incoming);
+        if (existing.isPresent()) {
+            long existingId = existing.orElseThrow().id();
+            jdbc.queryForObject("SELECT id FROM radar_offerings WHERE id=? FOR UPDATE", Long.class, existingId);
+            existing = find(existingId);
+        }
         boolean created = existing.isEmpty();
         long id;
         Status previousStatus = existing.map(Offering::status).orElse(null);
 
-        if (existing.isPresent() && isOlder(candidate, existing.orElseThrow())) {
+        if (existing.isPresent() && isOlder(incoming, existing.orElseThrow())) {
             id = existing.orElseThrow().id();
-            insertFiling(id, candidate, now);
+            insertFiling(id, incoming, now);
             jdbc.update("UPDATE radar_offerings SET last_seen_at=?, updated_at=? WHERE id=?", now, now, id);
             return new UpsertResult(find(id).orElseThrow(), false);
         }
+
+        Candidate stored = existing.map(value -> storedCandidate(value.id())).orElse(null);
+        Match match = existing.isEmpty() ? proposedMatch
+                : OfferingRefreshMerge.match(existing.orElseThrow(), proposedMatch, incoming, stored);
+        // A platform projection is not SEC evidence. Its terms remain available through its campaign.
+        Candidate secPrevious = existing.isPresent() && "SEC_EDGAR".equals(existing.orElseThrow().provenance())
+                ? stored : null;
+        Candidate candidate = OfferingRefreshMerge.merge(secPrevious, incoming, now);
+        Status nextStatus = status(candidate);
+        if (existing.isPresent() && incoming.retrievalQuality() == RetrievalQuality.INDEX_ONLY
+                && !List.of("C-W", "C-TR").contains(candidate.filingType())
+                && candidate.deadline() == null) nextStatus = existing.orElseThrow().status();
+        final Status persistedStatus = nextStatus;
 
         if (created) {
             KeyHolder keys = new GeneratedKeyHolder();
@@ -156,7 +186,7 @@ public class OfferingStore {
                           raw_facts_json, first_seen_at, last_seen_at, created_at, updated_at
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'REG_CF', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, new String[] { "id" });
-                bind(statement, candidate, match, nextStatus, now, now);
+                bind(statement, candidate, match, persistedStatus, now, now);
                 return statement;
             }, keys);
             id = keys.getKey().longValue();
@@ -252,14 +282,16 @@ public class OfferingStore {
                 job.updated(), job.errorCount());
     }
 
-    private Optional<Offering> findExisting(Candidate candidate) {
+    public Optional<Offering> findExisting(Candidate candidate) {
         if (!blank(candidate.fileNumber())) {
             Optional<Offering> byFile = jdbc.query(SELECT + " WHERE o.issuer_cik=? AND o.sec_file_number=?",
                     offeringMapper(), candidate.issuerCik(), candidate.fileNumber()).stream().findFirst();
             if (byFile.isPresent()) return byFile;
         }
-        Optional<Offering> byAccession = jdbc.query(SELECT + " WHERE o.sec_accession_number=?",
-                offeringMapper(), candidate.accessionNumber()).stream().findFirst();
+        Optional<Offering> byAccession = jdbc.query(SELECT + """
+                WHERE o.sec_accession_number=? OR o.id IN (
+                  SELECT offering_id FROM radar_offering_filings WHERE accession_number=?)
+                """, offeringMapper(), candidate.accessionNumber(), candidate.accessionNumber()).stream().findFirst();
         if (byAccession.isPresent()) return byAccession;
         if (!blank(candidate.offeringUrl())) {
             return jdbc.query(SELECT + " WHERE o.offering_url=?", offeringMapper(), candidate.offeringUrl())
@@ -292,6 +324,8 @@ public class OfferingStore {
 
     private static boolean isOlder(Candidate candidate, Offering current) {
         if ("PLATFORM_OFFERING".equals(current.provenance())) return false;
+        if (candidate.filingDate() == null || candidate.accessionNumber() == null) return true;
+        if (current.filingDate() == null || current.accessionNumber() == null) return false;
         int dateOrder = candidate.filingDate().compareTo(current.filingDate());
         return dateOrder < 0 || (dateOrder == 0
                 && candidate.accessionNumber().compareTo(current.accessionNumber()) < 0);

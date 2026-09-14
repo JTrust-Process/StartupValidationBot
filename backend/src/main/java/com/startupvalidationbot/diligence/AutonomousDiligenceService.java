@@ -151,10 +151,10 @@ public class AutonomousDiligenceService {
             List<FinancialPeriod> financials = offering.secFilingUrl() == null
                     ? List.of() : financialExtractor.extract(offering, secFacts);
             List<EvidenceDraft> evidence = offering.secFilingUrl() == null
-                    ? new ArrayList<>() : secEvidence(offering, secFacts, financials);
+                    ? new ArrayList<>() : new ArrayList<>(secEvidence(offering, secFacts, financials));
             Map<String, String> platformFacts = campaign == null ? Map.of() : campaign.facts();
             if (campaign != null) evidence.addAll(platformEvidence(campaign));
-            EffectiveOfferingTerms.Projection terms = EffectiveOfferingTerms.resolve(offering, campaign);
+            EffectiveOfferingTerms.Projection terms = EffectiveOfferingTerms.resolve(offering, campaign, storedFacts);
             List<String> discrepancies = new ArrayList<>(reconciler.reconcile(secFacts, platformFacts));
             discrepancies.addAll(terms.issues());
             Analysis analysis = queries.detail(offering.radarCompanyId()).latestAnalysis();
@@ -259,7 +259,15 @@ public class AutonomousDiligenceService {
         }
         String compensation = value(facts, "COMPENSATIONAMOUNT", "compensationAmount");
         if (compensation != null) add(evidence, offering, "intermediary_compensation", compensation, null);
-        return evidence;
+        Map<String, String> keys = Map.of("security_type", "securityType", "minimum_investment", "minimumInvestment",
+                "target_amount", "targetAmount", "maximum_amount", "maximumAmount", "amount_raised", "amountRaised", "deadline", "deadline");
+        return evidence.stream().map(item -> {
+            String key = keys.get(item.factKey());
+            if (key == null || !facts.containsKey("_sourceUrl." + key)) return item;
+            return new EvidenceDraft(item.sourceType(), facts.get("_sourceUrl." + key), item.sourceTitle(), item.factKey(),
+                    item.factValue(), item.period(), item.classification(), item.confidence(), item.rawExcerpt(),
+                    Map.of("accessionNumber", facts.getOrDefault("_accession." + key, offering.accessionNumber())));
+        }).toList();
     }
 
     private static void add(List<EvidenceDraft> target, Offering offering, String key, Object value, String period) {
@@ -271,9 +279,9 @@ public class AutonomousDiligenceService {
 
     private static List<EvidenceDraft> platformEvidence(PlatformCampaign campaign) {
         List<EvidenceDraft> evidence = new ArrayList<>();
-        campaign.facts().forEach((key, value) -> evidence.add(new EvidenceDraft(campaign.platform(),
+        campaign.facts().forEach((key, value) -> { if (!key.startsWith("_")) evidence.add(new EvidenceDraft(campaign.platform(),
                 campaign.campaignUrl(), campaign.platform() + " public campaign", key, value, null,
-                EvidenceClassification.PLATFORM_ISSUER_CLAIM, 70, "Public campaign-page claim.", Map.of())));
+                EvidenceClassification.PLATFORM_ISSUER_CLAIM, 70, "Public campaign-page claim.", Map.of())); });
         return evidence;
     }
 

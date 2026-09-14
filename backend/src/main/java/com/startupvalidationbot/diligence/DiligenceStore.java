@@ -66,6 +66,7 @@ public class DiligenceStore {
                 && sourceRank(existing.campaignUrlSource()) > sourceRank(campaign.campaignUrlSource())) {
             return existing;
         }
+        campaign = CampaignRefreshMerge.merge(existing, campaign);
         LocalDateTime now = LocalDateTime.now();
         int updated = jdbc.update("""
                 UPDATE radar_platform_campaigns SET offering_id=?, campaign_url_source=?,
@@ -73,13 +74,13 @@ public class DiligenceStore {
                   minimum_investment=?, price_per_share=?, valuation=?, valuation_cap=?, discount_percent=?,
                   target_amount=?, maximum_amount=?, amount_raised=?, investor_count=?, deadline=?, headline=?,
                   facts_json=?, source_fingerprint=?, last_checked_at=?, last_verified_at=?, updated_at=?
-                WHERE platform=? AND campaign_url=?
+                WHERE offering_id=? AND platform=? AND campaign_url=?
                 """, campaign.offeringId(), campaign.campaignUrlSource(), campaign.campaignUrlConfidence(),
                 campaign.status().name(), campaign.issuerName(), campaign.securityType(), campaign.minimumInvestment(),
                 campaign.pricePerShare(), campaign.valuation(), campaign.valuationCap(), campaign.discountPercent(),
                 campaign.targetAmount(), campaign.maximumAmount(), campaign.amountRaised(), campaign.investorCount(),
                 campaign.deadline(), campaign.headline(), write(campaign.facts()), campaign.sourceFingerprint(),
-                campaign.lastCheckedAt(), campaign.lastVerifiedAt(), now, campaign.platform(), campaign.campaignUrl());
+                campaign.lastCheckedAt(), campaign.lastVerifiedAt(), now, campaign.offeringId(), campaign.platform(), campaign.campaignUrl());
         if (updated == 0) {
             jdbc.update("""
                     INSERT INTO radar_platform_campaigns (offering_id, platform, campaign_url,
@@ -409,7 +410,7 @@ public class DiligenceStore {
               o.security_type offering_security_type,o.minimum_investment offering_minimum_investment,
               o.target_amount offering_target_amount,o.maximum_amount offering_maximum_amount,
               o.amount_raised offering_amount_raised,o.valuation_or_cap offering_valuation_or_cap,
-              o.deadline offering_deadline,
+              o.deadline offering_deadline,o.raw_facts_json offering_facts_json,
               pc.id campaign_id,pc.platform campaign_platform,pc.campaign_url,pc.campaign_url_source,
               pc.campaign_url_confidence,pc.campaign_status,pc.issuer_name campaign_issuer_name,
               pc.security_type campaign_security_type,pc.minimum_investment campaign_minimum_investment,
@@ -447,7 +448,7 @@ public class DiligenceStore {
                     rs.getBigDecimal("offering_minimum_investment"), rs.getBigDecimal("offering_target_amount"),
                     rs.getBigDecimal("offering_maximum_amount"), rs.getBigDecimal("offering_amount_raised"),
                     rs.getString("offering_valuation_or_cap"), rs.getObject("offering_deadline", LocalDate.class),
-                    rs.getString("offering_platform_status"));
+                    rs.getString("offering_platform_status"), readMap(rs.getString("offering_facts_json")));
             return new PacketRow(rs.getLong("id"), rs.getLong("radar_company_id"), rs.getString("company_name"),
                 rs.getLong("offering_id"), rs.getString("platform"), rs.getString("sec_filing_url"),
                 offeringTerms, campaign, rs.getString("status"), rs.getString("identity_status"),

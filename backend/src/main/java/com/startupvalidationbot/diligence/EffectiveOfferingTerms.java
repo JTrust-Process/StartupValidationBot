@@ -18,10 +18,14 @@ public final class EffectiveOfferingTerms {
     private EffectiveOfferingTerms() { }
 
     public static Projection resolve(Offering offering, PlatformCampaign campaign) {
+        return resolve(offering, campaign, Map.of());
+    }
+
+    public static Projection resolve(Offering offering, PlatformCampaign campaign, Map<String, String> facts) {
         SourceValues source = new SourceValues(offering.provenance(), offering.platform(), offering.offeringUrl(),
                 offering.secFilingUrl(), offering.securityType(), offering.minimumInvestment(),
                 offering.targetAmount(), offering.maximumAmount(), offering.amountRaised(),
-                offering.valuationOrCap(), offering.deadline(), offering.platformStatus());
+                offering.valuationOrCap(), offering.deadline(), offering.platformStatus(), facts);
         return resolve(source, campaign);
     }
 
@@ -118,6 +122,17 @@ public final class EffectiveOfferingTerms {
                 ? "Verified from official " + displayPlatform(campaign.platform()) + " campaign"
                 : "Not established";
         String secReconciliation = secFiled ? "Established from SEC-filed offering" : "Not established";
+        provenance.replaceAll((key, value) -> {
+            boolean filed = value.classification() == EvidenceClassification.SEC_FILED_FACT;
+            String metadataKey = filed && (key.equals("valuation") || key.equals("valuationCap")) ? "valuationOrCap" : key;
+            Map<String, String> metadata = filed ? offering.facts() : campaign == null ? Map.of() : campaign.facts();
+            String observedAt = metadata.get("_observedAt." + metadataKey);
+            if (!filed && observedAt == null && campaign != null && campaign.lastVerifiedAt() != null) {
+                observedAt = campaign.lastVerifiedAt().toString();
+            }
+            return new TermProvenance(value.sourceType(), metadata.getOrDefault("_sourceUrl." + metadataKey, value.sourceUrl()),
+                    value.classification(), observedAt);
+        });
         return new Projection(security, minimum, target, maximum, raised, valuation, cap, deadline,
                 campaignUrl, platformStatus, platformIdentity, secReconciliation,
                 Map.copyOf(provenance), List.copyOf(issues), trustedCampaign);
@@ -184,7 +199,14 @@ public final class EffectiveOfferingTerms {
     public record SourceValues(String provenance, String platform, String offeringUrl, String secFilingUrl,
             String securityType, BigDecimal minimumInvestment, BigDecimal targetAmount,
             BigDecimal maximumAmount, BigDecimal amountRaised, String valuationOrCap,
-            LocalDate deadline, String platformStatus) { }
+            LocalDate deadline, String platformStatus, Map<String, String> facts) {
+        public SourceValues(String provenance, String platform, String offeringUrl, String secFilingUrl,
+                String securityType, BigDecimal minimumInvestment, BigDecimal targetAmount,
+                BigDecimal maximumAmount, BigDecimal amountRaised, String valuationOrCap, LocalDate deadline, String platformStatus) {
+            this(provenance, platform, offeringUrl, secFilingUrl, securityType, minimumInvestment, targetAmount,
+                    maximumAmount, amountRaised, valuationOrCap, deadline, platformStatus, Map.of());
+        }
+    }
 
     public record Projection(String securityType, BigDecimal minimumInvestment, BigDecimal targetAmount,
             BigDecimal maximumAmount, BigDecimal amountRaised, BigDecimal valuation,

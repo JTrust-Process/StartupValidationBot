@@ -51,6 +51,11 @@ public final class NativeOfferingDomain {
             Map<String, String> sourceEvidence,
             LocalDateTime retrievedAt) {
 
+        public com.startupvalidationbot.offering.OfferingDomain.RetrievalQuality retrievalQuality() {
+            return com.startupvalidationbot.offering.OfferingDomain.RetrievalQuality.valueOf(
+                    sourceEvidence.getOrDefault("_retrievalQuality", "PARTIAL_DETAIL"));
+        }
+
         public boolean isRegCf() {
             String value = exemption == null ? "" : exemption.toUpperCase();
             return value.contains("REG_CF") || value.contains("REG CF")

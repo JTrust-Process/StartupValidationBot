@@ -108,6 +108,14 @@ public class NativeOfferingIntakeService {
             }
 
             if (!value.actionableRegCf() && !value.reviewableRecentSecRegCf()) {
+                var terminalId = nativeStore.findOfferingId(value);
+                if (terminalId.isPresent() && List.of(Status.CLOSED, Status.WITHDRAWN, Status.TERMINATED).contains(value.status())) {
+                    var current = offeringStore.find(terminalId.orElseThrow()).orElseThrow();
+                    Match established = new Match(current.radarCompanyId(), current.matchStatus(), current.matchConfidence(), current.matchReason());
+                    if (value.source().startsWith("SEC_")) offeringStore.upsert(secCandidate(value), established);
+                    else nativeStore.upsertPlatformOffering(value, established, candidate.status);
+                    updatedOfferings++;
+                }
                 nativeStore.saveCandidate(value, candidate.status, "NOT_ACTIONABLE", 0, false);
                 rejected++; counts.rejected++;
                 continue;
@@ -117,6 +125,11 @@ public class NativeOfferingIntakeService {
             if (candidate.ambiguous || match.status() == MatchStatus.AMBIGUOUS
                     || match.status() == MatchStatus.REJECTED
                     || match.status() == MatchStatus.LIKELY && match.confidence() < 75) {
+                if (match.contradictoryEvidence() || candidate.ambiguous) {
+                    Match contradiction = candidate.ambiguous
+                            ? new Match(null, MatchStatus.AMBIGUOUS, 35, "Multiple concrete SEC reconciliation candidates.", true) : match;
+                    nativeStore.findOfferingId(value).ifPresent(id -> offeringStore.updateMatch(id, contradiction));
+                }
                 nativeStore.saveCandidate(value, ReconciliationStatus.NEEDS_REVIEW,
                         match.status().name(), match.confidence(), false);
                 possible++; rejected++; counts.rejected++;
@@ -293,10 +306,11 @@ public class NativeOfferingIntakeService {
 
     private static Candidate secCandidate(NativeOfferingCandidate value) {
         return new Candidate(value.companyName(), value.issuerCik(), value.issuerWebsite(), value.platform(),
-                value.intermediaryName(), null, value.canonicalUrl(), value.secFilingUrl(),
+                value.intermediaryName(), value.sourceEvidence().get("intermediaryCik"), value.canonicalUrl(), value.secFilingUrl(),
                 value.secAccessionNumber(), value.secFileNumber(), value.filingType(), value.filingDate(),
                 value.securityType(), value.minimumInvestment(), value.targetAmount(), value.maximumAmount(),
-                value.valuationOrCap(), value.deadline(), value.amountRaised(), value.source(), value.sourceEvidence());
+                value.valuationOrCap(), value.deadline(), value.amountRaised(), value.source(), value.sourceEvidence(),
+                value.retrievalQuality());
     }
 
     private static String sourceName(NativeOfferingCandidate value) {

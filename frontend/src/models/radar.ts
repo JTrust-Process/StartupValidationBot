@@ -300,6 +300,7 @@ export interface DiligenceTermProvenance {
   sourceType: string;
   sourceUrl: string | null;
   classification: 'SEC_FILED_FACT' | 'PLATFORM_ISSUER_CLAIM';
+  observedAt?: string | null;
 }
 
 export interface DiligencePacket {

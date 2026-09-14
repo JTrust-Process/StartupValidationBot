@@ -11,16 +11,32 @@ public final class OfferingDomain {
 
     public enum Status { ACTIVE, POSSIBLY_ACTIVE, ENDED, WITHDRAWN, TERMINATED, UNKNOWN }
     public enum MatchStatus { CONFIRMED, LIKELY, AMBIGUOUS, UNMATCHED, REJECTED }
+    public enum RetrievalQuality { DETAIL_COMPLETE, PARTIAL_DETAIL, INDEX_ONLY }
 
     public record Candidate(String issuerName, String issuerCik, String issuerWebsite, String platform,
             String intermediaryName, String intermediaryCik, String offeringUrl, String secFilingUrl,
             String accessionNumber, String fileNumber, String filingType, LocalDate filingDate,
             String securityType, BigDecimal minimumInvestment, BigDecimal targetAmount,
             BigDecimal maximumAmount, String valuationOrCap, LocalDate deadline, BigDecimal amountRaised,
-            String source, Map<String, String> facts) {
+            String source, Map<String, String> facts, RetrievalQuality retrievalQuality) {
+        public Candidate(String issuerName, String issuerCik, String issuerWebsite, String platform,
+                String intermediaryName, String intermediaryCik, String offeringUrl, String secFilingUrl,
+                String accessionNumber, String fileNumber, String filingType, LocalDate filingDate,
+                String securityType, BigDecimal minimumInvestment, BigDecimal targetAmount,
+                BigDecimal maximumAmount, String valuationOrCap, LocalDate deadline, BigDecimal amountRaised,
+                String source, Map<String, String> facts) {
+            this(issuerName, issuerCik, issuerWebsite, platform, intermediaryName, intermediaryCik, offeringUrl,
+                    secFilingUrl, accessionNumber, fileNumber, filingType, filingDate, securityType,
+                    minimumInvestment, targetAmount, maximumAmount, valuationOrCap, deadline, amountRaised,
+                    source, facts, RetrievalQuality.PARTIAL_DETAIL);
+        }
     }
 
-    public record Match(Long companyId, MatchStatus status, int confidence, String reason) {
+    public record Match(Long companyId, MatchStatus status, int confidence, String reason,
+            boolean contradictoryEvidence) {
+        public Match(Long companyId, MatchStatus status, int confidence, String reason) {
+            this(companyId, status, confidence, reason, false);
+        }
     }
 
     public record Offering(long id, Long radarCompanyId, String companyName, String issuerName, String issuerCik,

@@ -54,6 +54,8 @@ public class SecNativeOfferingAdapter implements NativeOfferingSourceAdapter {
 
     static NativeOfferingCandidate from(Candidate candidate, LocalDateTime retrievedAt) {
         Map<String, String> evidence = new LinkedHashMap<>(candidate.facts());
+        evidence.put("_retrievalQuality", candidate.retrievalQuality().name());
+        if (candidate.intermediaryCik() != null) evidence.put("intermediaryCik", candidate.intermediaryCik());
         evidence.put("secLifecycleStatus", status(candidate).name());
         String platform = PlatformNormalizer.normalize(first(candidate.intermediaryName(), candidate.platform()));
         return new NativeOfferingCandidate("SEC_EDGAR_RECENT", platform, candidate.accessionNumber(),

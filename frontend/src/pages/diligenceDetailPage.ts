@@ -23,7 +23,8 @@ function termSource(packet: DiligencePacket, key: string): string {
   const source = packet.termProvenance[key];
   if (!source) return '<small class="radar-muted">Source not established</small>';
   const classification = source.classification === 'SEC_FILED_FACT' ? 'SEC-filed fact' : 'Platform issuer claim';
-  return `<small class="radar-muted">Source: ${escapeHtml(source.sourceType)} · ${classification}</small>`;
+  const observed = source.observedAt ? ` · Last observed ${escapeHtml(formatRadarDate(source.observedAt))}` : '';
+  return `<small class="radar-muted">Source: ${escapeHtml(source.sourceType)} · ${classification}${observed}</small>`;
 }
 
 function evidenceTable(items: DiligenceEvidence[]): string {

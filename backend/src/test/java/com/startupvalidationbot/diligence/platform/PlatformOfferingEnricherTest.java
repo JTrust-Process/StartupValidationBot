@@ -79,7 +79,8 @@ class PlatformOfferingEnricherTest {
         assertThat(value.status()).isEqualTo(CampaignStatus.UNKNOWN);
         assertThat(value.issuerName()).isNull();
         assertThat(value.securityType()).isNull();
-        assertThat(value.facts()).isEmpty();
+        assertThat(value.facts()).containsOnlyKeys("_retrievalQuality");
+        assertThat(value.facts().get("_retrievalQuality")).isEqualTo("PARTIAL_DETAIL");
     }
 
     @Test

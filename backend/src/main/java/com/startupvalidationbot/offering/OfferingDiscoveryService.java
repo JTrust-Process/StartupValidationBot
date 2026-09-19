@@ -50,10 +50,12 @@ public class OfferingDiscoveryService {
         for (Candidate initialCandidate : candidates.values()) {
             try {
                 Match match = matcher.match(initialCandidate, companies);
-                if (match.status() == MatchStatus.UNMATCHED || match.status() == MatchStatus.REJECTED) continue;
+                if ((match.status() == MatchStatus.UNMATCHED || match.status() == MatchStatus.REJECTED)
+                        && store.findExisting(initialCandidate).isEmpty()) continue;
                 Candidate candidate = source.enrich(initialCandidate);
                 Match enrichedMatch = matcher.match(candidate, companies);
-                if (enrichedMatch.status() == MatchStatus.REJECTED || enrichedMatch.status() == MatchStatus.UNMATCHED) continue;
+                if ((enrichedMatch.status() == MatchStatus.REJECTED || enrichedMatch.status() == MatchStatus.UNMATCHED)
+                        && store.findExisting(candidate).isEmpty()) continue;
                 match = enrichedMatch;
                 OfferingStore.UpsertResult result = store.upsert(candidate, match);
                 if (result.created()) created++; else updated++;

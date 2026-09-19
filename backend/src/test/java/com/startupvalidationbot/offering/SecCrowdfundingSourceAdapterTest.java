@@ -20,6 +20,18 @@ class SecCrowdfundingSourceAdapterTest {
     }
 
     @Test
+    void resolvesFlatMasterIndexSubmissionPathThroughItsAccessionDirectory() {
+        assertThat(SecCrowdfundingSourceAdapter.submissionTextUrl(
+                "edgar/data/2147324/0001872856-26-000296.txt"))
+                .isEqualTo("https://www.sec.gov/Archives/edgar/data/2147324/"
+                        + "000187285626000296/0001872856-26-000296.txt");
+        assertThat(SecCrowdfundingSourceAdapter.submissionTextUrl(
+                "edgar/data/2147324/000187285626000296/0001872856-26-000296.txt"))
+                .isEqualTo("https://www.sec.gov/Archives/edgar/data/2147324/"
+                        + "000187285626000296/0001872856-26-000296.txt");
+    }
+
+    @Test
     void parsesRecentIndexAndCompleteSubmissionWithoutGuessingLifecycle() {
         String index = "Header\n0001234567|Acme Technologies Inc.|C/A|2026-08-20|edgar/data/1234567/000123456726000002/0001234567-26-000002.txt\n"
                 + "0001234567|Acme Technologies Inc.|C-W|2026-08-21|edgar/data/1234567/000123456726000003/0001234567-26-000003.txt\n"
@@ -39,6 +51,10 @@ class SecCrowdfundingSourceAdapterTest {
         assertThat(candidate.platform()).isEqualTo("Wefunder");
         assertThat(candidate.targetAmount()).isEqualByComparingTo("100000");
         assertThat(candidate.deadline()).isEqualTo(LocalDate.of(2026, 12, 31));
+
+        var usDeadline = SecCrowdfundingSourceAdapter.parseSubmission(records.get(1), submission
+                .replace("2026-12-31", "12-31-2026"));
+        assertThat(usDeadline.deadline()).isEqualTo(LocalDate.of(2026, 12, 31));
 
         var malformed = SecCrowdfundingSourceAdapter.parseSubmission(records.get(4), "<unexpected><xml/></unexpected>");
         assertThat(malformed.issuerName()).isEqualTo("Acme Technologies Inc.");

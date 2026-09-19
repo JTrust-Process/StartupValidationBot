@@ -157,12 +157,32 @@ Every discovery is deduplicated, snapshotted, scored, and linked to a source. So
 Offering Discovery is the bridge between company research and private-market diligence:
 
 ```text
-Radar company -> SEC-filed offering evidence -> user review -> Deal Scout
+public live offering or Radar company -> SEC reconciliation -> public diligence -> user review -> Deal Scout
 ```
 
-It monitors official SEC Regulation Crowdfunding data through bounded quarterly baselines and current-quarter EDGAR indexes. Matching is deterministic, unmatched SEC issuers are not retained, and recent filing documents are fetched only after a tracked company identity first matches. A confirmed offering adds neutral offering evidence, never an investment-quality signal, and no Deal Scout workspace is created until the user submits the existing New Deal form.
+It monitors official SEC Regulation Crowdfunding data through bounded quarterly baselines and current-quarter EDGAR indexes. Native intake can also create a Radar company from a legitimate current public Reg CF opportunity, so the investment funnel is not limited to companies first seen in startup-news sources. Matching and reconciliation are deterministic. A confirmed offering adds neutral offering evidence, never an investment-quality signal, and no Deal Scout workspace is created until the user submits the existing New Deal form.
 
 Live SEC access requires the server-only `SEC_EDGAR_USER_AGENT` setting. The client is restricted to official SEC HTTPS hosts and defaults to two requests per second. See [Offering Discovery V1](docs/offering-discovery-v1.md) for the schema, lifecycle rules, matching confidence, APIs, worker cadence, fair-access policy, limitations, and staging procedure.
+
+### Public campaign discovery
+
+The autonomous-diligence job also performs a bounded campaign lookup for eligible SEC-linked companies and high-signal Radar companies that do not yet have an offering URL. This is a separate discovery layer from known-URL platform enrichment. It stores checks and candidate provenance in PostgreSQL, caches unchanged negative checks, and attaches a canonical URL only when exactly one candidate has corroborating name/domain or SEC intermediary evidence. Possible and ambiguous matches remain review-only; the workflow never creates a Deal Scout workspace or investment decision.
+
+The mechanisms were verified against public platform documentation and endpoints:
+
+- Wefunder campaigns use public canonical company URLs and become searchable after public launch, but automated public requests may return `403`; the adapter uses only bounded canonical-slug probes and records `UNAVAILABLE` rather than bypassing access controls. See [Wefunder campaign visibility](https://help.wefunder.com/campaign-visibility-465599f0/how-do-investors-find-my-campaign-476830a4).
+- Republic documents its public investment-opportunity directory at [`/companies`](https://republic.com/companies). If the platform rejects the application request, discovery records `UNAVAILABLE` and asks for a manually supplied canonical URL.
+- StartEngine directs public investors to its [Explore directory](https://www.startengine.com/explore), whose offering links use canonical `/offering/{slug}` paths. The parser considers only exact or strongly similar issuer names and still requires independent corroboration before attachment.
+
+All platform requests remain unauthenticated, HTTPS-only, host-allowlisted, redirect-rejecting, response-size limited, at most one request per second, and bounded per run. No login, captcha, robots, paywall, or anti-bot control is bypassed. Admin diagnostics distinguish `FOUND`, `NONE_FOUND`, `AMBIGUOUS`, `UNAVAILABLE`, `DEGRADED`, and `NOT_CHECKED` outcomes.
+
+### Native live-offering intake
+
+V1.1.2 runs a bounded native intake at the beginning of the existing 7:45 autonomous-diligence job. It reads Republic's public live-opportunity directory, attempts StartEngine's official current-offering directory, and reconciles both with recent SEC Form C lifecycle filings. Current Reg CF listings may create or match Radar companies and then flow through the existing evidence, packet, Review Queue, notification, and explicit Deal Scout handoff. Platform-only evidence is labeled `PLATFORM_OFFERING` and is never represented as SEC-confirmed.
+
+Only `ACTIVE`, `RESERVATION`, and `CLOSING_SOON` Reg CF candidates are actionable. A recent SEC `C` or `C/A` without a parsed deadline may enter `NEEDS_REVIEW` for up to 30 days, but is not counted as an active opportunity. Closed, withdrawn, terminated, Reg D, Reg A+, fund, and SPV records remain non-actionable audit evidence. Fuzzy-only names never merge automatically, current unknown records age out of the queue, and no Deal Scout record or investment decision is created automatically.
+
+The default run permits at most 25 candidates and 10 detail pages per platform, at most 25 new Radar companies, one directory request where available, and no more than one platform request per second. StartEngine or Republic browser-verification responses are recorded as `UNAVAILABLE`; Wefunder remains SEC/known-URL only when direct access returns `403`. No CAPTCHA, login, anti-bot, proxy, or browser circumvention is used. See [Native Offering Intake V1](docs/native-offering-intake-v1.md) for source mechanics, identity rules, diagnostics, and staging validation.
 
 ## Optional Radar AI Providers
 
@@ -459,7 +479,7 @@ Tunable via `RADAR_AUTH_MAX_LOGIN_ATTEMPTS`, `RADAR_AUTH_LOGIN_WINDOW_MINUTES`,
 
 ## Database Schema Ownership
 
-Flyway is the single schema authority. Migrations `V1`-`V12` live in
+Flyway is the single schema authority. Migrations `V1`-`V14` live in
 `backend/src/main/resources/db/migration`:
 
 | Migration | Contents |
@@ -476,6 +496,8 @@ Flyway is the single schema authority. Migrations `V1`-`V12` live in
 | `V10` | Router AI diagnostics |
 | `V11` | SEC offering discovery, filing history, and source diagnostics |
 | `V12` | Autonomous diligence packets, provenance evidence, multi-period financials, platform campaigns, availability checks, and notification events |
+| `V13` | Bounded public campaign discovery checks, candidate provenance, identity decisions, cache state, and platform diagnostics |
+| `V14` | Native live-offering candidates, explicit platform/SEC provenance, reconciliation state, and source diagnostics |
 
 The application runs with `spring.jpa.hibernate.ddl-auto=validate`, so **neither the web nor the
 worker process mutates the schema at boot** - important because both start concurrently on deploy.

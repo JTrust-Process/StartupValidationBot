@@ -20,7 +20,9 @@ function card(packet: DiligencePacket): string {
       <div><dt>Valuation / cap</dt><dd>${escapeHtml(packet.valuationOrCap || 'Could not establish')}</dd></div>
       <div><dt>Minimum</dt><dd>${money(packet.minimumInvestment)}</dd></div>
       <div><dt>Deadline</dt><dd>${escapeHtml(packet.deadline ? formatRadarDate(packet.deadline) : 'Could not establish')}</dd></div>
-      <div><dt>Identity</dt><dd>${escapeHtml(packet.identityStatus)}</dd></div>
+      <div><dt>Platform identity</dt><dd>${escapeHtml(packet.platformIdentityStatus)}</dd></div>
+      <div><dt>SEC reconciliation</dt><dd>${escapeHtml(packet.secReconciliationStatus)}</dd></div>
+      <div><dt>Platform status</dt><dd>${escapeHtml(packet.platformStatus?.replaceAll('_', ' ') || 'Could not establish')}</dd></div>
       <div><dt>Evidence confidence</dt><dd>${packet.confidence}/100</dd></div>
       <div><dt>Last refreshed</dt><dd>${escapeHtml(formatRadarDate(packet.lastRefreshedAt))}</dd></div>
     </dl>

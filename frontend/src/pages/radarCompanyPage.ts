@@ -272,7 +272,7 @@ function renderOfferings(offerings: RadarOffering[]): string {
     const filingUrl = safeExternalUrl(offering.secFilingUrl);
     const offeringUrl = safeExternalUrl(offering.offeringUrl);
     return `<section class="radar-panel offering-profile-panel">
-    <div class="radar-section-heading"><p class="page-eyebrow">SEC-filed evidence</p><h3>Investment Offering</h3></div>
+    <div class="radar-section-heading"><p class="page-eyebrow">${offering.secFilingUrl ? 'SEC-filed evidence' : 'Public platform evidence'}</p><h3>Investment Offering</h3></div>
     <div class="offering-facts">
       <div><span>Platform</span><strong>${escapeHtml(offering.platform)}</strong></div>
       <div><span>Exemption</span><strong>Regulation Crowdfunding</strong></div>
@@ -283,7 +283,9 @@ function renderOfferings(offerings: RadarOffering[]): string {
       <div><span>Deadline</span><strong>${escapeHtml(offering.deadline ? formatRadarDate(offering.deadline) : 'Unknown')}</strong></div>
       <div><span>Last verified</span><strong>${escapeHtml(formatRadarDate(offering.lastSeenAt))}</strong></div>
     </div>
-    <p class="radar-muted">This confirms an SEC filing exists. It does not verify issuer claims or investment quality.</p>
+    <p class="radar-muted">${offering.secFilingUrl
+      ? 'This confirms an SEC filing exists. It does not verify issuer claims or investment quality.'
+      : `This public campaign is ${escapeHtml(offering.reconciliationStatus.replaceAll('_', ' ').toLowerCase())}; it is not represented as SEC-confirmed or investment quality.`}</p>
     <div class="form-actions form-actions--start">
       ${filingUrl ? `<a class="button button--secondary" href="${escapeAttribute(filingUrl)}" target="_blank" rel="noreferrer">Open SEC Filing</a>` : ''}
       ${offeringUrl ? `<a class="button button--secondary" href="${escapeAttribute(offeringUrl)}" target="_blank" rel="noreferrer">Open Offering Page</a>` : ''}

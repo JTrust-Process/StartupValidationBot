@@ -134,6 +134,11 @@ public class RadarAnalysisService {
         }
     }
 
+    public Analysis analyzeDeterministic(Company company, String analysisType) {
+        String normalizedType = normalizeAnalysisType(analysisType);
+        return deterministic(company, normalizedType, inputFactory.create(company));
+    }
+
     private Analysis deterministic(Company company, String analysisType, PublicCompanyAnalysisInput input) {
         String inputHash = input.stableHash(DETERMINISTIC_PROVIDER, DETERMINISTIC_MODEL, promptVersion, schemaVersion);
         return store.findCachedAnalysis(company.id(), analysisType, inputHash, promptVersion, schemaVersion,

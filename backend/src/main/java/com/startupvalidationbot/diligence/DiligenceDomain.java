@@ -22,7 +22,11 @@ public final class DiligenceDomain {
     }
 
     public record TermProvenance(String sourceType, String sourceUrl,
-            EvidenceClassification classification) { }
+            EvidenceClassification classification, String observedAt) {
+        public TermProvenance(String sourceType, String sourceUrl, EvidenceClassification classification) {
+            this(sourceType, sourceUrl, classification, null);
+        }
+    }
 
     public record Evidence(long id, String sourceType, String sourceUrl, String sourceTitle,
             String factKey, String factValue, String period, EvidenceClassification classification,

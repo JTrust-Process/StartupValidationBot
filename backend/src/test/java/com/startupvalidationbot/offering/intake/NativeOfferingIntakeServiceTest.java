@@ -15,6 +15,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
@@ -89,6 +90,32 @@ class NativeOfferingIntakeServiceTest {
         assertThat(result.newOfferings()).isZero();
         verify(f.nativeStore, never()).upsertPlatformOffering(any(), any(), any());
         verify(f.diligence, never()).upsertCampaign(any());
+    }
+
+    @Test
+    void closedListingUpdatesExistingOfferingInsteadOfOnlyRejectingCandidate() {
+        Fixture f = new Fixture();
+        var current = mock(com.startupvalidationbot.offering.OfferingDomain.Offering.class);
+        when(current.matchStatus()).thenReturn(MatchStatus.CONFIRMED);
+        when(f.nativeStore.findOfferingId(any())).thenReturn(Optional.of(45L));
+        when(f.offerings.find(45L)).thenReturn(Optional.of(current));
+        var result = f.service(adapter(candidate("closed", Status.CLOSED)), 25).run();
+        assertThat(result.updatedOfferings()).isEqualTo(1);
+        assertThat(result.newOfferings()).isZero();
+        verify(f.nativeStore).upsertPlatformOffering(any(), any(), any());
+        verify(f.discovery, never()).ingestOfficialOffering(any(), anyString(), anyString());
+        verify(f.diligence, never()).upsertCampaign(any());
+    }
+
+    @Test
+    void concreteIdentityConflictUpdatesExistingOfferingWhileAbsenceDoesNotRejectIt() {
+        Fixture f = new Fixture();
+        when(f.nativeStore.findOfferingId(any())).thenReturn(Optional.of(45L));
+        Match conflict = new Match(8L, MatchStatus.REJECTED, 15, "Verified conflicting domain", true);
+        when(f.matcher.match(anyString(), any(), any())).thenReturn(conflict);
+        f.service(adapter(candidate("gridcool", Status.ACTIVE)), 25).run();
+        verify(f.offerings).updateMatch(45L, conflict);
+        verify(f.nativeStore, never()).upsertPlatformOffering(any(), any(), any());
     }
 
     private static NativeOfferingSourceAdapter adapter(NativeOfferingCandidate... candidates) {

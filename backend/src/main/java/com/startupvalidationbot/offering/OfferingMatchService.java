@@ -28,7 +28,7 @@ public class OfferingMatchService {
             Company company = exactNames.get(0);
             if (issuerDomain != null && company.domain() != null && !issuerDomain.equals(company.domain())) {
                 return new Match(company.id(), MatchStatus.REJECTED, 15,
-                        "Exact normalized name conflicts with the issuer website domain.");
+                        "Exact normalized name conflicts with the issuer website domain.", true);
             }
             if (issuerDomain != null && issuerDomain.equals(company.domain())) {
                 return new Match(company.id(), MatchStatus.CONFIRMED, 100,
@@ -40,7 +40,7 @@ public class OfferingMatchService {
         }
         if (exactNames.size() > 1) {
             return new Match(null, MatchStatus.AMBIGUOUS, 45,
-                    "Issuer name matches more than one tracked company.");
+                    "Issuer name matches more than one tracked company.", true);
         }
         if (domains.size() == 1) {
             return new Match(domains.get(0).id(), MatchStatus.LIKELY, 75,
@@ -57,7 +57,7 @@ public class OfferingMatchService {
         }
         if (close.size() > 1) {
             return new Match(null, MatchStatus.AMBIGUOUS, 35,
-                    "Close issuer name is ambiguous across tracked companies.");
+                    "Close issuer name is ambiguous across tracked companies.", true);
         }
         return new Match(null, MatchStatus.UNMATCHED, 0, "No deterministic Radar identity match.");
     }

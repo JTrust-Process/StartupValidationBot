@@ -252,9 +252,9 @@ class RadarPostgresIntegrationTest {
         offeringStore.updateMatch(storedIdentity.offeringId(), offeringMatcher.match(storedIdentity.issuerName(),
                 storedIdentity.issuerWebsite(), store.listCompanies()));
         assertThat(offeringStore.find(first.offering().id())).get().satisfies(offering -> {
-            assertThat(offering.matchStatus()).isEqualTo(MatchStatus.LIKELY);
-            assertThat(offering.matchConfidence()).isEqualTo(85);
-            assertThat(offering.matchReason()).contains("corroborating identity evidence is unavailable");
+            assertThat(offering.matchStatus()).isEqualTo(MatchStatus.CONFIRMED);
+            assertThat(offering.matchConfidence()).isEqualTo(100);
+            assertThat(offering.matchReason()).isEqualTo("Exact name and domain.");
         });
     }
 

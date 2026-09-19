@@ -17,16 +17,21 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.startupvalidationbot.offering.OfferingDomain.Match;
+import com.startupvalidationbot.offering.OfferingDomain.Candidate;
+import com.startupvalidationbot.offering.OfferingStore;
+import com.startupvalidationbot.offering.OfferingRefreshMerge;
 import com.startupvalidationbot.radar.ContentHash;
 
 @Repository
 public class NativeOfferingStore {
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
+    private final OfferingStore offerings;
 
-    public NativeOfferingStore(JdbcTemplate jdbc, ObjectMapper json) {
+    public NativeOfferingStore(JdbcTemplate jdbc, ObjectMapper json, OfferingStore offerings) {
         this.jdbc = jdbc;
         this.json = json;
+        this.offerings = offerings;
     }
 
     @Transactional
@@ -79,8 +84,10 @@ public class NativeOfferingStore {
 
     public Optional<Long> findOfferingId(NativeOfferingCandidate candidate) {
         if (!blank(candidate.secAccessionNumber())) {
-            Optional<Long> value = first("SELECT id FROM radar_offerings WHERE sec_accession_number=?",
-                    candidate.secAccessionNumber());
+            Optional<Long> value = first("""
+                    SELECT id FROM radar_offerings WHERE sec_accession_number=?
+                    UNION SELECT offering_id FROM radar_offering_filings WHERE accession_number=? LIMIT 1
+                    """, candidate.secAccessionNumber(), candidate.secAccessionNumber());
             if (value.isPresent()) return value;
         }
         if (!blank(candidate.issuerCik()) && !blank(candidate.secFileNumber())) {
@@ -105,13 +112,30 @@ public class NativeOfferingStore {
         Optional<Long> existing = findOfferingId(candidate);
         LocalDateTime now = LocalDateTime.now();
         String mappedStatus = mapStatus(candidate.status());
-        String evidence = write(candidate.sourceEvidence());
+        Candidate observed = new Candidate(candidate.companyName(), candidate.issuerCik(), candidate.issuerWebsite(),
+                candidate.platform(), candidate.intermediaryName(), null, candidate.canonicalUrl(), candidate.secFilingUrl(),
+                candidate.secAccessionNumber(), candidate.secFileNumber(), candidate.filingType(), candidate.filingDate(),
+                candidate.securityType(), candidate.minimumInvestment(), candidate.targetAmount(), candidate.maximumAmount(),
+                candidate.valuationOrCap(), candidate.deadline(), candidate.amountRaised(), candidate.source(),
+                candidate.sourceEvidence(), candidate.retrievalQuality());
         if (existing.isPresent()) {
             long id = existing.orElseThrow();
+            jdbc.queryForObject("SELECT id FROM radar_offerings WHERE id=? FOR UPDATE", Long.class, id);
+            var current = offerings.find(id).orElseThrow();
+            Candidate prior = offerings.storedCandidate(id);
+            Candidate merged = OfferingRefreshMerge.merge(prior, observed, now);
+            Match mergedMatch = OfferingRefreshMerge.match(current, match, observed, prior);
+            String refreshedStatus = candidate.status() == Status.UNKNOWN ? current.status().name() : mappedStatus;
+            String mergedEvidence = write(merged.facts());
             jdbc.update("""
                     UPDATE radar_offerings SET radar_company_id=COALESCE(?,radar_company_id),
-                      issuer_name=?,issuer_name_normalized=?,platform=?,intermediary_name=COALESCE(?,intermediary_name),
-                      offering_url=COALESCE(?,offering_url),offering_exemption=?,
+                      issuer_name=CASE WHEN provenance='SEC_EDGAR' THEN issuer_name ELSE ? END,
+                      issuer_name_normalized=CASE WHEN provenance='SEC_EDGAR' THEN issuer_name_normalized ELSE ? END,
+                      issuer_cik=CASE WHEN provenance='SEC_EDGAR' THEN issuer_cik ELSE ? END,
+                      platform=CASE WHEN provenance='SEC_EDGAR' THEN platform ELSE ? END,
+                      intermediary_name=CASE WHEN provenance='SEC_EDGAR' THEN COALESCE(intermediary_name,?) ELSE ? END,
+                      offering_url=CASE WHEN provenance='SEC_EDGAR' THEN COALESCE(offering_url,?) ELSE ? END,
+                      offering_exemption=CASE WHEN provenance='SEC_EDGAR' THEN offering_exemption ELSE ? END,
                       security_type=CASE WHEN provenance='SEC_EDGAR' THEN security_type ELSE COALESCE(?,security_type) END,
                       minimum_investment=CASE WHEN provenance='SEC_EDGAR' THEN minimum_investment ELSE COALESCE(?,minimum_investment) END,
                       target_amount=CASE WHEN provenance='SEC_EDGAR' THEN target_amount ELSE COALESCE(?,target_amount) END,
@@ -127,16 +151,20 @@ public class NativeOfferingStore {
                       reconciliation_status=CASE WHEN provenance='SEC_EDGAR' THEN reconciliation_status ELSE ? END,
                       platform_status=?,native_candidate_key=COALESCE(native_candidate_key,?),
                       last_seen_at=?,updated_at=? WHERE id=?
-                    """, match.companyId(), candidate.companyName(), normalize(candidate.companyName()),
-                    candidate.platform(), candidate.intermediaryName(), candidate.canonicalUrl(),
-                    value(candidate.exemption(), "UNKNOWN"), candidate.securityType(), candidate.minimumInvestment(),
-                    candidate.targetAmount(), candidate.maximumAmount(), candidate.valuationOrCap(),
-                    candidate.deadline(), candidate.amountRaised(), mappedStatus, candidate.source(),
-                    match.status().name(), match.confidence(), match.reason(), evidence, reconciliation.name(),
-                    candidate.status().name(), nativeKey(candidate), now, now, id);
+                    """, mergedMatch.companyId(), merged.issuerName(), normalize(merged.issuerName()), merged.issuerCik(),
+                    merged.platform(), merged.intermediaryName(), merged.intermediaryName(), merged.offeringUrl(), merged.offeringUrl(),
+                    value(OfferingRefreshMerge.known(candidate.exemption()), current.offeringExemption()),
+                    merged.securityType(), merged.minimumInvestment(), merged.targetAmount(), merged.maximumAmount(),
+                    merged.valuationOrCap(), merged.deadline(), merged.amountRaised(), refreshedStatus, candidate.source(),
+                    mergedMatch.status().name(), mergedMatch.confidence(), mergedMatch.reason(), mergedEvidence,
+                    reconciliation == ReconciliationStatus.POSSIBLE ? current.reconciliationStatus() : reconciliation.name(),
+                    candidate.status() == Status.UNKNOWN ? current.platformStatus() : candidate.status().name(),
+                    nativeKey(candidate), now, now, id);
             return new PlatformUpsert(id, false);
         }
 
+        Candidate established = OfferingRefreshMerge.merge(null, observed, now);
+        String evidence = write(established.facts());
         KeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(connection -> {
             PreparedStatement statement = connection.prepareStatement("""
@@ -149,14 +177,14 @@ public class NativeOfferingStore {
                       platform_status,native_candidate_key)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """, new String[] { "id" });
-            Object[] values = { match.companyId(), candidate.companyName(), normalize(candidate.companyName()),
-                    candidate.issuerCik(), candidate.platform(), candidate.intermediaryName(), null,
+            Object[] values = { match.companyId(), established.issuerName(), normalize(established.issuerName()),
+                    established.issuerCik(), established.platform(), established.intermediaryName(), null,
                     candidate.canonicalUrl(), candidate.secFilingUrl(), candidate.secAccessionNumber(),
                     candidate.secFileNumber(), value(candidate.filingType(), "PLATFORM"),
                     candidate.filingDate() == null ? candidate.retrievedAt().toLocalDate() : candidate.filingDate(),
-                    value(candidate.exemption(), "UNKNOWN"), candidate.securityType(), candidate.minimumInvestment(),
-                    candidate.targetAmount(), candidate.maximumAmount(), candidate.valuationOrCap(),
-                    candidate.deadline(), candidate.amountRaised(), mappedStatus, candidate.source(),
+                    value(candidate.exemption(), "UNKNOWN"), established.securityType(), established.minimumInvestment(),
+                    established.targetAmount(), established.maximumAmount(), established.valuationOrCap(),
+                    established.deadline(), established.amountRaised(), mappedStatus, candidate.source(),
                     match.status().name(), match.confidence(), match.reason(), evidence, now, now, now, now,
                     "PLATFORM_OFFERING", reconciliation.name(), candidate.status().name(), nativeKey(candidate) };
             for (int i = 0; i < values.length; i++) statement.setObject(i + 1, values[i]);

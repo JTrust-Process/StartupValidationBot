@@ -113,7 +113,7 @@ public class RadarJobService {
         var nativeIntake = result.nativeIntake();
         return new JobResult(result.errors().isEmpty(), jobType, key, false, result.companiesConsidered(),
                 result.packetsReady(), result.packetsPartial() + result.needsReview(), result.errors().size(),
-                result.errors(), List.of(
+                result.errors(), java.util.stream.Stream.concat(List.of(
                         "companiesConsidered=" + result.companiesConsidered(),
                         "offeringsConsidered=" + result.offeringsConsidered(),
                         "identitiesResolved=" + result.identitiesResolved(),
@@ -151,7 +151,7 @@ public class RadarJobService {
                         "nativeSecPlatformClassified=" + nativeIntake.secPlatformClassified(),
                         "nativeSecReconciled=" + nativeIntake.secReconciled(),
                         "reviewQueueBefore=" + result.reviewQueueBefore(),
-                        "reviewQueueAfter=" + result.reviewQueueAfter()),
+                        "reviewQueueAfter=" + result.reviewQueueAfter()).stream(), result.refreshDiagnostics().stream()).toList(),
                 "Autonomous diligence completed: " + result.packetsReady() + " ready, "
                         + result.packetsPartial() + " partial, " + result.needsReview() + " need review.");
     }

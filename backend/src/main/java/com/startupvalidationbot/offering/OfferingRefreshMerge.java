@@ -24,8 +24,18 @@ public final class OfferingRefreshMerge {
             previousFacts.keySet().removeIf(key -> !key.startsWith("_"));
         }
         var values = new Values(previousFacts, incoming.facts(), now);
-        values.sourceUrl = incoming.secFilingUrl();
+        values.sourceUrl = incoming.facts().getOrDefault("_secDocumentUrl", incoming.secFilingUrl());
         values.accession = incoming.accessionNumber();
+        if (incoming.retrievalQuality() != RetrievalQuality.INDEX_ONLY) {
+            incoming.facts().forEach((key, value) -> {
+                if (!key.startsWith("_") && key.toUpperCase(java.util.Locale.ROOT).contains("FISCALYEAR")
+                        && known(value) != null) {
+                    values.facts.put("_observedAt." + key, now.toString());
+                    if (values.sourceUrl != null) values.facts.put("_sourceUrl." + key, values.sourceUrl);
+                    if (values.accession != null) values.facts.put("_accession." + key, values.accession);
+                }
+            });
+        }
         if (previous != null) {
             for (String key : java.util.List.of("securityType", "minimumInvestment", "targetAmount", "maximumAmount",
                     "valuationOrCap", "deadline", "amountRaised")) {
@@ -131,6 +141,7 @@ public final class OfferingRefreshMerge {
             this.now = now;
             facts.putAll(previous);
             incoming.forEach((key, value) -> { if (!key.startsWith("_") && known(value) != null) facts.put(key, value); });
+            incoming.forEach((key, value) -> { if (key.startsWith("_sec") && value != null) facts.put(key, value); });
         }
         public <T> T field(String key, T incoming, T previous) {
             if (incoming != null) {

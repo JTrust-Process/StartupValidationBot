@@ -30,6 +30,8 @@ public class DiligenceStore {
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
     private final boolean postgres;
+    @org.springframework.beans.factory.annotation.Value("${diligence.max-offerings-per-run:25}")
+    private int configuredBound = 25;
 
     public DiligenceStore(JdbcTemplate jdbc, ObjectMapper json) {
         this.jdbc = jdbc;
@@ -39,18 +41,35 @@ public class DiligenceStore {
     }
 
     public List<Long> eligibleOfferingIds(int limit) {
-        return jdbc.queryForList("""
-                SELECT o.id FROM radar_offerings o
+        return selectOfferings(limit, LocalDateTime.now()).ids();
+    }
+
+    public DiligenceRefreshSelector.Selection selectOfferings(int limit, LocalDateTime now) {
+        return DiligenceRefreshSelector.select(refreshCandidates(now), limit, now);
+    }
+
+    public List<DiligenceRefreshSelector.Candidate> refreshCandidates(LocalDateTime now) {
+        return jdbc.query("""
+                SELECT o.id,o.match_status,o.created_at,o.updated_at,o.last_diligence_attempt_at,
+                  p.status packet_status,p.last_refreshed_at
+                FROM radar_offerings o
                 LEFT JOIN radar_watchlist_entries w ON w.company_id=o.radar_company_id
+                LEFT JOIN radar_diligence_packets p ON p.offering_id=o.id
                 WHERE o.radar_company_id IS NOT NULL AND (
-                  o.match_status='CONFIRMED' OR
-                  (o.match_status='LIKELY' AND o.match_confidence >= 75) OR
-                  w.company_id IS NOT NULL)
+                  o.match_status IN ('CONFIRMED','LIKELY','AMBIGUOUS') OR
+                  (p.status='NEEDS_REVIEW' AND o.match_status <> 'REJECTED') OR
+                  (w.company_id IS NOT NULL AND o.match_status <> 'REJECTED'))
                   AND (o.status IN ('ACTIVE','POSSIBLY_ACTIVE')
-                    OR (o.status='UNKNOWN' AND o.updated_at >= ?))
-                ORDER BY CASE o.match_status WHEN 'CONFIRMED' THEN 0 ELSE 1 END,
-                  o.updated_at DESC LIMIT ?
-                """, Long.class, LocalDateTime.now().minusDays(30), Math.max(1, Math.min(limit, 100)));
+                    OR (o.status='UNKNOWN' AND (o.updated_at >= ? OR p.id IS NOT NULL)))
+                  AND (o.deadline IS NULL OR o.deadline >= ?)
+                """, (rs, row) -> new DiligenceRefreshSelector.Candidate(rs.getLong("id"),
+                rs.getString("match_status"), rs.getString("packet_status"), time(rs.getTimestamp("created_at")),
+                time(rs.getTimestamp("updated_at")), time(rs.getTimestamp("last_diligence_attempt_at")),
+                time(rs.getTimestamp("last_refreshed_at"))), now.minusDays(30), now.toLocalDate());
+    }
+
+    public void markDiligenceAttempt(long offeringId) {
+        jdbc.update("UPDATE radar_offerings SET last_diligence_attempt_at=? WHERE id=?", LocalDateTime.now(), offeringId);
     }
 
     public int actionablePacketCount() {
@@ -178,9 +197,37 @@ public class DiligenceStore {
     }
 
     private void syncEvidence(long packetId, List<EvidenceDraft> evidence) {
+        var retained = new java.util.HashMap<String, Evidence>();
+        evidence(packetId).forEach(item -> retained.put(evidenceIdentity(item.classification(), item.sourceUrl(),
+                item.factKey(), item.period(), item.factValue(), item.metadata()), item));
+        var known = new java.util.HashSet<>(retained.keySet());
         for (EvidenceDraft item : evidence) {
-            String fingerprint = ContentHash.sha256(item.classification() + "|" + item.sourceUrl() + "|"
-                    + item.factKey() + "|" + item.period() + "|" + item.factValue());
+            String identity = evidenceIdentity(item.classification(), item.sourceUrl(), item.factKey(), item.period(),
+                    item.factValue(), item.metadata());
+            if (!known.add(identity)) {
+                Evidence previous = retained.get(identity);
+                if (previous == null) previous = evidence(packetId).stream().filter(saved -> identity.equals(
+                        evidenceIdentity(saved.classification(), saved.sourceUrl(), saved.factKey(), saved.period(),
+                                saved.factValue(), saved.metadata()))).findFirst().orElse(null);
+                if (previous != null && item.classification() == EvidenceClassification.SEC_FILED_FACT) {
+                    var metadata = new java.util.LinkedHashMap<String, Object>(previous.metadata());
+                    item.metadata().forEach(metadata::putIfAbsent);
+                    var documents = new java.util.LinkedHashSet<String>();
+                    if (previous.metadata().get("sourceDocuments") instanceof List<?> oldDocuments) {
+                        oldDocuments.forEach(url -> documents.add(String.valueOf(url)));
+                    }
+                    if (previous.sourceUrl() != null) documents.add(previous.sourceUrl());
+                    if (item.sourceUrl() != null) documents.add(item.sourceUrl());
+                    metadata.put("sourceDocuments", List.copyOf(documents));
+                    if (!metadata.equals(previous.metadata())) jdbc.update(
+                            "UPDATE radar_diligence_evidence SET metadata_json=? WHERE id=?", write(metadata), previous.id());
+                    retained.put(identity, new Evidence(previous.id(), previous.sourceType(), previous.sourceUrl(),
+                            previous.sourceTitle(), previous.factKey(), previous.factValue(), previous.period(),
+                            previous.classification(), previous.observedAt(), previous.confidence(), previous.rawExcerpt(), metadata));
+                }
+                continue;
+            }
+            String fingerprint = ContentHash.sha256(identity);
             jdbc.update("""
                     INSERT INTO radar_diligence_evidence (packet_id, source_type, source_url, source_title,
                       fact_key, fact_value, period, classification, observed_at, confidence, raw_excerpt,
@@ -188,29 +235,50 @@ public class DiligenceStore {
                     SELECT ?,?,?,?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS (
                       SELECT 1 FROM radar_diligence_evidence WHERE packet_id=? AND evidence_fingerprint=?)
                     """, packetId, item.sourceType(), item.sourceUrl(), item.sourceTitle(), item.factKey(),
-                    item.factValue(), item.period(), item.classification().name(), LocalDateTime.now(),
+                    item.factValue(), item.period(), item.classification().name(), observedAt(item.metadata()),
                     item.confidence(), bounded(item.rawExcerpt(), 2000), write(item.metadata()), fingerprint,
                     packetId, fingerprint);
         }
     }
 
+    private static String evidenceIdentity(EvidenceClassification classification, String sourceUrl, String factKey,
+            String period, String value, Map<String, Object> metadata) {
+        String authority = classification == EvidenceClassification.SEC_FILED_FACT && metadata.get("accessionNumber") != null
+                ? metadata.get("accessionNumber").toString() : sourceUrl;
+        if (List.of("revenue", "cost_of_goods", "gross_profit", "net_income", "cash", "assets", "current_assets",
+                "liabilities", "current_liabilities", "short_term_debt", "long_term_debt", "equity", "taxes_paid",
+                "minimum_investment", "target_amount", "maximum_amount", "amount_raised").contains(factKey)) {
+            BigDecimal number = SecFinancialExtractor.monetaryValue(value);
+            if (number != null) value = number.stripTrailingZeros().toPlainString();
+        }
+        return classification + "|" + authority + "|" + factKey + "|" + period + "|" + value;
+    }
+
     private void syncFinancials(long packetId, long offeringId, List<FinancialPeriod> periods) {
         for (FinancialPeriod period : periods) {
             int updated = jdbc.update("""
-                    UPDATE radar_diligence_financials SET revenue=?, cost_of_goods=?, net_income=?, cash=?,
-                      assets=?, liabilities=?, short_term_debt=?, long_term_debt=?, taxes_paid=?,
+                    UPDATE radar_diligence_financials SET revenue=COALESCE(?,revenue), cost_of_goods=COALESCE(?,cost_of_goods),
+                      net_income=COALESCE(?,net_income), cash=COALESCE(?,cash), assets=COALESCE(?,assets),
+                      liabilities=COALESCE(?,liabilities), short_term_debt=COALESCE(?,short_term_debt),
+                      long_term_debt=COALESCE(?,long_term_debt), taxes_paid=COALESCE(?,taxes_paid),
+                      gross_profit=COALESCE(?,gross_profit),current_assets=COALESCE(?,current_assets),
+                      current_liabilities=COALESCE(?,current_liabilities),equity=COALESCE(?,equity),
+                      period_ending_date=COALESCE(?,period_ending_date),
                       source_accession_number=?, source_url=?, updated_at=? WHERE packet_id=? AND period=?
                     """, period.revenue(), period.costOfGoods(), period.netIncome(), period.cash(), period.assets(),
                     period.liabilities(), period.shortTermDebt(), period.longTermDebt(), period.taxesPaid(),
-                    period.sourceAccessionNumber(), period.sourceUrl(), LocalDateTime.now(), packetId, period.period());
+                    period.grossProfit(), period.currentAssets(), period.currentLiabilities(), period.equity(),
+                    period.periodEndingDate(), period.sourceAccessionNumber(), period.sourceUrl(), LocalDateTime.now(), packetId, period.period());
             if (updated == 0) jdbc.update("""
                     INSERT INTO radar_diligence_financials (packet_id, offering_id, period, revenue,
                       cost_of_goods, net_income, cash, assets, liabilities, short_term_debt, long_term_debt,
-                      taxes_paid, source_accession_number, source_url, created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                      taxes_paid,gross_profit,current_assets,current_liabilities,equity,period_ending_date,
+                      source_accession_number, source_url, created_at, updated_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """, packetId, offeringId, period.period(), period.revenue(), period.costOfGoods(),
                     period.netIncome(), period.cash(), period.assets(), period.liabilities(), period.shortTermDebt(),
-                    period.longTermDebt(), period.taxesPaid(), period.sourceAccessionNumber(), period.sourceUrl(),
+                    period.longTermDebt(), period.taxesPaid(), period.grossProfit(), period.currentAssets(),
+                    period.currentLiabilities(), period.equity(), period.periodEndingDate(), period.sourceAccessionNumber(), period.sourceUrl(),
                     LocalDateTime.now(), LocalDateTime.now());
         }
     }
@@ -353,7 +421,46 @@ public class DiligenceStore {
                 jobInt(job.json,"nativeRejected"), jobInt(job.json,"nativeErrors"),
                 jobInt(job.json,"nativeSecRecentInspected"), jobInt(job.json,"nativeSecPlatformClassified"),
                 jobInt(job.json,"nativeSecReconciled"), jobInt(job.json,"reviewQueueBefore"),
-                jobInt(job.json,"reviewQueueAfter"), nativeOfferingDiagnostics());
+                jobInt(job.json,"reviewQueueAfter"), nativeOfferingDiagnostics(), refreshHealth(job.json));
+    }
+
+    private RefreshHealth refreshHealth(String jobJson) {
+        LocalDateTime now = LocalDateTime.now();
+        var candidates = refreshCandidates(now);
+        int never = 0, overdue = 0, unresolved = 0, fresh = 0, week = 0, fortnight = 0, month = 0;
+        LocalDateTime oldest = null;
+        for (var candidate : candidates) {
+            if (candidate.neverProcessed()) never++;
+            if (candidate.overdue(now)) overdue++;
+            if (candidate.unresolved()) unresolved++;
+            if (candidate.lastSuccessAt() == null) continue;
+            long days = java.time.Duration.between(candidate.lastSuccessAt(), now).toDays();
+            if (days < 7) fresh++; else if (days < 15) week++; else if (days <= 30) fortnight++; else month++;
+            if (oldest == null || candidate.lastSuccessAt().isBefore(oldest)) oldest = candidate.lastSuccessAt();
+        }
+        Map<String, Integer> selection = new java.util.LinkedHashMap<>();
+        for (var bucket : DiligenceRefreshSelector.Bucket.values()) selection.put(bucket.name(), jobInt(jobJson, "selected" + bucket.name()));
+        Map<String, Integer> sec = new java.util.LinkedHashMap<>();
+        for (String key : List.of("FilingsInspected", "DocumentsAttempted", "PrimaryDocumentsAttempted", "AlternateDocumentsAttempted",
+                "OversizedSkipped", "RequestFailures", "ParseFailures")) {
+            sec.put(key, jobInt(jobJson, "sec" + key));
+        }
+        for (var status : com.startupvalidationbot.offering.SecCrowdfundingSourceAdapter.ExtractionStatus.values()) {
+            sec.put(status.name(), jobInt(jobJson, "secStatus" + status.name()));
+            sec.put("FINANCIAL_" + status.name(), jobInt(jobJson, "secFinancial" + status.name()));
+        }
+        return new RefreshHealth(candidates.size(), never, overdue, unresolved, fresh, week, fortnight, month,
+                oldest, Math.max(1, Math.min(configuredBound, 100)), Map.copyOf(selection), Map.copyOf(sec));
+    }
+
+    public Map<String, Object> lastEmailAttempt() {
+        return jdbc.query("""
+                SELECT status,updated_at FROM (
+                  SELECT status,updated_at FROM radar_notification_events WHERE attempt_count > 0
+                  UNION ALL
+                  SELECT status,generated_at updated_at FROM radar_digests WHERE status IN ('SENT','FAILED')
+                ) attempts ORDER BY updated_at DESC LIMIT 1
+                """, rs -> rs.next() ? Map.of("status", rs.getString(1), "at", time(rs.getTimestamp(2))) : Map.of());
     }
 
     private List<com.startupvalidationbot.diligence.discovery.CampaignDiscoveryDomain.PlatformDiagnostic>
@@ -410,7 +517,9 @@ public class DiligenceStore {
                 rs.getBigDecimal("cost_of_goods"), rs.getBigDecimal("net_income"), rs.getBigDecimal("cash"),
                 rs.getBigDecimal("assets"), rs.getBigDecimal("liabilities"), rs.getBigDecimal("short_term_debt"),
                 rs.getBigDecimal("long_term_debt"), rs.getBigDecimal("taxes_paid"),
-                rs.getString("source_accession_number"), rs.getString("source_url")), packetId);
+                rs.getString("source_accession_number"), rs.getString("source_url"), rs.getBigDecimal("gross_profit"),
+                rs.getBigDecimal("current_assets"), rs.getBigDecimal("current_liabilities"), rs.getBigDecimal("equity"),
+                rs.getObject("period_ending_date", LocalDate.class)), packetId);
     }
 
     private String packetSelect() { return """
@@ -486,6 +595,10 @@ public class DiligenceStore {
     private Map<String,Object> readObjectMap(String value) { try { return json.readValue(value, new TypeReference<>() { }); } catch (Exception error) { return Map.of(); } }
     private static String bounded(String value, int max) { return value == null ? null : value.substring(0, Math.min(max, value.length())); }
     private static LocalDateTime time(Timestamp value) { return value == null ? null : value.toLocalDateTime(); }
+    private static LocalDateTime observedAt(Map<String, Object> metadata) {
+        try { return LocalDateTime.parse(String.valueOf(metadata.get("observedAt"))); }
+        catch (RuntimeException ignored) { return LocalDateTime.now(); }
+    }
     private static int sourceRank(String value) {
         return switch (value == null ? "" : value) {
             case "PUBLIC_CAMPAIGN_URL" -> 3;

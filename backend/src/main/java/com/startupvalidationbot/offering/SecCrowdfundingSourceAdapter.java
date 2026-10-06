@@ -37,6 +37,9 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
     private static final Pattern DATASET_LINK = Pattern.compile("href=[\"']([^\"']*(20\\d{2})q[1-4]_cf\\.zip)[\"']", Pattern.CASE_INSENSITIVE);
     private static final Pattern INDEX_LINE = Pattern.compile("^(\\d+)\\|([^|]+)\\|(C(?:/A|-U(?:/A)?|-W|-TR))\\|(\\d{4}-\\d{2}-\\d{2})\\|([^|]+)$");
     private static final Pattern ACCESSION = Pattern.compile("(\\d{10}-\\d{2}-\\d{6})");
+    public static final int DOCUMENT_MAX_BYTES = 8_000_000;
+    public static final int DOCUMENT_ATTEMPTS = 2;
+    public enum ExtractionStatus { NO_FACT_PRESENT, DOCUMENT_TOO_LARGE, REQUEST_FAILED, PARSE_FAILED, UNSUPPORTED_STRUCTURE, SUCCESS }
     private final SecFilingClient client;
     private final int recentLimit;
     private final int indexMaxBytes;
@@ -71,12 +74,101 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
 
     @Override
     public Candidate enrich(Candidate candidate) {
-        String path = candidate.facts().get("submissionPath");
-        if (blank(path)) return candidate;
         IndexRecord record = new IndexRecord(candidate.issuerCik(), candidate.issuerName(), candidate.filingType(),
-                candidate.filingDate(), path, candidate.accessionNumber());
-        return parseSubmission(record, client.getText(submissionTextUrl(path), 8_000_000));
+                candidate.filingDate(), candidate.facts().get("submissionPath"), candidate.accessionNumber());
+        String indexUrl = candidate.secFilingUrl();
+        Map<String, String> diagnostics = new TreeMap<>();
+        int attempts = 0, skipped = 0, requestFailures = 0, parseFailures = 0;
+        ExtractionStatus status = ExtractionStatus.UNSUPPORTED_STRUCTURE;
+        List<FilingDocument> documents;
+        try {
+            documents = filingDocuments(indexUrl, client.getText(indexUrl, 1_000_000));
+        } catch (RuntimeException error) {
+            diagnostics.put("_secRequestFailures", "1");
+            return extractionResult(candidate, candidate, diagnostics,
+                    error instanceof SecFilingClient.DocumentTooLarge ? ExtractionStatus.DOCUMENT_TOO_LARGE : ExtractionStatus.REQUEST_FAILED);
+        }
+        for (FilingDocument document : documents) {
+            if (document.size() > DOCUMENT_MAX_BYTES) { skipped++; status = ExtractionStatus.DOCUMENT_TOO_LARGE; continue; }
+            if (attempts == DOCUMENT_ATTEMPTS) break;
+            attempts++;
+            diagnostics.put("_secDocumentUrl", document.url());
+            try {
+                Candidate parsed = parseSubmission(record, client.getText(document.url(), DOCUMENT_MAX_BYTES));
+                status = ExtractionStatus.valueOf(parsed.facts().getOrDefault("_secStatus", "UNSUPPORTED_STRUCTURE"));
+                if (status == ExtractionStatus.SUCCESS || status == ExtractionStatus.NO_FACT_PRESENT) {
+                    diagnostics.put("_secDocumentsAttempted", Integer.toString(attempts));
+                    diagnostics.put("_secPrimaryDocumentsAttempted", "1");
+                    diagnostics.put("_secAlternateDocumentsAttempted", Integer.toString(attempts - 1));
+                    diagnostics.put("_secOversizedSkipped", Integer.toString(skipped));
+                    diagnostics.put("_secRequestFailures", Integer.toString(requestFailures));
+                    diagnostics.put("_secParseFailures", Integer.toString(parseFailures));
+                    return extractionResult(candidate, parsed, diagnostics, status);
+                }
+                if (status == ExtractionStatus.PARSE_FAILED) parseFailures++;
+            } catch (SecFilingClient.DocumentTooLarge error) { skipped++; status = ExtractionStatus.DOCUMENT_TOO_LARGE; }
+            catch (RuntimeException error) { requestFailures++; status = ExtractionStatus.REQUEST_FAILED; }
+        }
+        diagnostics.put("_secDocumentsAttempted", Integer.toString(attempts));
+        diagnostics.put("_secPrimaryDocumentsAttempted", attempts == 0 ? "0" : "1");
+        diagnostics.put("_secAlternateDocumentsAttempted", Integer.toString(Math.max(0, attempts - 1)));
+        diagnostics.put("_secOversizedSkipped", Integer.toString(skipped));
+        diagnostics.put("_secRequestFailures", Integer.toString(requestFailures));
+        diagnostics.put("_secParseFailures", Integer.toString(parseFailures));
+        return extractionResult(candidate, candidate, diagnostics, status);
     }
+
+    private static Candidate extractionResult(Candidate original, Candidate parsed, Map<String, String> diagnostics,
+            ExtractionStatus status) {
+        Map<String, String> facts = new TreeMap<>(parsed.facts());
+        facts.putAll(diagnostics); facts.put("_secStatus", status.name());
+        if (original.facts().get("submissionPath") != null) facts.put("submissionPath", original.facts().get("submissionPath"));
+        String document = diagnostics.get("_secDocumentUrl");
+        if (status == ExtractionStatus.SUCCESS && document != null) {
+            for (String key : List.copyOf(facts.keySet())) if (!key.startsWith("_")) facts.put("_sourceUrl." + key, document);
+        }
+        return new Candidate(parsed.issuerName(), parsed.issuerCik(), parsed.issuerWebsite(), parsed.platform(),
+                parsed.intermediaryName(), parsed.intermediaryCik(), parsed.offeringUrl(), parsed.secFilingUrl(),
+                parsed.accessionNumber(), parsed.fileNumber(), parsed.filingType(), parsed.filingDate(), parsed.securityType(),
+                parsed.minimumInvestment(), parsed.targetAmount(), parsed.maximumAmount(), parsed.valuationOrCap(),
+                parsed.deadline(), parsed.amountRaised(), parsed.source(), Map.copyOf(facts),
+                status == ExtractionStatus.SUCCESS || status == ExtractionStatus.NO_FACT_PRESENT
+                        ? parsed.retrievalQuality() : RetrievalQuality.INDEX_ONLY);
+    }
+
+    static List<FilingDocument> filingDocuments(String indexUrl, String html) {
+        URI index = SecFilingClient.requireOfficialUrl(indexUrl);
+        List<FilingDocument> documents = new ArrayList<>();
+        Matcher rows = Pattern.compile("(?is)<tr\\b[^>]*>(.*?)</tr>").matcher(html);
+        while (rows.find()) {
+            List<String> cells = new ArrayList<>();
+            Matcher columns = Pattern.compile("(?is)<td\\b[^>]*>(.*?)</td>").matcher(rows.group(1));
+            while (columns.find()) cells.add(columns.group(1));
+            if (cells.size() < 5) continue;
+            Matcher link = Pattern.compile("(?is)href=[\"']([^\"']+)[\"']").matcher(cells.get(2));
+            if (!link.find()) continue;
+            String type = plain(cells.get(3)).toUpperCase(Locale.ROOT);
+            String description = plain(cells.get(1)).toLowerCase(Locale.ROOT);
+            if (!isOfferingForm(type) && !(type.equals("XML") && description.matches(".*(form c|submission|offering|financial).*"))) continue;
+            try {
+                URI url = SecFilingClient.requireOfficialUrl(index.resolve(link.group(1).replace("&amp;", "&")).toString());
+                // A filing cannot nominate unrelated official-host paths or a different accession.
+                String directory = index.getPath().substring(0, index.getPath().lastIndexOf('/') + 1);
+                if (!url.getPath().startsWith(directory)) continue;
+                boolean xml = url.getPath().toLowerCase(Locale.ROOT).endsWith(".xml");
+                boolean htmlDocument = url.getPath().toLowerCase(Locale.ROOT).matches(".*\\.html?");
+                if (!xml && !htmlDocument) continue;
+                String sizeText = plain(cells.get(4)).replace(",", "");
+                long size = sizeText.matches("\\d+") ? Long.parseLong(sizeText) : -1;
+                documents.add(new FilingDocument(url.toString(), size, xml ? isOfferingForm(type) ? 0 : 1 : 2));
+            } catch (IllegalArgumentException ignored) { /* Unsafe index entries are not fetched. */ }
+        }
+        return documents.stream().distinct().sorted(java.util.Comparator.comparingInt(FilingDocument::rank)
+                .thenComparingLong(d -> d.size() < 0 ? Long.MAX_VALUE : d.size()).thenComparing(FilingDocument::url)).toList();
+    }
+
+    private static String plain(String value) { return value.replaceAll("(?s)<[^>]*>", "").replace("&nbsp;", " ").trim(); }
+    record FilingDocument(String url, long size, int rank) { }
 
     @Override
     public List<Candidate> fetchBaseline() {
@@ -112,6 +204,10 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
     static Candidate parseSubmission(IndexRecord record, String submission) {
         Map<String, String> facts = new TreeMap<>();
         Map<String, String> xml = xmlFacts(submission);
+        xml.forEach((key, value) -> {
+            if (!key.startsWith("_")) facts.put(key.toUpperCase(Locale.ROOT), value);
+            else facts.put(key, value);
+        });
         put(facts, "fileNumber", header(submission, "SEC FILE NUMBER"));
         put(facts, "issuerWebsite", tag(xml, "issuerWebsite", "website"));
         put(facts, "intermediaryName", tag(xml, "companyName", "intermediaryName"));
@@ -122,6 +218,10 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
         put(facts, "deadline", tag(xml, "deadlineDate"));
         put(facts, "amountRaised", tag(xml, "totalOfferingAmount"));
         put(facts, "minimumInvestment", tag(xml, "minimumInvestment"));
+        String cap = tag(xml, "valuationCap");
+        put(facts, "valuationOrCap", cap == null ? tag(xml, "valuation") : cap + " cap");
+        put(facts, "offeringUrl", tag(xml, "offeringUrl", "campaignUrl"));
+        put(facts, "intermediaryWebsite", tag(xml, "intermediaryWebsite"));
         String filingUrl = filingIndexUrl(record.cik(), record.accession());
         String intermediary = facts.get("intermediaryName");
         return new Candidate(value(tag(xml, "nameOfIssuer"), record.issuerName()), padCik(record.cik()),
@@ -129,9 +229,10 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
                 facts.get("intermediaryCik"), publicOfferingUrl(facts), filingUrl, record.accession(),
                 facts.get("fileNumber"), record.form(), record.filingDate(), facts.get("securityType"),
                 decimal(facts.get("minimumInvestment")), decimal(facts.get("targetAmount")),
-                decimal(facts.get("maximumAmount")), tag(xml, "valuation", "valuationCap"),
+                decimal(facts.get("maximumAmount")), facts.get("valuationOrCap"),
                 date(facts.get("deadline")), decimal(facts.get("amountRaised")), "SEC_EDGAR_RECENT", Map.copyOf(facts),
-                xml.isEmpty() ? RetrievalQuality.INDEX_ONLY : RetrievalQuality.DETAIL_COMPLETE);
+                "SUCCESS".equals(facts.get("_secStatus")) || "NO_FACT_PRESENT".equals(facts.get("_secStatus"))
+                        ? RetrievalQuality.DETAIL_COMPLETE : RetrievalQuality.INDEX_ONLY);
     }
 
     static List<Candidate> parseDatasetZip(byte[] zipBytes) {
@@ -227,7 +328,7 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
         while (blocks.find()) fragments.append(blocks.group(1)).append('\n');
         String xml = fragments.isEmpty() ? submission : fragments.toString();
         xml = xml.replaceAll("(?is)<\\?xml[^>]*\\?>", "");
-        if (xml.length() > 8_000_000) return Map.of();
+        if (xml.length() > DOCUMENT_MAX_BYTES) return Map.of("_secStatus", "DOCUMENT_TOO_LARGE");
         try {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             factory.setNamespaceAware(true);
@@ -248,11 +349,18 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
                 }
                 String name = element.getLocalName() == null ? element.getTagName() : element.getLocalName();
                 String value = element.getTextContent() == null ? "" : element.getTextContent().trim();
-                if (!hasElementChild && !value.isBlank()) facts.putIfAbsent(name.toLowerCase(Locale.ROOT), value);
+                if (!hasElementChild && !value.isBlank()) {
+                    String key = name.toLowerCase(Locale.ROOT);
+                    facts.putIfAbsent(key, value);
+                    facts.putIfAbsent("_secLabel." + name.toUpperCase(Locale.ROOT), name);
+                }
             }
+            boolean supported = facts.containsKey("nameofissuer") || facts.containsKey("securityofferedtype")
+                    || facts.keySet().stream().anyMatch(key -> key.endsWith("fiscalyear"));
+            facts.put("_secStatus", supported ? "SUCCESS" : "UNSUPPORTED_STRUCTURE");
             return facts;
         } catch (Exception ignored) {
-            return Map.of();
+            return Map.of("_secStatus", "PARSE_FAILED");
         }
     }
 
@@ -280,7 +388,7 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
     }
 
     private static String publicOfferingUrl(Map<String, String> facts) {
-        for (String key : List.of("OFFERINGURL", "offeringUrl", "INTERMEDIARYWEBSITE")) {
+        for (String key : List.of("OFFERINGURL", "offeringUrl")) {
             String value = facts.get(key);
             if (value != null) {
                 try { return PublicSourceUrlPolicy.requirePublicHttpUrl(value).toString(); }
@@ -297,7 +405,7 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
     private static void put(Map<String, String> facts, String key, String value) { if (!blank(value)) facts.put(key, value); }
     private static String value(String first, String second) { return blank(first) ? second : first; }
     private static String padCik(String cik) { return cik == null ? null : String.format("%010d", Long.parseLong(cik.trim())); }
-    private static BigDecimal decimal(String value) { try { return blank(value) ? null : new BigDecimal(value.replace(",", "").replace("$", "")); } catch (NumberFormatException e) { return null; } }
+    private static BigDecimal decimal(String value) { return OfferingTermNormalizer.money(value); }
     private static LocalDate date(String value) { return OfferingTermNormalizer.date(value); }
     private static LocalDate compactDate(String value) { return OfferingTermNormalizer.date(value); }
     private static boolean blank(String value) { return value == null || value.isBlank(); }

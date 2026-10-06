@@ -27,6 +27,8 @@ import com.startupvalidationbot.diligence.discovery.CampaignDiscoveryService;
 import com.startupvalidationbot.offering.OfferingDomain.MatchStatus;
 import com.startupvalidationbot.offering.OfferingDomain.Offering;
 import com.startupvalidationbot.offering.OfferingStore;
+import com.startupvalidationbot.offering.SecCrowdfundingSourceAdapter;
+import com.startupvalidationbot.offering.OfferingDomain.Match;
 import com.startupvalidationbot.offering.intake.NativeOfferingDomain;
 import com.startupvalidationbot.offering.intake.NativeOfferingIntakeService;
 import com.startupvalidationbot.radar.ContentHash;
@@ -50,17 +52,20 @@ public class AutonomousDiligenceService {
     private final CampaignDiscoveryService campaignDiscovery;
     private final NativeOfferingIntakeService nativeIntake;
     private final int maxOfferings;
+    private final SecCrowdfundingSourceAdapter sec;
 
     @Autowired
     public AutonomousDiligenceService(DiligenceStore store, OfferingStore offerings, RadarStore radar,
             RadarQueryService queries, SecFinancialExtractor financialExtractor, EvidenceReconciler reconciler,
             DiligenceNotificationService notifications, List<PlatformOfferingEnricher> enrichers,
             CampaignDiscoveryService campaignDiscovery, NativeOfferingIntakeService nativeIntake,
+            SecCrowdfundingSourceAdapter sec,
             @Value("${diligence.max-offerings-per-run:25}") int maxOfferings) {
         this.store = store; this.offerings = offerings; this.radar = radar; this.queries = queries;
         this.financialExtractor = financialExtractor; this.reconciler = reconciler; this.notifications = notifications;
         this.campaignDiscovery = campaignDiscovery;
         this.nativeIntake = nativeIntake;
+        this.sec = sec;
         Map<String, PlatformOfferingEnricher> values = new HashMap<>();
         enrichers.forEach(value -> values.put(value.platform(), value));
         this.enrichers = Map.copyOf(values);
@@ -72,7 +77,7 @@ public class AutonomousDiligenceService {
             DiligenceNotificationService notifications, List<PlatformOfferingEnricher> enrichers,
             int maxOfferings) {
         this(store, offerings, radar, queries, financialExtractor, reconciler, notifications, enrichers,
-                null, null, maxOfferings);
+                null, null, null, maxOfferings);
     }
 
     public RunResult run() {
@@ -89,8 +94,13 @@ public class AutonomousDiligenceService {
         Map<Long, List<Offering>> byCompany = new HashMap<>();
         offerings.list(null, null, null, null).stream().filter(value -> value.radarCompanyId() != null)
                 .forEach(value -> byCompany.computeIfAbsent(value.radarCompanyId(), ignored -> new ArrayList<>()).add(value));
-        List<Long> offeringIds = targetOfferingId == null
-                ? store.eligibleOfferingIds(maxOfferings) : List.of(targetOfferingId);
+        DiligenceRefreshSelector.Selection selection = targetOfferingId == null
+                ? store.selectOfferings(maxOfferings, LocalDateTime.now()) : null;
+        List<Long> offeringIds = targetOfferingId == null ? selection.ids() : List.of(targetOfferingId);
+        List<String> refreshDiagnostics = new ArrayList<>();
+        if (selection != null) selection.counts().forEach((bucket, count) -> refreshDiagnostics.add("selected" + bucket.name() + "=" + count));
+        refreshDiagnostics.add("selectedOfferingIds=" + offeringIds);
+        Map<String, Integer> secCounts = new LinkedHashMap<>();
         Set<Long> checkedCompanyIds = targetOfferingId == null ? null : offeringIds.stream()
                 .map(offerings::find).flatMap(java.util.Optional::stream).map(Offering::radarCompanyId)
                 .filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
@@ -107,6 +117,24 @@ public class AutonomousDiligenceService {
             considered++;
             Offering offering = offerings.find(offeringId).orElse(null);
             if (offering == null || offering.radarCompanyId() == null) continue;
+            store.markDiligenceAttempt(offeringId);
+            if (sec != null && "SEC_EDGAR".equals(offering.provenance()) && offering.secFilingUrl() != null) {
+                var extracted = sec.enrich(offerings.storedCandidate(offeringId));
+                secCounts.merge("secFilingsInspected", 1, Integer::sum);
+                String extractionStatus = extracted.facts().getOrDefault("_secStatus", "UNSUPPORTED_STRUCTURE");
+                secCounts.merge("secStatus" + extractionStatus, 1, Integer::sum);
+                String financialStatus = "SUCCESS".equals(extractionStatus)
+                        ? financialExtractor.extractionStatus(offering, extracted.facts())
+                        : extractionStatus;
+                secCounts.merge("secFinancial" + financialStatus, 1, Integer::sum);
+                for (String counter : List.of("DocumentsAttempted", "PrimaryDocumentsAttempted", "AlternateDocumentsAttempted",
+                        "OversizedSkipped", "RequestFailures", "ParseFailures")) {
+                    secCounts.merge("sec" + counter, integer(extracted.facts().get("_sec" + counter)), Integer::sum);
+                }
+                refreshDiagnostics.add("secOffering" + offeringId + "=" + extractionStatus);
+                offering = offerings.upsert(extracted, new Match(offering.radarCompanyId(), offering.matchStatus(),
+                        offering.matchConfidence(), offering.matchReason())).offering();
+            }
             if (offering.matchStatus() == MatchStatus.CONFIRMED) identities++;
             Map<String, String> storedFacts = offerings.facts(offering.id());
             Map<String, String> secFacts = "SEC_EDGAR".equals(offering.provenance())
@@ -150,8 +178,11 @@ public class AutonomousDiligenceService {
 
             List<FinancialPeriod> financials = offering.secFilingUrl() == null
                     ? List.of() : financialExtractor.extract(offering, secFacts);
+            Packet previousPacket = store.findByOffering(offeringId).orElse(null);
+            if (previousPacket != null) financials = mergeFinancials(previousPacket.financials(), financials);
             List<EvidenceDraft> evidence = offering.secFilingUrl() == null
                     ? new ArrayList<>() : new ArrayList<>(secEvidence(offering, secFacts, financials));
+            if (offering.secFilingUrl() != null) evidence.addAll(financialExtractor.evidence(offering, secFacts));
             Map<String, String> platformFacts = campaign == null ? Map.of() : campaign.facts();
             if (campaign != null) evidence.addAll(platformEvidence(campaign));
             EffectiveOfferingTerms.Projection terms = EffectiveOfferingTerms.resolve(offering, campaign, storedFacts);
@@ -192,9 +223,10 @@ public class AutonomousDiligenceService {
         }
         SendCounts sends = notifications.sendPending();
         int queueAfter = store.actionablePacketCount();
+        secCounts.forEach((key, count) -> refreshDiagnostics.add(key + "=" + count));
         return new RunResult(companies.size(), considered, identities, campaigns, ready, partial, review,
                 platformErrors, aiFallbacks, queued, sends.sent(), sends.failed(), List.copyOf(errors), discovery,
-                nativeResult, nativeResult.reviewQueueBefore(), queueAfter);
+                nativeResult, nativeResult.reviewQueueBefore(), queueAfter, List.copyOf(refreshDiagnostics));
     }
 
     public Packet refresh(long packetId) {
@@ -202,6 +234,25 @@ public class AutonomousDiligenceService {
         run(packet.offeringId());
         return store.find(packet.id()).orElseThrow();
     }
+
+    static List<FinancialPeriod> mergeFinancials(List<FinancialPeriod> retained, List<FinancialPeriod> incoming) {
+        Map<String, FinancialPeriod> result = new LinkedHashMap<>();
+        retained.forEach(p -> result.put(p.period(), p));
+        for (FinancialPeriod p : incoming) {
+            FinancialPeriod old = result.get(p.period());
+            if (old == null) { result.put(p.period(), p); continue; }
+            result.put(p.period(), new FinancialPeriod(p.period(), first(p.revenue(), old.revenue()),
+                    first(p.costOfGoods(), old.costOfGoods()), first(p.netIncome(), old.netIncome()),
+                    first(p.cash(), old.cash()), first(p.assets(), old.assets()), first(p.liabilities(), old.liabilities()),
+                    first(p.shortTermDebt(), old.shortTermDebt()), first(p.longTermDebt(), old.longTermDebt()),
+                    first(p.taxesPaid(), old.taxesPaid()), p.sourceAccessionNumber(), p.sourceUrl(),
+                    first(p.grossProfit(), old.grossProfit()), first(p.currentAssets(), old.currentAssets()),
+                    first(p.currentLiabilities(), old.currentLiabilities()), first(p.equity(), old.equity()),
+                    first(p.periodEndingDate(), old.periodEndingDate())));
+        }
+        return List.copyOf(result.values());
+    }
+    private static <T> T first(T incoming, T retained) { return incoming == null ? retained : incoming; }
 
     private void initializeAvailability(List<Company> companies, Map<Long,List<Offering>> byCompany) {
         for (Company company : companies) {
@@ -249,13 +300,9 @@ public class AutonomousDiligenceService {
         add(evidence, offering, "maximum_amount", offering.maximumAmount(), null);
         add(evidence, offering, "amount_raised", offering.amountRaised(), null);
         add(evidence, offering, "deadline", offering.deadline(), null);
-        for (FinancialPeriod period : financials) {
-            add(evidence, offering, "revenue", period.revenue(), period.period());
-            add(evidence, offering, "net_income", period.netIncome(), period.period());
-            add(evidence, offering, "cash", period.cash(), period.period());
-            add(evidence, offering, "assets", period.assets(), period.period());
-            add(evidence, offering, "short_term_debt", period.shortTermDebt(), period.period());
-            add(evidence, offering, "long_term_debt", period.longTermDebt(), period.period());
+        for (String key : List.of("issuerWebsite", "intermediaryName", "intermediaryCik", "intermediaryWebsite", "offeringUrl")) {
+            String clue = value(facts, key, key.toUpperCase(Locale.ROOT));
+            if (clue != null) add(evidence, offering, key, clue, null);
         }
         String compensation = value(facts, "COMPENSATIONAMOUNT", "compensationAmount");
         if (compensation != null) add(evidence, offering, "intermediary_compensation", compensation, null);
@@ -368,6 +415,7 @@ public class AutonomousDiligenceService {
         catch (RuntimeException error) { return false; }
     }
     private static String value(Map<String,String> values, String... keys) { for (String key : keys) if (values.get(key) != null) return values.get(key); return null; }
+    private static int integer(String value) { try { return Integer.parseInt(value); } catch (RuntimeException ignored) { return 0; } }
     private static String safe(RuntimeException error) {
         String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
         return SafeUrl.redactUrlsIn(message);

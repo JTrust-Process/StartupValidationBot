@@ -44,4 +44,34 @@ class SecFinancialExtractorTest {
                 null, null, null, null, null, null, Status.UNKNOWN, "TEST", MatchStatus.CONFIRMED, 100,
                 "domain matched", LocalDateTime.now(), LocalDateTime.now());
     }
+
+    @Test void expandsConceptsKeepsRelativePeriodAndExplicitDateAndRejectsMalformedValues() {
+        var facts = Map.ofEntries(Map.entry("revenueMostRecentFiscalYear", "$1,200.00"),
+                Map.entry("costOfRevenueMostRecentFiscalYear", "200"), Map.entry("grossProfitMostRecentFiscalYear", "1000"),
+                Map.entry("netLossMostRecentFiscalYear", "(80)"), Map.entry("currentAssetsMostRecentFiscalYear", "600"),
+                Map.entry("currentLiabilitiesMostRecentFiscalYear", "120"), Map.entry("membersEquityMostRecentFiscalYear", "480"),
+                Map.entry("fiscalYearEndMostRecent", "2025-06-30"), Map.entry("revenuePriorFiscalYear", "1,2,00"),
+                Map.entry("cashPriorFiscalYear", "5M"));
+        var extractor = new SecFinancialExtractor();
+        var periods = extractor.extract(offering(), facts);
+        assertThat(periods).hasSize(1);
+        var period = periods.get(0);
+        assertThat(period.period()).isEqualTo("MOST_RECENT_FISCAL_YEAR");
+        assertThat(period.periodEndingDate()).isEqualTo(LocalDate.of(2025, 6, 30));
+        assertThat(period.grossProfit()).isEqualByComparingTo("1000");
+        assertThat(period.netIncome()).isEqualByComparingTo("-80");
+        assertThat(period.currentAssets()).isEqualByComparingTo("600");
+        assertThat(period.currentLiabilities()).isEqualByComparingTo("120");
+        assertThat(period.equity()).isEqualByComparingTo("480");
+        assertThat(extractor.evidence(offering(), facts)).hasSize(7).allSatisfy(e -> {
+            assertThat(e.metadata()).containsKeys("filedLabel", "normalizedConcept", "units", "accessionNumber", "filingDocument", "periodEndingDate");
+        });
+        assertThat(SecFinancialExtractor.monetaryValue("2e6")).isNull();
+        assertThat(SecFinancialExtractor.monetaryValue("1,00")).isNull();
+        assertThat(SecFinancialExtractor.monetaryValue("12345678901234567890")).isNull();
+        assertThat(SecFinancialExtractor.monetaryValue("100000000000000000")).isNull();
+        assertThat(SecFinancialExtractor.monetaryValue("99999999999999999.99")).isEqualByComparingTo("99999999999999999.99");
+        assertThat(extractor.extractionStatus(offering(), Map.of())).isEqualTo("NO_FACT_PRESENT");
+        assertThat(extractor.extractionStatus(offering(), Map.of("REVENUEMOSTRECENTFISCALYEAR", "bad"))).isEqualTo("PARSE_FAILED");
+    }
 }

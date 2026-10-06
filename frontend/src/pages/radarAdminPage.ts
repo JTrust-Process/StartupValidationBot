@@ -72,6 +72,11 @@ function statusHtml(status: RadarSystemStatus): string {
       </div>
       <p class="radar-muted">${escapeHtml(status.aiProvider)} / ${escapeHtml(status.routineModel)}; Deep Dive: ${escapeHtml(status.deepDiveModel)}. AI ${status.aiEnabled ? 'enabled' : 'disabled'}.</p>
       <div class="radar-integration-grid">${integrations}</div>
+      <p class="radar-muted">Email provider: ${escapeHtml(status.emailDelivery.provider)}.
+        Configured: ${status.emailDelivery.configured ? 'Yes' : 'No'};
+        recipient configured: ${status.emailDelivery.recipientConfigured ? 'Yes' : 'No'};
+        from configured: ${status.emailDelivery.fromConfigured ? 'Yes' : 'No'}.
+        Last delivery attempt: ${escapeHtml(status.emailDelivery.lastStatus)} / ${escapeHtml(formatRadarDate(status.emailDelivery.lastAttemptAt))}.</p>
       <h4>AI provider comparison</h4>
       <p class="radar-muted">Deterministic attempt telemetry only. Router cost remains unknown unless its API reports it.</p>
       ${comparisons}
@@ -105,6 +110,18 @@ function adminHtml(status: RadarSystemStatus, sources: Awaited<ReturnType<typeof
     </section>
     <section class="radar-panel">
       <h3>Autonomous Diligence</h3>
+      <h4>Refresh backlog</h4>
+      <div class="radar-status-grid">
+        <div><span>Reviewable / run bound</span><strong>${diligence.refreshHealth.totalReviewable} / ${diligence.refreshHealth.configuredBound}</strong></div>
+        <div><span>Never processed / overdue</span><strong>${diligence.refreshHealth.neverProcessed} / ${diligence.refreshHealth.overdue}</strong></div>
+        <div><span>Unresolved</span><strong>${diligence.refreshHealth.unresolved}</strong></div>
+        <div><span>Fresh &lt;7 days</span><strong>${diligence.refreshHealth.refreshedUnder7Days}</strong></div>
+        <div><span>Stale 7-14 / 15-30 / &gt;30 days</span><strong>${diligence.refreshHealth.stale7To14Days} / ${diligence.refreshHealth.stale15To30Days} / ${diligence.refreshHealth.staleOver30Days}</strong></div>
+        <div><span>Oldest successful refresh</span><strong>${escapeHtml(formatRadarDate(diligence.refreshHealth.oldestRefreshAt))}</strong></div>
+      </div>
+      <p class="radar-muted">Last selected: ${Object.entries(diligence.refreshHealth.lastSelection).map(([bucket, count]) => `${escapeHtml(bucket.replaceAll('_', ' '))}: ${count}`).join('; ')}.</p>
+      <h4>SEC extraction outcomes</h4>
+      <p class="radar-muted">${Object.entries(diligence.refreshHealth.secExtraction).map(([key, count]) => `${escapeHtml(key.replaceAll('_', ' '))}: ${count}`).join('; ')}.</p>
       <div class="radar-status-grid">
         <div><span>Last run</span><strong>${escapeHtml(diligence.lastRunStatus)}</strong><small>${escapeHtml(formatRadarDate(diligence.lastRunCompletedAt || diligence.lastRunStartedAt))}</small></div>
         <div><span>Duration</span><strong>${diligence.lastRunDurationMs === null ? 'Unknown' : `${Math.round(diligence.lastRunDurationMs / 1000)}s`}</strong></div>

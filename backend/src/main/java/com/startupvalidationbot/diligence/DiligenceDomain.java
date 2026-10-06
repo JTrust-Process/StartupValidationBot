@@ -35,7 +35,16 @@ public final class DiligenceDomain {
     public record FinancialPeriod(String period, BigDecimal revenue, BigDecimal costOfGoods,
             BigDecimal netIncome, BigDecimal cash, BigDecimal assets, BigDecimal liabilities,
             BigDecimal shortTermDebt, BigDecimal longTermDebt, BigDecimal taxesPaid,
-            String sourceAccessionNumber, String sourceUrl) { }
+            String sourceAccessionNumber, String sourceUrl, BigDecimal grossProfit, BigDecimal currentAssets,
+            BigDecimal currentLiabilities, BigDecimal equity, LocalDate periodEndingDate) {
+        public FinancialPeriod(String period, BigDecimal revenue, BigDecimal costOfGoods,
+                BigDecimal netIncome, BigDecimal cash, BigDecimal assets, BigDecimal liabilities,
+                BigDecimal shortTermDebt, BigDecimal longTermDebt, BigDecimal taxesPaid,
+                String sourceAccessionNumber, String sourceUrl) {
+            this(period, revenue, costOfGoods, netIncome, cash, assets, liabilities, shortTermDebt,
+                    longTermDebt, taxesPaid, sourceAccessionNumber, sourceUrl, null, null, null, null, null);
+        }
+    }
 
     public record PlatformCampaign(Long id, long offeringId, String platform, String campaignUrl,
             String campaignUrlSource, int campaignUrlConfidence, CampaignStatus status,
@@ -70,7 +79,18 @@ public final class DiligenceDomain {
             int campaignsResolved, int packetsReady, int packetsPartial, int needsReview,
             int platformErrors, int aiFallbacks, int emailsQueued, int emailsSent, int emailsFailed,
             List<String> errors, CampaignDiscoveryDomain.RunResult campaignDiscovery,
-            NativeOfferingDomain.RunResult nativeIntake, int reviewQueueBefore, int reviewQueueAfter) {
+            NativeOfferingDomain.RunResult nativeIntake, int reviewQueueBefore, int reviewQueueAfter,
+            List<String> refreshDiagnostics) {
+
+        public RunResult(int companiesConsidered, int offeringsConsidered, int identitiesResolved,
+                int campaignsResolved, int packetsReady, int packetsPartial, int needsReview,
+                int platformErrors, int aiFallbacks, int emailsQueued, int emailsSent, int emailsFailed,
+                List<String> errors, CampaignDiscoveryDomain.RunResult campaignDiscovery,
+                NativeOfferingDomain.RunResult nativeIntake, int reviewQueueBefore, int reviewQueueAfter) {
+            this(companiesConsidered, offeringsConsidered, identitiesResolved, campaignsResolved, packetsReady,
+                    packetsPartial, needsReview, platformErrors, aiFallbacks, emailsQueued, emailsSent, emailsFailed,
+                    errors, campaignDiscovery, nativeIntake, reviewQueueBefore, reviewQueueAfter, List.of());
+        }
 
         public RunResult(int companiesConsidered, int offeringsConsidered, int identitiesResolved,
                 int campaignsResolved, int packetsReady, int packetsPartial, int needsReview,
@@ -88,6 +108,11 @@ public final class DiligenceDomain {
     public record NotificationDiagnostic(boolean configured, String lastStatus, String lastMessageId,
             String lastError) { }
 
+    public record RefreshHealth(int totalReviewable, int neverProcessed, int overdue, int unresolved,
+            int refreshedUnder7Days, int stale7To14Days, int stale15To30Days, int staleOver30Days,
+            LocalDateTime oldestRefreshAt, int configuredBound, Map<String, Integer> lastSelection,
+            Map<String, Integer> secExtraction) { }
+
     public record Diagnostics(String lastRunStatus, LocalDateTime lastRunStartedAt,
             LocalDateTime lastRunCompletedAt, Long lastRunDurationMs, int companiesConsidered,
             int offeringsConsidered, int identitiesResolved, int campaignsResolved,
@@ -103,5 +128,5 @@ public final class DiligenceDomain {
             int nativeDuplicatesPrevented, int nativePossible, int nativeRejected, int nativeErrors,
             int nativeSecRecentInspected, int nativeSecPlatformClassified, int nativeSecReconciled,
             int reviewQueueBefore, int reviewQueueAfter,
-            List<NativeOfferingDomain.SourceDiagnostic> nativeSources) { }
+            List<NativeOfferingDomain.SourceDiagnostic> nativeSources, RefreshHealth refreshHealth) { }
 }

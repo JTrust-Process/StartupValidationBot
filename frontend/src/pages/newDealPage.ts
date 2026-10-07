@@ -5,6 +5,7 @@ import { getDiligencePacket, getRadarCompany, getRadarOffering } from '../servic
 import { escapeAttribute, escapeHtml } from '../utils/html';
 import { navigateTo } from '../utils/router';
 import { safeExternalUrl } from '../utils/urls';
+import { diligenceSecurityType } from '../utils/diligenceHandoff';
 
 function getString(formData: FormData, key: keyof DealInput): string {
   return String(formData.get(key) ?? '').trim();
@@ -256,9 +257,7 @@ async function prefillFromDiligence(root: HTMLElement, form: HTMLFormElement, pa
       return;
     }
     const company = await getRadarCompany(packet.radarCompanyId);
-    const securityType = /safe/i.test(packet.securityType || '') ? 'SAFE'
-      : /note|debt/i.test(packet.securityType || '') ? 'NOTE'
-        : /stock|equity|share/i.test(packet.securityType || '') ? 'EQUITY' : 'UNKNOWN';
+    const securityType = diligenceSecurityType(packet.securityType);
     const financial = packet.financials.map((period) => `${period.period}: revenue ${period.revenue ?? 'unknown'}, net income ${period.netIncome ?? 'unknown'}`).join('; ');
     const references = packet.evidence.map((item) => item.sourceUrl).filter((value, index, values) => value && values.indexOf(value) === index).slice(0, 5);
     const fields: Record<string, string> = {

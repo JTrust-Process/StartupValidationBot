@@ -15,6 +15,26 @@ import org.junit.jupiter.api.Test;
 class SecCrowdfundingSourceAdapterTest {
     private static final String INDEX = "https://www.sec.gov/Archives/edgar/data/1/000000000126000001/0000000001-26-000001-index.html";
 
+    @Test void primaryXmlAndOneExplicitSmallTermsExhibitHaveIndependentProvenance() {
+        SecFilingClient client = org.mockito.Mockito.mock(SecFilingClient.class);
+        String directory = INDEX.substring(0, INDEX.lastIndexOf('/') + 1);
+        org.mockito.Mockito.when(client.getText(INDEX, 1_000_000)).thenReturn(row("primary.xml", "C", "Form C", 1000)
+                + row("safe.html", "EX-1", "SAFE agreement", 1500) + row("deck.html", "EX-99", "Pitch deck", 2000));
+        org.mockito.Mockito.when(client.getText(directory + "primary.xml", 8_000_000)).thenReturn("<nameOfIssuer>Acme</nameOfIssuer>"
+                + "<companyName>Wefunder Portal LLC</companyName><commissionCik>0001670254</commissionCik>"
+                + "<securityOfferedType>Other</securityOfferedType><securityOfferedOtherDesc>Simple Agreement for Future Equity (SAFE)</securityOfferedOtherDesc>"
+                + "<revenueMostRecentFiscalYear>120000</revenueMostRecentFiscalYear>");
+        org.mockito.Mockito.when(client.getText(directory + "safe.html", 8_000_000)).thenReturn("<html><table><tr><th>Minimum Investment</th><td>$100</td></tr>"
+                + "<tr><th>Post-Money Valuation Cap</th><td>$5,000,000</td></tr></table><a href='https://wefunder.com/acme'>Campaign</a></html>");
+        var parsed = new SecCrowdfundingSourceAdapter(client, 40, 32_000_000, 2025, 8).enrich(indexCandidate());
+        assertThat(parsed.securityType()).isEqualTo("SAFE"); assertThat(parsed.minimumInvestment()).isEqualByComparingTo("100");
+        assertThat(parsed.valuationOrCap()).isEqualTo("5000000 cap"); assertThat(parsed.offeringUrl()).isEqualTo("https://wefunder.com/acme");
+        assertThat(parsed.facts()).containsEntry("_secDocumentsAttempted", "2").containsEntry("_secPlatform.state", "SEC_CONFIRMED")
+                .containsEntry("_sourceUrl.REVENUEMOSTRECENTFISCALYEAR", directory + "primary.xml")
+                .containsEntry("_sourceUrl.minimumInvestment", directory + "safe.html");
+        org.mockito.Mockito.verify(client, org.mockito.Mockito.never()).getText(directory + "deck.html", 8_000_000);
+    }
+
     @Test void choosesSmallPrimaryXmlAndNeverDownloadsIrrelevantOversizedExhibit() {
         SecFilingClient client = org.mockito.Mockito.mock(SecFilingClient.class);
         org.mockito.Mockito.when(client.getText(INDEX, 1_000_000)).thenReturn(

@@ -24,6 +24,9 @@ import com.startupvalidationbot.diligence.notification.DiligenceNotificationServ
 import com.startupvalidationbot.diligence.platform.PlatformOfferingEnricher;
 import com.startupvalidationbot.diligence.discovery.CampaignDiscoveryDomain;
 import com.startupvalidationbot.diligence.discovery.CampaignDiscoveryService;
+import com.startupvalidationbot.diligence.discovery.AuthoritativeCampaignResolver;
+import com.startupvalidationbot.offering.IntermediaryRegistry;
+import com.startupvalidationbot.radar.CompanyIdentity;
 import com.startupvalidationbot.offering.OfferingDomain.MatchStatus;
 import com.startupvalidationbot.offering.OfferingDomain.Offering;
 import com.startupvalidationbot.offering.OfferingStore;
@@ -53,6 +56,10 @@ public class AutonomousDiligenceService {
     private final NativeOfferingIntakeService nativeIntake;
     private final int maxOfferings;
     private final SecCrowdfundingSourceAdapter sec;
+    private AuthoritativeCampaignResolver authoritativeCampaignResolver;
+
+    @Autowired
+    void setAuthoritativeCampaignResolver(AuthoritativeCampaignResolver resolver) { this.authoritativeCampaignResolver = resolver; }
 
     @Autowired
     public AutonomousDiligenceService(DiligenceStore store, OfferingStore offerings, RadarStore radar,
@@ -137,6 +144,16 @@ public class AutonomousDiligenceService {
             }
             if (offering.matchStatus() == MatchStatus.CONFIRMED) identities++;
             Map<String, String> storedFacts = offerings.facts(offering.id());
+            if (authoritativeCampaignResolver != null && "SEC_EDGAR".equals(offering.provenance())) {
+                var resolution = authoritativeCampaignResolver.resolve(offering, storedFacts);
+                offerings.recordCampaignResolution(offering.id(), resolution.metadata());
+                secCounts.merge("campaignLink" + resolution.state(), 1, Integer::sum);
+                if (resolution.url() != null) {
+                    offerings.attachCampaignUrl(offering.id(), resolution.platform(), resolution.url());
+                    offering = offerings.find(offering.id()).orElseThrow();
+                }
+                storedFacts = offerings.facts(offering.id());
+            }
             Map<String, String> secFacts = "SEC_EDGAR".equals(offering.provenance())
                     ? storedFacts : Map.of();
             PlatformCampaign previousCampaign = store.findCampaign(offering.id()).orElse(null);
@@ -146,11 +163,19 @@ public class AutonomousDiligenceService {
             if (campaign != null) sourcesChecked.add(campaign.platform());
             String platform = normalizePlatform(offering.platform());
             PlatformOfferingEnricher enricher = enrichers.get(platform);
-            if (enricher != null && offering.offeringUrl() != null) {
+            if (enricher != null && offering.offeringUrl() != null && !"AMBIGUOUS".equals(storedFacts.get("_secCampaign.state"))
+                    && !"AMBIGUOUS".equals(storedFacts.get("_issuerCampaign.state"))
+                    && IntermediaryRegistry.fromFacts(storedFacts).state() != IntermediaryRegistry.State.AMBIGUOUS) {
                 try {
                     URI url = URI.create(offering.offeringUrl());
                     if (enricher.supports(url)) {
-                        campaign = store.upsertCampaign(enricher.enrich(offering, url));
+                        PlatformCampaign observed = enricher.enrich(offering, url);
+                        if (observed.issuerName() == null || !CompanyIdentity.normalizeName(offering.issuerName()).equals(CompanyIdentity.normalizeName(observed.issuerName()))) {
+                            offerings.recordCampaignResolution(offering.id(), Map.of("_issuerCampaign.fetchStatus", "ISSUER_MISMATCH"));
+                            throw new IllegalStateException("Public campaign issuer does not exactly match the filed issuer; review required");
+                        }
+                        campaign = store.upsertCampaign(observed);
+                        offerings.recordCampaignResolution(offering.id(), Map.of("_issuerCampaign.fetchStatus", "SUCCESS"));
                         platformRequests.merge(platform, 1, Integer::sum);
                         campaigns++;
                         if (!sourcesChecked.contains(platform)) sourcesChecked.add(platform);
@@ -166,6 +191,8 @@ public class AutonomousDiligenceService {
                 } catch (RuntimeException error) {
                     platformErrors++;
                     String message = safe(error);
+                    offerings.recordCampaignResolution(offering.id(), Map.of("_issuerCampaign.fetchStatus",
+                            message.contains("does not exactly match") ? "ISSUER_MISMATCH" : message.contains("403") ? "HTTP_403" : message.contains("404") ? "HTTP_404" : message.toLowerCase(Locale.ROOT).contains("verification") ? "BROWSER_VERIFICATION" : "UNAVAILABLE"));
                     platformRequests.merge(platform, 1, Integer::sum);
                     platformFailure.put(platform, message);
                     if (!successfulCoverage.contains(offering.radarCompanyId() + "|" + platform)) {
@@ -176,6 +203,8 @@ public class AutonomousDiligenceService {
                 }
             }
 
+            storedFacts = offerings.facts(offering.id());
+            secFacts = "SEC_EDGAR".equals(offering.provenance()) ? storedFacts : Map.of();
             List<FinancialPeriod> financials = offering.secFilingUrl() == null
                     ? List.of() : financialExtractor.extract(offering, secFacts);
             Packet previousPacket = store.findByOffering(offeringId).orElse(null);
@@ -188,6 +217,7 @@ public class AutonomousDiligenceService {
             EffectiveOfferingTerms.Projection terms = EffectiveOfferingTerms.resolve(offering, campaign, storedFacts);
             List<String> discrepancies = new ArrayList<>(reconciler.reconcile(secFacts, platformFacts));
             discrepancies.addAll(terms.issues());
+            if ("AMBIGUOUS".equals(storedFacts.get("_issuerCampaign.state")) || "ISSUER_MISMATCH".equals(storedFacts.get("_issuerCampaign.fetchStatus"))) discrepancies.add("Campaign link identity requires review; intermediary identity is not issuer identity");
             Analysis analysis = queries.detail(offering.radarCompanyId()).latestAnalysis();
             if (analysis == null || "DETERMINISTIC".equals(analysis.analysisOrigin())) aiFallbacks++;
             PacketStatus status = status(offering, terms, financials, discrepancies);
@@ -300,12 +330,39 @@ public class AutonomousDiligenceService {
         add(evidence, offering, "maximum_amount", offering.maximumAmount(), null);
         add(evidence, offering, "amount_raised", offering.amountRaised(), null);
         add(evidence, offering, "deadline", offering.deadline(), null);
+        add(evidence, offering, "valuation_or_cap", offering.valuationOrCap(), null);
         for (String key : List.of("issuerWebsite", "intermediaryName", "intermediaryCik", "intermediaryWebsite", "offeringUrl")) {
             String clue = value(facts, key, key.toUpperCase(Locale.ROOT));
             if (clue != null) add(evidence, offering, key, clue, null);
         }
         String compensation = value(facts, "COMPENSATIONAMOUNT", "compensationAmount");
         if (compensation != null) add(evidence, offering, "intermediary_compensation", compensation, null);
+        for (var item : facts.entrySet()) {
+            if (!item.getKey().startsWith("_secTerm.fact.") || !item.getKey().endsWith(".value")) continue;
+            String prefix = item.getKey().substring(0, item.getKey().length() - 6);
+            String field = prefix.substring("_secTerm.fact.".length()).replaceFirst("\\.\\d+$", "");
+            String semantic = facts.get(prefix + ".type");
+            evidence.add(new EvidenceDraft("SEC_EDGAR", facts.getOrDefault(prefix + ".sourceUrl", facts.getOrDefault("_sourceUrl." + field, offering.secFilingUrl())),
+                    "SEC Form " + offering.filingType(), "filed_" + field + "_" + (semantic == null ? "UNKNOWN" : semantic), item.getValue(), null,
+                    EvidenceClassification.SEC_FILED_FACT, 95, facts.getOrDefault(prefix + ".excerpt", "Explicit filed term"),
+                    Map.of("accessionNumber", offering.accessionNumber(), "semanticType", semantic == null ? "UNKNOWN" : semantic)));
+        }
+        var identity = IntermediaryRegistry.fromFacts(facts);
+        if (identity.family() != null) evidence.add(new EvidenceDraft("SEC_EDGAR", offering.secFilingUrl(), "SEC filed intermediary",
+                "platform_family", identity.family(), null, EvidenceClassification.SEC_FILED_FACT, 95, identity.reason(),
+                Map.of("accessionNumber", offering.accessionNumber(), "identityState", identity.state().name())));
+        for (String key : List.of("COMISSIONCRD", "COMMISSIONCRD", "COMMISSIONFILENUMBER", "_secTerm.rawSecurity", "_secTerm.rawSecuritySubtype")) {
+            String raw = IntermediaryRegistry.value(facts, key);
+            if (raw != null) add(evidence, offering, key, raw, null);
+        }
+        String link = facts.get("_issuerCampaign.url");
+        if (link != null) evidence.add(new EvidenceDraft(facts.getOrDefault("_issuerCampaign.source", "ISSUER_WEBSITE_CLAIM"),
+                facts.getOrDefault("_issuerCampaign.sourceUrl", offering.secFilingUrl()), "Explicit issuer campaign link (fetch verification separate)",
+                "campaign_link", link, null, "SEC_FILED_FACT".equals(facts.get("_issuerCampaign.source")) ? EvidenceClassification.SEC_FILED_FACT : EvidenceClassification.ISSUER_WEBSITE_CLAIM,
+                90, facts.getOrDefault("_issuerCampaign.reason", "Explicit observed link"), Map.of("linkState", facts.getOrDefault("_issuerCampaign.state", "UNKNOWN"))));
+        if (facts.containsKey("_issuerCampaign.fetchStatus")) evidence.add(new EvidenceDraft("PUBLIC_FETCH_DIAGNOSTIC", offering.offeringUrl(),
+                "Campaign fetch diagnostic (not an offering term)", "campaign_fetch_status", facts.get("_issuerCampaign.fetchStatus"), null,
+                EvidenceClassification.DETERMINISTIC_INFERENCE, 100, "Access failure is separate from retained issuer/link/term evidence.", Map.of()));
         Map<String, String> keys = Map.of("security_type", "securityType", "minimum_investment", "minimumInvestment",
                 "target_amount", "targetAmount", "maximum_amount", "maximumAmount", "amount_raised", "amountRaised", "deadline", "deadline");
         return evidence.stream().map(item -> {
@@ -334,7 +391,9 @@ public class AutonomousDiligenceService {
 
     static int completeness(Offering offering, EffectiveOfferingTerms.Projection terms,
             List<FinancialPeriod> financials) {
-        int score = 20;
+        int score = 15;
+        if (terms.platformIdentityStatus().startsWith("SEC_CONFIRMED") || terms.platformIdentityStatus().startsWith("EXPLICIT_DOMAIN_CONFIRMED") || terms.officialCampaignVerified()) score += 5;
+        if (terms.amountRaised() != null) score += 5;
         if (offering.matchStatus() == MatchStatus.CONFIRMED) score += 15;
         if (terms.securityType() != null) score += 10;
         if (terms.minimumInvestment() != null) score += 5;
@@ -355,6 +414,8 @@ public class AutonomousDiligenceService {
     static List<String> missing(EffectiveOfferingTerms.Projection terms, List<FinancialPeriod> financials) {
         List<String> missing = new ArrayList<>();
         if (!terms.officialCampaignVerified()) missing.add("Verified public campaign page");
+        if (terms.platformIdentityStatus().equals("Not established") || terms.platformIdentityStatus().startsWith("AMBIGUOUS")) missing.add("Unambiguous intermediary/platform identity");
+        if (terms.amountRaised() == null) missing.add("Final filed amount raised (commitments are distinct)");
         if (financials.isEmpty()) missing.add("Structured multi-period SEC financials");
         if (terms.securityType() == null) missing.add("Security type");
         if (terms.minimumInvestment() == null) missing.add("Minimum investment");

@@ -30,6 +30,7 @@ public class SecNativeOfferingAdapter implements NativeOfferingSourceAdapter {
         List<String> errors = new ArrayList<>();
         List<NativeOfferingCandidate> candidates = new ArrayList<>();
         int details = 0;
+        int requests = 1;
         try {
             List<Candidate> recent = sec.fetchRecent();
             int limit = Math.max(1, Math.min(maxCandidates, 25));
@@ -38,7 +39,15 @@ public class SecNativeOfferingAdapter implements NativeOfferingSourceAdapter {
                 Candidate enriched = candidate;
                 if (details < detailLimit) {
                     details++;
-                    try { enriched = sec.enrich(candidate); }
+                    requests++;
+                    try {
+                        enriched = sec.enrich(candidate);
+                        requests += documentAttempts(enriched);
+                        String status = enriched.facts().get("_secStatus");
+                        if (status != null && !List.of("SUCCESS", "NO_FACT_PRESENT").contains(status)) {
+                            errors.add("SEC filing " + candidate.accessionNumber() + ": " + status);
+                        }
+                    }
                     catch (RuntimeException error) {
                         errors.add("SEC filing " + candidate.accessionNumber() + ": " + safe(error));
                     }
@@ -46,7 +55,7 @@ public class SecNativeOfferingAdapter implements NativeOfferingSourceAdapter {
                 candidates.add(from(enriched, LocalDateTime.now()));
             }
             return new SourceResult(source(), capability(), errors.isEmpty() ? "OK" : "DEGRADED",
-                    true, 1 + details, details, List.copyOf(candidates), List.copyOf(errors));
+                    true, requests, details, List.copyOf(candidates), List.copyOf(errors));
         } catch (RuntimeException error) {
             return SourceResult.failed(source(), capability(), safe(error), 1);
         }
@@ -86,6 +95,10 @@ public class SecNativeOfferingAdapter implements NativeOfferingSourceAdapter {
 
     private static String first(String first, String second) {
         return first == null || first.isBlank() ? second : first;
+    }
+    private static int documentAttempts(Candidate candidate) {
+        try { return Integer.parseInt(candidate.facts().getOrDefault("_secDocumentsAttempted", "0")); }
+        catch (NumberFormatException ignored) { return 0; }
     }
 
     private static String safe(RuntimeException error) {

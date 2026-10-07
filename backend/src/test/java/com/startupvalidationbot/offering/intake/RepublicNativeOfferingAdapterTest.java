@@ -19,7 +19,7 @@ class RepublicNativeOfferingAdapterTest {
         String html = """
                 <a href="/gridcool"><h3>GridCool Systems</h3><p>Cooling retrofits Republic Funding Portal · Reg CF
                 $642,000 raised 814 investors SAFE security type $18M valuation cap $250 minimum investment
-                October 1, 2026 deadline</p></a>
+                October 1, 2099 deadline</p></a>
                 <a href="/mintworks"><h3>Mintworks</h3><p>Accepting reservations Republic Funding Portal · Reg CF
                 $36,052 reserved 80 investors $100 min. investment</p></a>
                 <a href="/oma3"><h3>OMA3</h3><p>Accredited only Capital R · Reg D 506(c) $10,811 raised</p></a>

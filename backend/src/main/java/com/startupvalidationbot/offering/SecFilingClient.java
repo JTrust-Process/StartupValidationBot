@@ -7,6 +7,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Set;
+import java.util.List;
+import java.nio.ByteBuffer;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Flow;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -37,10 +41,8 @@ public class SecFilingClient {
         if (userAgent.isBlank()) {
             throw new IllegalStateException("SEC_EDGAR_USER_AGENT is required for live SEC access");
         }
-        URI uri = URI.create(url);
-        if (!"https".equalsIgnoreCase(uri.getScheme()) || !HOSTS.contains(uri.getHost())) {
-            throw new IllegalArgumentException("SEC client only permits official HTTPS SEC hosts");
-        }
+        URI uri = requireOfficialUrl(url);
+        if (maxBytes < 1) throw new IllegalArgumentException("SEC response bound must be positive");
         RuntimeException failure = null;
         for (int attempt = 0; attempt < 3; attempt++) {
             throttle();
@@ -48,15 +50,18 @@ public class SecFilingClient {
                 HttpRequest request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(30))
                         .header("User-Agent", userAgent)
                         .header("Accept", "*/*").GET().build();
-                HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                HttpResponse<byte[]> response = client.send(request, info -> new BoundedBody(maxBytes));
                 int status = response.statusCode();
                 if (status >= 200 && status < 300) {
-                    if (response.body().length > maxBytes) throw new IllegalStateException("SEC response exceeded size limit");
+                    if (response.body().length > maxBytes) throw new DocumentTooLarge();
                     return response.body();
                 }
                 if (status != 429 && status < 500) throw new IllegalStateException("SEC returned HTTP " + status);
                 failure = new IllegalStateException("SEC returned retryable HTTP " + status);
             } catch (IOException error) {
+                for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+                    if (cause instanceof DocumentTooLarge tooLarge) throw tooLarge;
+                }
                 failure = new IllegalStateException("SEC request failed", error);
             } catch (InterruptedException error) {
                 Thread.currentThread().interrupt();
@@ -69,6 +74,40 @@ public class SecFilingClient {
 
     public String getText(String url, int maxBytes) {
         return new String(get(url, maxBytes), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    public static URI requireOfficialUrl(String url) {
+        URI uri = URI.create(url);
+        if (!"https".equalsIgnoreCase(uri.getScheme()) || !HOSTS.contains(uri.getHost())
+                || uri.getUserInfo() != null || (uri.getPort() != -1 && uri.getPort() != 443)
+                || uri.getRawQuery() != null || uri.getFragment() != null) {
+            throw new IllegalArgumentException("SEC client only permits official HTTPS SEC hosts");
+        }
+        return uri;
+    }
+
+    public static final class DocumentTooLarge extends IllegalStateException {
+        public DocumentTooLarge() { super("SEC response exceeded size limit"); }
+    }
+
+    static final class BoundedBody implements HttpResponse.BodySubscriber<byte[]> {
+        private final HttpResponse.BodySubscriber<byte[]> delegate = HttpResponse.BodySubscribers.ofByteArray();
+        private final int limit;
+        private Flow.Subscription subscription;
+        private long received;
+        private boolean failed;
+        BoundedBody(int limit) { this.limit = limit; }
+        @Override public CompletionStage<byte[]> getBody() { return delegate.getBody(); }
+        @Override public void onSubscribe(Flow.Subscription value) { subscription = value; delegate.onSubscribe(value); }
+        @Override public void onNext(List<ByteBuffer> items) {
+            if (failed) return;
+            for (ByteBuffer item : items) received += item.remaining();
+            if (received > limit) {
+                failed = true; subscription.cancel(); delegate.onError(new DocumentTooLarge());
+            } else delegate.onNext(items);
+        }
+        @Override public void onError(Throwable error) { if (!failed) delegate.onError(error); }
+        @Override public void onComplete() { if (!failed) delegate.onComplete(); }
     }
 
     private synchronized void throttle() {

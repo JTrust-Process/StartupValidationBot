@@ -34,6 +34,11 @@ import com.startupvalidationbot.radar.RadarStore;
 import com.startupvalidationbot.radar.service.RadarQueryService;
 
 class AutonomousDiligenceServiceTest {
+    @Test void missingLaterFinancialRetrievalPreservesPriorProjection() {
+        var retained = new FinancialPeriod("PRIOR_FISCAL_YEAR", new BigDecimal("100"), null, null,
+                null, null, null, null, null, null, "original", "https://www.sec.gov/original.xml");
+        assertThat(AutonomousDiligenceService.mergeFinancials(List.of(retained), List.of())).containsExactly(retained);
+    }
     @Test
     void platformFailureProducesPartialPacketWithoutFailingSecBackedJob() {
         DiligenceStore store = mock(DiligenceStore.class);
@@ -50,7 +55,8 @@ class AutonomousDiligenceServiceTest {
         when(company.id()).thenReturn(7L);
         when(radar.listCompanies()).thenReturn(List.of(company));
         when(offerings.list(null, null, null, null)).thenReturn(List.of(offering));
-        when(store.eligibleOfferingIds(25)).thenReturn(List.of(1L));
+        when(store.selectOfferings(org.mockito.ArgumentMatchers.eq(25), any())).thenReturn(
+                new DiligenceRefreshSelector.Selection(List.of(1L), Map.of()));
         when(offerings.find(1L)).thenReturn(Optional.of(offering));
         when(offerings.facts(1L)).thenReturn(Map.of("REVENUEMOSTRECENTFISCALYEAR", "1000"));
         when(store.findCampaign(1L)).thenReturn(Optional.empty());
@@ -93,7 +99,8 @@ class AutonomousDiligenceServiceTest {
         when(company.id()).thenReturn(7L);
         when(radar.listCompanies()).thenReturn(List.of(company));
         when(offerings.list(null, null, null, null)).thenReturn(List.of(offering));
-        when(store.eligibleOfferingIds(25)).thenReturn(List.of(1L));
+        when(store.selectOfferings(org.mockito.ArgumentMatchers.eq(25), any())).thenReturn(
+                new DiligenceRefreshSelector.Selection(List.of(1L), Map.of()));
         when(offerings.find(1L)).thenReturn(Optional.of(offering));
         when(offerings.facts(1L)).thenReturn(Map.of("REVENUEMOSTRECENTFISCALYEAR", "1000"));
         when(store.findCampaign(1L)).thenReturn(Optional.of(campaign));
@@ -115,7 +122,7 @@ class AutonomousDiligenceServiceTest {
         when(store.actionablePacketCount()).thenReturn(1);
 
         var result = new AutonomousDiligenceService(store, offerings, radar, queries, financials, reconciler,
-                notifications, List.of(), null, nativeIntake, 25).run();
+                notifications, List.of(), null, nativeIntake, null, 25).run();
 
         verify(nativeIntake).run();
         verify(store).savePacket(any(PacketDraft.class));

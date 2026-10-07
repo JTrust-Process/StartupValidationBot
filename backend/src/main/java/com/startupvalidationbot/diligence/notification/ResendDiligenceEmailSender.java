@@ -58,6 +58,9 @@ public class ResendDiligenceEmailSender implements DiligenceEmailSender {
         return "resend".equalsIgnoreCase(provider) && !apiKey.isBlank() && !from.isBlank();
     }
 
+    public String providerName() { return "resend".equalsIgnoreCase(provider) ? "Resend" : "Preview"; }
+    public boolean fromConfigured() { return !from.isBlank(); }
+
     @Override
     public SendResult send(String to, String subject, String text, String html) {
         if (!"resend".equalsIgnoreCase(provider)) return new SendResult(false, null, "EMAIL_PROVIDER is not resend");

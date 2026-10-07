@@ -32,7 +32,10 @@ function evidenceTable(items: DiligenceEvidence[]): string {
   return `<div class="table-wrap"><table class="data-table"><thead><tr><th>Fact</th><th>Value</th><th>Period</th><th>Source</th></tr></thead><tbody>
     ${items.map((item) => { const url = safeExternalUrl(item.sourceUrl); return `<tr>
       <td>${escapeHtml(item.factKey.replaceAll('_', ' '))}</td><td>${escapeHtml(item.factValue)}</td>
-      <td>${escapeHtml(item.period || 'Current')}</td><td>${url ? `<a href="${escapeAttribute(url)}" target="_blank" rel="noreferrer">${escapeHtml(item.sourceTitle)}</a>` : escapeHtml(item.sourceTitle)}</td>
+      <td>${escapeHtml(item.period || 'Current')}</td><td>${url ? `<a href="${escapeAttribute(url)}" target="_blank" rel="noreferrer">${escapeHtml(item.sourceTitle)}</a>` : escapeHtml(item.sourceTitle)}
+        ${item.metadata.filedLabel ? `<small class="radar-muted">Filed label: ${escapeHtml(String(item.metadata.filedLabel))}; units: ${escapeHtml(String(item.metadata.units || 'Not established'))}</small>` : ''}
+        ${item.metadata.periodEndingDate ? `<small class="radar-muted">Period ending: ${escapeHtml(String(item.metadata.periodEndingDate))}</small>` : ''}
+        <small class="radar-muted">Observed: ${escapeHtml(formatRadarDate(item.observedAt))}</small></td>
     </tr>`; }).join('')}</tbody></table></div>`;
 }
 
@@ -51,7 +54,7 @@ function packetView(packet: DiligencePacket, availability: CompanyInvestmentAvai
   const claims = packet.evidence.filter((item) => item.classification !== 'SEC_FILED_FACT');
   return `<div class="page-header page-header--row"><div><p class="page-eyebrow">Diligence ${escapeHtml(packet.status.replaceAll('_', ' '))}</p>
     <h2>${escapeHtml(packet.companyName)}</h2><p>${escapeHtml(packet.summary)}</p></div>
-    <div><strong>${packet.completeness}% complete</strong><p class="radar-muted">Evidence confidence ${packet.confidence}/100</p></div></div>
+    <div><strong>${packet.completeness}% complete</strong><p class="radar-muted">Identity Confidence ${packet.confidence}/100</p></div></div>
     ${packet.materialDiscrepancies.length ? `<div class="notice notice--warning"><strong>Material discrepancies require review.</strong>${list(packet.materialDiscrepancies, '')}</div>` : ''}
     <section class="radar-panel"><h3>Offering Terms</h3><dl class="offering-facts">
       <div><dt>Platform</dt><dd>${escapeHtml(packet.platform || 'Could not establish')}</dd></div>

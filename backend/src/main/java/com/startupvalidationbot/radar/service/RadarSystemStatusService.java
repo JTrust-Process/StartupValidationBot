@@ -9,6 +9,9 @@ import org.springframework.stereotype.Service;
 import com.startupvalidationbot.radar.RadarAdminViews.SystemStatus;
 import com.startupvalidationbot.radar.RadarAdminViews.JobRunStatus;
 import com.startupvalidationbot.radar.RadarStore;
+import com.startupvalidationbot.radar.RadarAdminViews.EmailDeliveryStatus;
+import com.startupvalidationbot.diligence.DiligenceStore;
+import com.startupvalidationbot.diligence.notification.ResendDiligenceEmailSender;
 
 @Service
 public class RadarSystemStatusService {
@@ -23,8 +26,11 @@ public class RadarSystemStatusService {
     private final boolean emailConfigured;
     private final boolean browserAdminConfigured;
     private final boolean workerAuthConfigured;
+    private final EmailDeliveryStatus email;
+    private final DiligenceStore diligence;
 
-    public RadarSystemStatusService(RadarStore store,
+    public RadarSystemStatusService(RadarStore store, ResendDiligenceEmailSender sender, DiligenceStore diligence,
+            @Value("${startup.intelligence.email-recipient:}") String recipient,
             @Value("${radar.ai.enabled:false}") boolean aiEnabled,
             @Value("${radar.ai.provider:groq}") String provider,
             @Value("${radar.ai.model:openai/gpt-oss-20b}") String routineModel,
@@ -41,6 +47,7 @@ public class RadarSystemStatusService {
             @Value("${app.allowed-origins:}") String allowedOrigins,
             @Value("${radar.run-token:}") String runToken) {
         this.store = store;
+        this.diligence = diligence;
         this.aiEnabled = aiEnabled;
         this.provider = provider == null ? "" : provider.trim().toLowerCase(java.util.Locale.ROOT);
         boolean router = "router".equals(this.provider);
@@ -49,7 +56,9 @@ public class RadarSystemStatusService {
         this.aiCredentialConfigured = present(router ? routerCredential : groqCredential);
         this.productHuntConfigured = present(productHuntToken);
         this.dealScoutConfigured = present(dealScoutRunUrl);
-        this.emailConfigured = present(emailSendUrl);
+        this.emailConfigured = (sender.configured() && present(recipient)) || present(emailSendUrl);
+        this.email = new EmailDeliveryStatus(sender.configured() || !present(emailSendUrl) ? sender.providerName()
+                : "Server endpoint", emailConfigured, present(recipient), sender.fromConfigured(), null, null);
         this.browserAdminConfigured = present(passwordHash) && present(browserOrigin)
                 && java.util.Arrays.stream(allowedOrigins.split(",")).map(String::trim)
                         .anyMatch(browserOrigin::equals);
@@ -70,7 +79,14 @@ public class RadarSystemStatusService {
                 store.recentJobFailures(10).stream().map(RadarSystemStatusService::sanitize).toList(),
                 store.discoveryCount(), store.aiCallCount(), store.aiAttemptCount("CACHE_HIT"),
                 store.aiAttemptCount("FAILED"), aiEnabled, provider, routineModel, deepDiveModel,
-                Map.copyOf(integrations), store.aiProviderComparisons());
+                Map.copyOf(integrations), store.aiProviderComparisons(), emailStatus());
+    }
+
+    private EmailDeliveryStatus emailStatus() {
+        Map<String, Object> last = diligence.lastEmailAttempt();
+        return new EmailDeliveryStatus(email.provider(), email.configured(), email.recipientConfigured(),
+                email.fromConfigured(), String.valueOf(last.getOrDefault("status", "NEVER_SENT")),
+                (java.time.LocalDateTime) last.get("at"));
     }
 
     private static boolean present(String value) {

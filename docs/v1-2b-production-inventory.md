@@ -158,4 +158,3 @@ Never treat a platform root or intermediary identity as a campaign URL.
 Retain conditional values as evidence and block ambiguous effective terms.
 Keep READY requirements, company identity rules, refresh preservation and notification baselines unchanged.
 Existing JSON evidence/provenance metadata is sufficient; no migration is planned.
-

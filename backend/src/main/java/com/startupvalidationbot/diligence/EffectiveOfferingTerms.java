@@ -13,6 +13,7 @@ import java.util.Map;
 import com.startupvalidationbot.diligence.platform.PlatformUrlPolicy;
 import com.startupvalidationbot.offering.OfferingDomain.Offering;
 import com.startupvalidationbot.offering.OfferingTermNormalizer;
+import com.startupvalidationbot.offering.IntermediaryRegistry;
 
 public final class EffectiveOfferingTerms {
     private EffectiveOfferingTerms() { }
@@ -31,8 +32,14 @@ public final class EffectiveOfferingTerms {
 
     static Projection resolve(SourceValues offering, PlatformCampaign campaign) {
         boolean secFiled = "SEC_EDGAR".equalsIgnoreCase(safe(offering.provenance()));
-        boolean trustedCampaign = trusted(campaign);
+        boolean trustedCampaign = trusted(campaign) && !"AMBIGUOUS".equals(offering.facts().get("_secCampaign.state"))
+                && !"AMBIGUOUS".equals(offering.facts().get("_issuerCampaign.state"))
+                && !"ISSUER_MISMATCH".equals(offering.facts().get("_issuerCampaign.fetchStatus"));
         List<String> issues = new ArrayList<>();
+        offering.facts().forEach((key, value) -> { if (key.startsWith("_secTerm.ambiguity.")) issues.add(value + " (" + key.substring("_secTerm.ambiguity.".length()) + ")"); });
+        var intermediary = secFiled ? IntermediaryRegistry.fromFacts(offering.facts()) : null;
+        if (intermediary != null && intermediary.state() == IntermediaryRegistry.State.AMBIGUOUS) issues.add(intermediary.reason());
+        if ("AMBIGUOUS".equals(offering.facts().get("_secCampaign.state"))) issues.add("Multiple explicit filed campaign links require review");
 
         String platformSecurity = trustedCampaign ? OfferingTermNormalizer.security(campaign.securityType()) : null;
         if (trustedCampaign && present(campaign.securityType()) && platformSecurity == null) {
@@ -99,6 +106,18 @@ public final class EffectiveOfferingTerms {
         BigDecimal cap = choose("valuationCap", secCap, platformCap, sec, platform, provenance);
         LocalDate deadline = choose("deadline", secFiled ? offering.deadline() : null,
                 trustedCampaign ? campaign.deadline() : null, sec, platform, provenance);
+        if (offering.facts().containsKey("_secTerm.ambiguity.securityType")) { security = null; provenance.remove("securityType"); }
+        if (offering.facts().containsKey("_secTerm.ambiguity.minimumInvestment")) { minimum = null; provenance.remove("minimumInvestment"); }
+        if (offering.facts().containsKey("_secTerm.ambiguity.valuationOrCap")) { valuation = null; cap = null; provenance.remove("valuation"); provenance.remove("valuationCap"); }
+        if (offering.facts().containsKey("_secTerm.ambiguity.amountRaised")) { raised = null; provenance.remove("amountRaised"); }
+        if (trustedCampaign) {
+            compare(issues, "minimum investment", secMinimum, platformMinimum);
+            compare(issues, "valuation cap", secCap, platformCap);
+            compare(issues, "security type", secSecurity, platformSecurity);
+            compare(issues, "deadline", secFiled ? offering.deadline() : null, campaign.deadline());
+            if ("FINAL_SECURITIES_SOLD".equals(offering.facts().get("_secTerm.type.amountRaised"))
+                    && "FINAL_SECURITIES_SOLD".equals(campaign.facts().get("_termType.amountRaised"))) compare(issues, "final amount raised", secRaised, platformRaised);
+        }
 
         String campaignUrl = null;
         if (trustedCampaign) {
@@ -118,7 +137,9 @@ public final class EffectiveOfferingTerms {
                     offering.offeringUrl(), EvidenceClassification.PLATFORM_ISSUER_CLAIM));
         }
 
-        String platformIdentity = trustedCampaign
+        String platformIdentity = intermediary != null && intermediary.family() != null
+                ? intermediary.state().name() + ": " + intermediary.reason()
+                : intermediary != null && intermediary.state() == IntermediaryRegistry.State.AMBIGUOUS ? "AMBIGUOUS: " + intermediary.reason() : trustedCampaign
                 ? "Verified from official " + displayPlatform(campaign.platform()) + " campaign"
                 : "Not established";
         String secReconciliation = secFiled ? "Established from SEC-filed offering" : "Not established";
@@ -130,8 +151,10 @@ public final class EffectiveOfferingTerms {
             if (!filed && observedAt == null && campaign != null && campaign.lastVerifiedAt() != null) {
                 observedAt = campaign.lastVerifiedAt().toString();
             }
-            return new TermProvenance(value.sourceType(), metadata.getOrDefault("_sourceUrl." + metadataKey, value.sourceUrl()),
-                    value.classification(), observedAt);
+            String sourceType = filed && metadata.get("_form." + metadataKey) != null ? "SEC EDGAR Form " + metadata.get("_form." + metadataKey) : value.sourceType();
+            return new TermProvenance(sourceType, metadata.getOrDefault("_sourceUrl." + metadataKey, value.sourceUrl()),
+                    value.classification(), observedAt, filed ? metadata.get("_secTerm.type." + metadataKey) : metadata.get("_termType." + metadataKey),
+                    metadata.get("_accession." + metadataKey));
         });
         return new Projection(security, minimum, target, maximum, raised, valuation, cap, deadline,
                 campaignUrl, platformStatus, platformIdentity, secReconciliation,
@@ -184,6 +207,12 @@ public final class EffectiveOfferingTerms {
             return platformValue;
         }
         return null;
+    }
+
+    private static void compare(List<String> issues, String label, Object sec, Object platform) {
+        if (sec == null || platform == null) return;
+        boolean equal = sec instanceof BigDecimal a && platform instanceof BigDecimal b ? a.compareTo(b) == 0 : sec.equals(platform);
+        if (!equal) issues.add("The " + label + " differs between SEC and platform evidence.");
     }
 
     private static String displayPlatform(String value) {

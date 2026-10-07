@@ -64,6 +64,8 @@ abstract class AbstractPlatformOfferingEnricher implements PlatformOfferingEnric
         put(facts, "targetAmount", target); put(facts, "maximumAmount", maximum);
         put(facts, "amountRaised", raised); put(facts, "investorCount", investors); put(facts, "deadline", deadline);
         CampaignStatus status = status(text);
+        if (raised != null) facts.put("_termType.amountRaised", text.matches("(?is).*investment commitments.*") ? "INVESTMENT_COMMITMENTS"
+                : (status == CampaignStatus.CLOSED || status == CampaignStatus.FUNDED) && !text.matches("(?is).*(estimated|subject to final accounting).*" ) ? "FINAL_SECURITIES_SOLD" : "INTERIM_RAISED");
         facts.put("_retrievalQuality", issuer != null && security != null && minimum != null
                 ? "DETAIL_COMPLETE" : "PARTIAL_DETAIL");
         String fingerprint = "raw:" + ContentHash.sha256(platform() + "|" + campaignUrl + "|" + text);

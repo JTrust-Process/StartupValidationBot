@@ -98,6 +98,52 @@ class RefreshPreservationIntegrationTest {
         assertThat(next.id()).isEqualTo(first.id());
     }
 
+    @Test void v12bTypedTermsPersistWithoutMigrationAndAmbiguityOnlyBlocksEffectiveProjection() {
+        Offering first = initial("Other", "100000", "1050000", "2027-08-17");
+        Map<String, String> facts = new java.util.TreeMap<>(offerings.facts(first.id()));
+        facts.put("SECURITYOFFEREDTYPE", "Other"); facts.put("SECURITYOFFEREDOTHERDESC", "Simple Agreement for Future Equity (SAFE)");
+        facts.put("intermediaryCik", "0001751525"); facts.put("intermediaryName", "OpenDeal Portal LLC");
+        SecOfferingTermExtractor.extract(facts, "Minimum Investment: $250. Post-Money Valuation Cap: $16M.");
+        Candidate original = offerings.storedCandidate(first.id());
+        Candidate updated = new Candidate(original.issuerName(), original.issuerCik(), original.issuerWebsite(), "Republic",
+                original.intermediaryName(), "0001751525", original.offeringUrl(), original.secFilingUrl(), original.accessionNumber(),
+                original.fileNumber(), original.filingType(), original.filingDate(), "SAFE", new BigDecimal("250"), original.targetAmount(),
+                original.maximumAmount(), "16000000 cap", original.deadline(), original.amountRaised(), original.source(), facts, RetrievalQuality.DETAIL_COMPLETE);
+        Offering saved = offerings.upsert(updated, confirmed()).offering();
+        assertThat(saved.minimumInvestment()).isEqualByComparingTo("250");
+        assertThat(saved.securityType()).isEqualTo("SAFE");
+        var projected = EffectiveOfferingTerms.resolve(saved, null, offerings.facts(saved.id()));
+        assertThat(projected.platformIdentityStatus()).startsWith("SEC_CONFIRMED");
+        assertThat(projected.provenance().get("valuationCap").semanticType()).isEqualTo("POST_MONEY_VALUATION_CAP");
+        facts.put("_secTerm.ambiguity.valuationOrCap", "Multiple conditional caps");
+        Candidate ambiguous = new Candidate(updated.issuerName(), updated.issuerCik(), updated.issuerWebsite(), updated.platform(),
+                updated.intermediaryName(), updated.intermediaryCik(), updated.offeringUrl(), updated.secFilingUrl(), updated.accessionNumber(),
+                updated.fileNumber(), updated.filingType(), updated.filingDate(), null, null, null, null, null, null, null, updated.source(), facts, RetrievalQuality.PARTIAL_DETAIL);
+        saved = offerings.upsert(ambiguous, weak()).offering();
+        assertThat(saved.valuationOrCap()).isEqualTo("16000000 cap");
+        assertThat(EffectiveOfferingTerms.resolve(saved, null, offerings.facts(saved.id())).valuationCap()).isNull();
+        assertThat(saved.matchStatus()).isEqualTo(MatchStatus.CONFIRMED);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_notification_events", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM deal_workspaces", Integer.class)).isZero();
+    }
+
+    @Test void explicitCUCompletionSurvivesMissingRefreshAndCampaignFailureDoesNotEraseTerms() {
+        Offering first = initial("SAFE", "100000", "1050000", "2027-08-17");
+        Candidate prior = offerings.storedCandidate(first.id());
+        Map<String, String> facts = new java.util.TreeMap<>();
+        SecOfferingTermExtractor.extract(facts, "The offering completed. Total amount of securities sold: $2,999,063.75");
+        Candidate closed = new Candidate(prior.issuerName(), prior.issuerCik(), prior.issuerWebsite(), prior.platform(), prior.intermediaryName(),
+                prior.intermediaryCik(), null, prior.secFilingUrl(), "0001234567-26-000082", prior.fileNumber(), "C-U", LocalDate.of(2026, 8, 2),
+                null, null, null, null, null, null, new BigDecimal("2999063.75"), prior.source(), facts, RetrievalQuality.DETAIL_COMPLETE);
+        Offering saved = offerings.upsert(closed, confirmed()).offering();
+        assertThat(saved.status()).isEqualTo(Status.ENDED);
+        offerings.recordCampaignResolution(saved.id(), Map.of("_issuerCampaign.fetchStatus", "HTTP_403"));
+        var retained = offerings.upsert(candidate(closed.accessionNumber(), "C-U", RetrievalQuality.INDEX_ONLY, null, null, null, null, null), weak()).offering();
+        assertThat(retained.amountRaised()).isEqualByComparingTo("2999063.75"); assertThat(retained.status()).isEqualTo(Status.ENDED);
+        assertThat(retained.minimumInvestment()).isEqualByComparingTo("100"); assertThat(retained.matchStatus()).isEqualTo(MatchStatus.CONFIRMED);
+        assertThat(retained.offeringUrl()).isEqualTo(first.offeringUrl());
+    }
+
     @Test
     void explicitSameAccessionValueMayUpdateWithoutErasingMissingFields() {
         initial("Preferred Stock", "100000", "1050000", "2027-08-17");
@@ -325,7 +371,7 @@ class RefreshPreservationIntegrationTest {
                 EvidenceClassification.SEC_FILED_FACT, 95, "Retained filed value", Map.of("accessionNumber", offering.accessionNumber()));
     }
     private PacketDraft packet(Offering offering, List<EvidenceDraft> facts) {
-        var terms = EffectiveOfferingTerms.resolve(offering, null);
+        var terms = EffectiveOfferingTerms.resolve(offering, null, offerings.facts(offering.id()));
         return new PacketDraft(companyId, offering.id(), PacketStatus.PARTIAL, "CONFIRMED",
                 AutonomousDiligenceService.completeness(offering, terms, List.of()), 95, "Public fixture",
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of("SEC_EDGAR"), List.of(),

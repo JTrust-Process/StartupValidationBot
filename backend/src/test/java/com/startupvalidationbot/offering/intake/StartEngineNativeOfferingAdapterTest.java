@@ -30,7 +30,7 @@ class StartEngineNativeOfferingAdapterTest {
                 <h1>GridCool Systems</h1>
                 <p>Open for investment under Regulation Crowdfunding / Reg CF.</p>
                 <p>Amount raised: $642,000 Minimum investment: $250 Price per share: $2.50</p>
-                <p>Pre-money valuation: $18M Funding goal: $100,000 Deadline: October 1, 2026</p>
+                <p>Pre-money valuation: $18M Funding goal: $100,000 Deadline: October 1, 2099</p>
                 <p>Security type: Common Stock</p>
                 <a href="https://gridcool.example">Official website</a>
                 <a href="https://www.sec.gov/Archives/edgar/data/123/000000012326000001/0000000123-26-000001-index.html">SEC filing</a>

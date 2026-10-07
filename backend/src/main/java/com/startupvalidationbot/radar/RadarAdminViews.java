@@ -23,8 +23,11 @@ public final class RadarAdminViews {
             LocalDateTime lastDigest, List<JobRunStatus> recentJobFailures, long discoveriesProcessed,
             long aiCalls, long aiCacheHits, long aiFailures, boolean aiEnabled, String aiProvider,
             String routineModel, String deepDiveModel, Map<String, Boolean> integrations,
-            List<AiProviderComparison> aiProviderComparisons) {
+            List<AiProviderComparison> aiProviderComparisons, EmailDeliveryStatus emailDelivery) {
     }
+
+    public record EmailDeliveryStatus(String provider, boolean configured, boolean recipientConfigured,
+            boolean fromConfigured, String lastStatus, LocalDateTime lastAttemptAt) { }
 
     public record AiProviderComparison(String provider, String requestedModel, String actualModel,
             String analysisType, long attempts, long successes, long failures, long cacheHits, long retries,

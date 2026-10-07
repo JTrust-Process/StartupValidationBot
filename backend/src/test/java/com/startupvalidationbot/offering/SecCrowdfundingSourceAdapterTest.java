@@ -6,12 +6,76 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import org.junit.jupiter.api.Test;
 
 class SecCrowdfundingSourceAdapterTest {
+    private static final String INDEX = "https://www.sec.gov/Archives/edgar/data/1/000000000126000001/0000000001-26-000001-index.html";
+
+    @Test void choosesSmallPrimaryXmlAndNeverDownloadsIrrelevantOversizedExhibit() {
+        SecFilingClient client = org.mockito.Mockito.mock(SecFilingClient.class);
+        org.mockito.Mockito.when(client.getText(INDEX, 1_000_000)).thenReturn(
+                row("deck.pdf", "EX-99", "Investor deck", 40_000_000) + row("primary.xml", "C", "Form C", 1000));
+        String document = INDEX.substring(0, INDEX.lastIndexOf('/') + 1) + "primary.xml";
+        org.mockito.Mockito.when(client.getText(document, 8_000_000)).thenReturn("<edgarSubmission><nameOfIssuer>Acme</nameOfIssuer>"
+                + "<minimumInvestment>250</minimumInvestment><revenueMostRecentFiscalYear>120000</revenueMostRecentFiscalYear>"
+                + "<revenuePriorFiscalYear>50000</revenuePriorFiscalYear><offeringUrl>https://wefunder.com/acme</offeringUrl></edgarSubmission>");
+        var result = new SecCrowdfundingSourceAdapter(client, 40, 32_000_000, 2025, 8).enrich(indexCandidate());
+        assertThat(result.minimumInvestment()).isEqualByComparingTo("250");
+        assertThat(result.facts()).containsEntry("REVENUEMOSTRECENTFISCALYEAR", "120000")
+                .containsEntry("_secStatus", "SUCCESS").containsEntry("_secDocumentsAttempted", "1");
+        assertThat(result.offeringUrl()).isEqualTo("https://wefunder.com/acme");
+        assertThat(result.valuationOrCap()).isNull();
+        assertThat(result.amountRaised()).isNull();
+        org.mockito.Mockito.verify(client, org.mockito.Mockito.times(2)).getText(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test void skipsOversizedPrimaryAndUsesRelevantStructuredAlternativeWithinBound() {
+        SecFilingClient client = org.mockito.Mockito.mock(SecFilingClient.class);
+        org.mockito.Mockito.when(client.getText(INDEX, 1_000_000)).thenReturn(row("primary.xml", "C", "Form C", 9_000_000)
+                + row("alternate.xml", "XML", "Form C structured submission", 1000)
+                + row("hostile.xml", "C", "Form C", 100));
+        String directory = INDEX.substring(0, INDEX.lastIndexOf('/') + 1);
+        org.mockito.Mockito.when(client.getText(directory + "hostile.xml", 8_000_000)).thenReturn("<broken>");
+        org.mockito.Mockito.when(client.getText(directory + "alternate.xml", 8_000_000)).thenReturn("<nameOfIssuer>Acme</nameOfIssuer><offeringAmount>10000</offeringAmount>");
+        var result = new SecCrowdfundingSourceAdapter(client, 40, 32_000_000, 2025, 8).enrich(indexCandidate());
+        assertThat(result.facts()).containsEntry("_secStatus", "SUCCESS").containsEntry("_secOversizedSkipped", "1")
+                .containsEntry("_secDocumentsAttempted", "2").containsEntry("_secParseFailures", "1");
+        assertThat(result.targetAmount()).isEqualByComparingTo("10000");
+        org.mockito.Mockito.verify(client, org.mockito.Mockito.never()).getText(directory + "primary.xml", 8_000_000);
+    }
+
+    @Test void retrievalFailureIsNotAbsenceAndSafeMetadataCannotNominateOtherFilings() {
+        SecFilingClient client = org.mockito.Mockito.mock(SecFilingClient.class);
+        org.mockito.Mockito.when(client.getText(INDEX, 1_000_000)).thenReturn(row("primary.xml", "C", "Form C", 1000));
+        org.mockito.Mockito.when(client.getText(INDEX.substring(0, INDEX.lastIndexOf('/') + 1) + "primary.xml", 8_000_000))
+                .thenThrow(new IllegalStateException("SEC returned HTTP 403"));
+        var result = new SecCrowdfundingSourceAdapter(client, 40, 32_000_000, 2025, 8).enrich(indexCandidate());
+        assertThat(result.facts()).containsEntry("_secStatus", "REQUEST_FAILED");
+        assertThat(result.retrievalQuality()).isEqualTo(OfferingDomain.RetrievalQuality.INDEX_ONLY);
+        assertThat(SecCrowdfundingSourceAdapter.filingDocuments(INDEX,
+                row("https://attacker.example/file.xml", "C", "Form C", 10)
+                + row("/Archives/other.xml", "C", "Form C", 10))).isEmpty();
+        var absent = SecCrowdfundingSourceAdapter.parseSubmission(new SecCrowdfundingSourceAdapter.IndexRecord("1", "Acme", "C", LocalDate.now(), "", "0000000001-26-000001"),
+                "<nameOfIssuer>Acme</nameOfIssuer><intermediaryWebsite>https://wefunder.com</intermediaryWebsite>");
+        assertThat(absent.offeringUrl()).isNull();
+        assertThat(absent.minimumInvestment()).isNull();
+        var explicitCap = SecCrowdfundingSourceAdapter.parseSubmission(new SecCrowdfundingSourceAdapter.IndexRecord("1", "Acme", "C/A", LocalDate.now(), "", "0000000001-26-000002"),
+                "<nameOfIssuer>Acme</nameOfIssuer><valuationCap>18000000</valuationCap>");
+        assertThat(explicitCap.valuationOrCap()).isEqualTo("18000000 cap");
+    }
+
+    private static String row(String file, String type, String description, int size) {
+        return "<tr><td>1</td><td>" + description + "</td><td><a href=\"" + file + "\">file</a></td><td>" + type + "</td><td>" + size + "</td></tr>";
+    }
+    private static OfferingDomain.Candidate indexCandidate() {
+        return new OfferingDomain.Candidate("Acme", "1", null, "UNKNOWN", null, null, null, INDEX,
+                "0000000001-26-000001", null, "C", LocalDate.now(), null, null, null, null, null, null, null,
+                "SEC_EDGAR_RECENT_INDEX", Map.of(), OfferingDomain.RetrievalQuality.INDEX_ONLY);
+    }
     @Test
     void boundsRecentIndexResponseSizeConfiguration() {
         assertThat(SecCrowdfundingSourceAdapter.boundedIndexBytes(32_000_000)).isEqualTo(32_000_000);

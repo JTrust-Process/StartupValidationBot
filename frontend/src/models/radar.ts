@@ -133,6 +133,14 @@ export interface RadarSystemStatus {
   deepDiveModel: string;
   integrations: Record<string, boolean>;
   aiProviderComparisons: RadarAiProviderComparison[];
+  emailDelivery: {
+    provider: string;
+    configured: boolean;
+    recipientConfigured: boolean;
+    fromConfigured: boolean;
+    lastStatus: string;
+    lastAttemptAt: string | null;
+  };
 }
 
 export interface RadarAiProviderComparison {
@@ -294,6 +302,11 @@ export interface DiligenceFinancialPeriod {
   taxesPaid: number | null;
   sourceAccessionNumber: string | null;
   sourceUrl: string | null;
+  grossProfit: number | null;
+  currentAssets: number | null;
+  currentLiabilities: number | null;
+  equity: number | null;
+  periodEndingDate: string | null;
 }
 
 export interface DiligenceTermProvenance {
@@ -438,6 +451,20 @@ export interface CompanyInvestmentAvailability {
     lastStatus: string;
     lastMessageId: string | null;
     lastError: string | null;
+  };
+  refreshHealth: {
+    totalReviewable: number;
+    neverProcessed: number;
+    overdue: number;
+    unresolved: number;
+    refreshedUnder7Days: number;
+    stale7To14Days: number;
+    stale15To30Days: number;
+    staleOver30Days: number;
+    oldestRefreshAt: string | null;
+    configuredBound: number;
+    lastSelection: Record<string, number>;
+    secExtraction: Record<string, number>;
   };
 }
 

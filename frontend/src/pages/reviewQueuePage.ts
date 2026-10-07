@@ -23,7 +23,7 @@ function card(packet: DiligencePacket): string {
       <div><dt>Platform identity</dt><dd>${escapeHtml(packet.platformIdentityStatus)}</dd></div>
       <div><dt>SEC reconciliation</dt><dd>${escapeHtml(packet.secReconciliationStatus)}</dd></div>
       <div><dt>Platform status</dt><dd>${escapeHtml(packet.platformStatus?.replaceAll('_', ' ') || 'Could not establish')}</dd></div>
-      <div><dt>Evidence confidence</dt><dd>${packet.confidence}/100</dd></div>
+      <div><dt>Identity Confidence</dt><dd>${packet.confidence}/100</dd></div>
       <div><dt>Last refreshed</dt><dd>${escapeHtml(formatRadarDate(packet.lastRefreshedAt))}</dd></div>
     </dl>
     <p><strong>Key risk:</strong> ${escapeHtml(packet.keyRisks[0] || 'No risk summary was established.')}</p>

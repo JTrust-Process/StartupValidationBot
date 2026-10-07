@@ -61,6 +61,22 @@ test('Admin persists the latest offering discovery run counts', async () => {
   assert.match(page, /Review Queue before \/ after/);
 });
 
+test('Admin shows safe active email and refresh diagnostics and labels identity accurately', async () => {
+  const admin = await source('pages/radarAdminPage.ts');
+  assert.match(admin, /status\.emailDelivery\.provider/);
+  assert.match(admin, /status\.emailDelivery\.recipientConfigured/);
+  assert.match(admin, /diligence\.refreshHealth\.neverProcessed/);
+  assert.match(admin, /diligence\.refreshHealth\.lastSelection/);
+  assert.match(admin, /diligence\.refreshHealth\.secExtraction/);
+  assert.doesNotMatch(admin, /RESEND_API_KEY|apiKey/);
+  for (const file of ['pages/reviewQueuePage.ts', 'pages/diligenceDetailPage.ts']) {
+    const page = await source(file);
+    assert.match(page, /Identity Confidence/);
+    assert.match(page, /packet\.completeness/);
+    assert.doesNotMatch(page, /Evidence confidence/i);
+  }
+});
+
 test('native platform offerings remain distinct from SEC-filed evidence in the UI', async () => {
   const [offerings, profile, newDeal] = await Promise.all([
     source('pages/offeringsPage.ts'),

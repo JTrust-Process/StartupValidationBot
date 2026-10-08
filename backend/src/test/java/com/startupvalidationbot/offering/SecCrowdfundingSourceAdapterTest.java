@@ -15,6 +15,26 @@ import org.junit.jupiter.api.Test;
 class SecCrowdfundingSourceAdapterTest {
     private static final String INDEX = "https://www.sec.gov/Archives/edgar/data/1/000000000126000001/0000000001-26-000001-index.html";
 
+    @Test void edisonCuFixtureHasCanonicalFinalAmountAndDocumentProvenance() {
+        String accession = "0001872856-26-000331";
+        String directory = "https://www.sec.gov/Archives/edgar/data/1733902/000187285626000331/";
+        String index = directory + accession + "-index.html";
+        SecFilingClient client = org.mockito.Mockito.mock(SecFilingClient.class);
+        org.mockito.Mockito.when(client.getText(index, 1_000_000)).thenReturn(row("primary_doc.xml", "C-U", "Form C-U", 1000));
+        org.mockito.Mockito.when(client.getText(directory + "primary_doc.xml", 8_000_000)).thenReturn("<edgarSubmission>"
+                + "<nameOfIssuer>Edison Interactive Holdings, Inc.</nameOfIssuer>"
+                + "<progressUpdate>The Offering closed early on September 28, 2026 with a final raise amount of $62,562.45.</progressUpdate></edgarSubmission>");
+        var candidate = new OfferingDomain.Candidate("Edison Interactive Holdings, Inc.", "0001733902", null, "UNKNOWN", null, null, null,
+                index, accession, null, "C-U", LocalDate.of(2026, 10, 2), null, null, null, null, null, null, null,
+                "SEC_EDGAR_RECENT_INDEX", Map.of(), OfferingDomain.RetrievalQuality.INDEX_ONLY);
+        var parsed = new SecCrowdfundingSourceAdapter(client, 40, 32_000_000, 2025, 8).enrich(candidate);
+        assertThat(parsed.amountRaised()).isEqualByComparingTo("62562.45");
+        assertThat(parsed.accessionNumber()).isEqualTo(accession);
+        assertThat(parsed.facts()).containsEntry("_sourceUrl.amountRaised", directory + "primary_doc.xml")
+                .containsEntry("_secTerm.type.amountRaised", "FINAL_COMPLETED_RAISE")
+                .containsEntry("_secTerm.fact.amountRaised.0.units", "USD");
+    }
+
     @Test void primaryXmlAndOneExplicitSmallTermsExhibitHaveIndependentProvenance() {
         SecFilingClient client = org.mockito.Mockito.mock(SecFilingClient.class);
         String directory = INDEX.substring(0, INDEX.lastIndexOf('/') + 1);

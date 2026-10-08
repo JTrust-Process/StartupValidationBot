@@ -44,8 +44,14 @@ public class DiligenceNotificationService {
     }
 
     public boolean queueNewConfirmed(Offering offering, Packet packet) {
+        return queueNewConfirmed(null, offering, packet);
+    }
+
+    public boolean queueNewConfirmed(Offering previous, Offering offering, Packet packet) {
         if (recipient.isBlank() || offering.matchStatus() != MatchStatus.CONFIRMED
                 || offering.status() != Status.ACTIVE) return false;
+        if (previous != null && previous.matchStatus() == MatchStatus.CONFIRMED
+                && java.util.Objects.equals(previous.accessionNumber(), offering.accessionNumber())) return false;
         String fingerprint = ContentHash.sha256("NEW_CONFIRMED_OFFERING|ACTIVE|" + offering.id());
         String subject = "Startup Intelligence - New confirmed offering: " + packet.companyName();
         String text = packet.companyName() + " has a newly confirmed public Regulation Crowdfunding offering.\n\n"

@@ -28,6 +28,23 @@ import com.startupvalidationbot.offering.OfferingDomain.Status;
 import com.startupvalidationbot.radar.ContentHash;
 
 class DiligenceNotificationServiceTest {
+    @Test void historicalParserBackfillNeverQueuesNewConfirmedNotice() {
+        DiligenceStore store = mock(DiligenceStore.class);
+        var service = new DiligenceNotificationService(store, mock(DiligenceEmailSender.class),
+                "owner@example.com", "https://radar.example/#/radar");
+        assertThat(service.queueNewConfirmed(offering(Status.POSSIBLY_ACTIVE, MatchStatus.CONFIRMED),
+                offering(Status.ACTIVE, MatchStatus.CONFIRMED), packet())).isFalse();
+        verifyNoInteractions(store);
+    }
+
+    @Test void newlyResolvedIdentityStillQualifiesForConfirmedNotice() {
+        DiligenceStore store = mock(DiligenceStore.class);
+        var service = new DiligenceNotificationService(store, mock(DiligenceEmailSender.class),
+                "owner@example.com", "https://radar.example/#/radar");
+        when(store.queueNotification(anyString(), anyString(), eq(42L), anyString(), anyString(), anyString(), anyString(), anyString())).thenReturn(true);
+        assertThat(service.queueNewConfirmed(offering(Status.POSSIBLY_ACTIVE, MatchStatus.LIKELY),
+                offering(Status.ACTIVE, MatchStatus.CONFIRMED), packet())).isTrue();
+    }
     @Test
     void missingRecipientDoesNotAttemptOrConsumeQueuedEmailEvents() {
         DiligenceStore store = mock(DiligenceStore.class);

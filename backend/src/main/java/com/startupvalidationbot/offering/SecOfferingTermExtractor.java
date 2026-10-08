@@ -18,11 +18,18 @@ public final class SecOfferingTermExtractor {
     private static final Pattern AMENDED_MIN_BEFORE = pattern("(?:reduce|increase|change|set)[^.;]{0,30}?" + MINIMUM + "\\s*(?:from\\s+" + MONEY + "\\s+)?to\\s+" + MONEY);
     private static final Pattern VALUATION = pattern("((?:(?:pre|post)[- ]money\\s+)?(?:company\\s+)?valuation(?:\\s+cap)?)\\s*(?::|=|is|of|shall be|will be)?\\s*" + MONEY);
     private static final Pattern TRAILING_CAP = pattern(MONEY + "\\s+(?:(pre|post)[- ]money\\s+)?(?:valuation\\s+)?cap\\b(?!\\s*(?::|=|is|of)?\\s*\\$?\\d)");
-    private static final Pattern RAISED = pattern("(?:total\\s+amount\\s+of\\s+securities\\s+sold|(?:total|final)\\s+amount\\s+raised|campaign\\s+raised|(?:final\\s+number\\s+of\\s+)?raised|final\\s+number)\\s*(?::|=|of|was|is|approximately)?\\s*" + MONEY);
+    private static final Pattern RAISED = pattern("\\b(?:total\\s+amount\\s+of\\s+securities\\s+sold|final\\s+(?:completed\\s+)?raise(?:\\s+amount)?|(?:total|final)\\s+amount\\s+raised|campaign\\s+raised|(?:final\\s+number\\s+of\\s+)?raised|final\\s+number)\\s*(?::|=|of|was|is|approximately)?\\s*" + MONEY);
     private static final Pattern COMMITMENTS = pattern("investment\\s+commitments(?:\\s+of)?\\s*(?::|=)?\\s*" + MONEY);
     private static final Pattern CONDITIONAL = pattern("early[- ]bird|first\\s+\\$|different\\s+(?:classes|tranches)|depending\\s+on|tiered|earlier investors|later investors");
     private static final Pattern PROVISIONAL = pattern("subject to final accounting|final accounting[^.]{0,40}(?:not|pending)|estimated|provisional");
-    private static final Pattern COMPLETED = pattern("(?:offering|campaign)\\s+(?:has\\s+|was\\s+|is\\s+)?(?:successfully\\s+)?(?:closed|completed|ended)|closed successfully|final\\s+(?:amount|number|escrow closing)");
+    private static final Pattern COMPLETED = pattern("\\b(?:offering|campaign)\\s+(?:(?:has|was|is|been|successfully|already|now)\\s+)*(?:closed|completed|ended)\\b|\\bfinal escrow closing\\s+(?:occurred|completed|took place)\\b");
+    private static final Pattern FINAL_AMOUNT = pattern("\\bfinal\\s+(?:(?:completed\\s+)?raise(?:\\s+amount)?|amount\\s+raised|number)\\b");
+    private static final Pattern PROPOSED = pattern("\\b(?:intention|intend(?:s)?|plan(?:s|ned)?|propos(?:e|ed)|consider(?:ing)?|may)\\b");
+    private static final Pattern NOT_FINAL = pattern("\\b(?:so far|to date|interim|not yet|not final|if|would|could|expected|projected)\\b");
+    private static final Pattern NOT_ASSERTED = pattern("\\b(?:no|not|never|if|unless|whether|expected|projected|would|could|may|scheduled)\\b");
+    private static final Pattern EXTENDED = pattern("\\b(?:offering|campaign)(?:\\s+(?:close|closing|end)\\s+date|\\s+deadline)?\\s+(?:(?:has|was|is|been|will|be)\\s+)*(?:extended|reopened)\\b");
+    private static final Pattern WITHDRAWN = pattern("\\b(?:offering|campaign)\\s+(?:(?:has|was|is|been)\\s+)*withdrawn\\b");
+    private static final Pattern TERMINATED = pattern("\\b(?:offering|campaign)\\s+(?:(?:has|was|is|been)\\s+)*terminated\\b");
     public record Fact(String field, String value, String type, String excerpt) { }
 
     private SecOfferingTermExtractor() { }
@@ -57,11 +64,11 @@ public final class SecOfferingTermExtractor {
             Matcher amendment = AMENDED_MIN.matcher(narrative);
             while (amendment.find()) {
                 String value = amendment.group(2);
-                add(found, "minimumInvestment", value, "AMENDED_MINIMUM_INVESTMENT", snippet(narrative, amendment.start(), amendment.end()));
+                add(found, "minimumInvestment", value, minimumType(narrative, amendment.start()), snippet(narrative, amendment.start(), amendment.end()));
                 amended = true;
             }
             amendment = AMENDED_MIN_BEFORE.matcher(narrative);
-            while (amendment.find()) { add(found, "minimumInvestment", amendment.group(2), "AMENDED_MINIMUM_INVESTMENT", snippet(narrative, amendment.start(), amendment.end())); amended = true; }
+            while (amendment.find()) { add(found, "minimumInvestment", amendment.group(2), minimumType(narrative, amendment.start()), snippet(narrative, amendment.start(), amendment.end())); amended = true; }
             if (!amended) scan(found, narrative, MIN, "minimumInvestment", "MINIMUM_INVESTMENT", 1);
             Matcher valuations = VALUATION.matcher(narrative);
             while (valuations.find()) {
@@ -80,18 +87,18 @@ public final class SecOfferingTermExtractor {
             Matcher raised = RAISED.matcher(narrative);
             while (raised.find()) {
                 String context = snippet(narrative, raised.start(), raised.end());
-                boolean finality = COMPLETED.matcher(context).find() && !PROVISIONAL.matcher(context).find();
-                String type = finality ? "FINAL_SECURITIES_SOLD" : "INTERIM_RAISED";
+                boolean finality = (assertedMatch(COMPLETED, context) != null || assertedMatch(FINAL_AMOUNT, context) != null)
+                        && !PROVISIONAL.matcher(context).find() && !NOT_FINAL.matcher(context).find();
+                String type = finality ? pattern("\\bfinal\\s+(?:completed\\s+)?raise\\b").matcher(raised.group()).find()
+                        ? "FINAL_COMPLETED_RAISE" : "FINAL_SECURITIES_SOLD" : "INTERIM_RAISED";
                 if (context.matches("(?is).*(including|includes).{0,60}fees.*")) type += "_INCLUDING_FEES";
                 add(found, "amountRaised", raised.group(1), type, context);
             }
             Matcher investors = pattern("(?:investor count\\s*:?\\s*|(?:from|by)\\s+)([0-9,]+)\\s*(?:investors)?").matcher(narrative);
             while (investors.find()) if (investors.group().toLowerCase(Locale.ROOT).contains("investor")) add(found, "investorCount", investors.group(1), "INVESTOR_COUNT", investors.group());
-            if (pattern("(?:offering|campaign)[^.]{0,25}(?:closed|completed|ended)|closed successfully|final escrow closing").matcher(narrative).find()) {
-                facts.put("_secTerm.completed", "true");
-            }
             scan(found, narrative, pattern("(?:final closing date|(?:offering|campaign) (?:closed|ended)(?: on)?)\\s*:?\\s*(\\d{4}-\\d{2}-\\d{2}|[A-Za-z]+ \\d{1,2}, \\d{4})"), "closingDate", "FINAL_CLOSING_DATE", 1);
         }
+        lifecycle(facts, String.join("\n", narratives));
         String subtype = IntermediaryRegistry.value(facts, "SECURITYOFFEREDOTHERDESC");
         String rawSecurity = IntermediaryRegistry.value(facts, "SECURITYOFFEREDTYPE", "securityType");
         if (rawSecurity != null) facts.put("_secTerm.rawSecurity", rawSecurity);
@@ -125,9 +132,11 @@ public final class SecOfferingTermExtractor {
                 Fact fact = values.get(i);
                 String key = "_secTerm.fact." + field + "." + i;
                 facts.put(key + ".value", fact.value()); facts.put(key + ".type", fact.type()); facts.put(key + ".excerpt", fact.excerpt());
+                if (List.of("minimumInvestment", "valuationOrCap", "amountRaised", "investmentCommitments", "pricePerShare").contains(field)) facts.put(key + ".units", "USD");
             }
             if (List.of("investmentCommitments", "maturity", "closingDate", "conversionTerms", "discountRate", "interestRate", "pricePerShare", "investorCount").contains(field)) continue;
-            List<Fact> canonical = field.equals("amountRaised") ? values.stream().filter(v -> v.type().equals("FINAL_SECURITIES_SOLD")).toList() : values;
+            List<Fact> canonical = field.equals("amountRaised") ? values.stream().filter(v -> finalAmountType(v.type())).toList()
+                    : field.equals("minimumInvestment") ? values.stream().filter(v -> !v.type().equals("PROPOSED_MINIMUM_INVESTMENT")).toList() : values;
             if (field.equals("minimumInvestment") && values.stream().anyMatch(v -> v.type().equals("AMENDED_MINIMUM_INVESTMENT"))) canonical = values.stream().filter(v -> v.type().equals("AMENDED_MINIMUM_INVESTMENT")).toList();
             long variants = canonical.stream().map(v -> v.value() + (field.equals("valuationOrCap") ? "|" + v.type() : "")).distinct().count();
             boolean conditional = field.equals("valuationOrCap") && CONDITIONAL.matcher(termsText).find() && variants > 0;
@@ -142,6 +151,48 @@ public final class SecOfferingTermExtractor {
                 facts.put("_secTerm.excerpt." + field, chosen.excerpt());
             }
         }
+    }
+
+    public static boolean finalAmountType(String type) {
+        return "FINAL_SECURITIES_SOLD".equals(type) || "FINAL_COMPLETED_RAISE".equals(type);
+    }
+
+    private static String minimumType(String text, int start) {
+        String prefix = text.substring(Math.max(0, start - 100), start);
+        int boundary = Math.max(prefix.lastIndexOf(';'), prefix.lastIndexOf('.'));
+        return PROPOSED.matcher(prefix.substring(boundary + 1)).find() ? "PROPOSED_MINIMUM_INVESTMENT" : "AMENDED_MINIMUM_INVESTMENT";
+    }
+
+    private static void lifecycle(Map<String, String> facts, String text) {
+        Map<String, Pattern> states = new LinkedHashMap<>();
+        states.put("WITHDRAWN", WITHDRAWN); states.put("TERMINATED", TERMINATED);
+        states.put("COMPLETED", COMPLETED); states.put("EXTENDED", EXTENDED);
+        Map<String, Matcher> matches = new LinkedHashMap<>();
+        states.forEach((state, expression) -> {
+            Matcher match = assertedMatch(expression, text);
+            if (match != null) matches.put(state, match);
+        });
+        List<String> observed = List.copyOf(matches.keySet());
+        if (observed.isEmpty()) return;
+        // Actual lifecycle language, not a substring or a scheduled closing date, is required.
+        String state = observed.size() == 1 ? observed.getFirst() : "AMBIGUOUS";
+        facts.put("_secTerm.lifecycle", state);
+        facts.put("_secTerm.completed", Boolean.toString(state.equals("COMPLETED")));
+        if (state.equals("AMBIGUOUS")) facts.put("_secTerm.ambiguity.lifecycle", "Conflicting filed lifecycle statements require review");
+        else {
+            Matcher match = matches.get(state);
+            facts.put("_secTerm.lifecycleExcerpt", snippet(text, match.start(), match.end()));
+        }
+    }
+
+    private static Matcher assertedMatch(Pattern expression, String text) {
+        Matcher match = expression.matcher(text);
+        while (match.find()) {
+            String prefix = text.substring(Math.max(0, match.start() - 100), match.start());
+            int boundary = Math.max(prefix.lastIndexOf('.'), Math.max(prefix.lastIndexOf(';'), prefix.lastIndexOf('\n')));
+            if (!NOT_ASSERTED.matcher(prefix.substring(boundary + 1)).find()) return match;
+        }
+        return null;
     }
 
     public static String plain(String value) {

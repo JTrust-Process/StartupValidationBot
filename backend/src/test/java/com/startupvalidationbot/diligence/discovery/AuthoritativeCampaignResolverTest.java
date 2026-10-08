@@ -17,7 +17,8 @@ class AuthoritativeCampaignResolverTest {
         return offering;
     }
     @Test void secExplicitCampaignLinkDoesNotRequireAnyPlatformOrIssuerRequest() {
-        var result = resolver.resolve(offering(), Map.of("_secCampaign.state", "CONFIRMED", "_secCampaign.url", "https://wefunder.com/acme", "intermediaryCik", "0001670254"));
+        var result = resolver.resolve(offering(), Map.of("_secCampaign.state", "CONFIRMED", "_secCampaign.url", "https://wefunder.com/acme",
+                "_secCampaign.sourceUrl", "https://www.sec.gov/Archives/example.xml", "intermediaryCik", "0001670254"));
         assertThat(result.state()).isEqualTo("CONFIRMED"); assertThat(result.url()).isEqualTo("https://wefunder.com/acme");
         assertThat(result.source()).isEqualTo("SEC_FILED_FACT"); verifyNoInteractions(client);
     }

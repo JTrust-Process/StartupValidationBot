@@ -52,6 +52,7 @@ public class AuthoritativeCampaignResolver {
         } catch (RuntimeException error) { return result(null, "UNAVAILABLE", "ISSUER_WEBSITE_CLAIM", website, "Public issuer homepage unavailable; no bypass attempted"); }
     }
     private static Resolution link(String url, String filedFamily, String source, String sourceUrl) {
+        if (sourceUrl == null || sourceUrl.isBlank()) return result(null, "UNRESOLVED", source, null, "Explicit campaign source reference is required");
         String canonical = url == null ? null : ExplicitCampaignLinks.canonical(url);
         String family = IntermediaryRegistry.familyForUrl(url);
         if (canonical == null) return result(null, "UNRESOLVED", source, sourceUrl, "Explicit URL is not a canonical supported campaign path");

@@ -14,6 +14,11 @@ import com.startupvalidationbot.radar.CompanyIdentity;
 @Component
 public class CampaignIdentityVerifier {
     public IdentityDecision verify(CampaignIdentity identity, CampaignCandidate candidate) {
+        if (!CampaignUrlLineage.observedSource(candidate.evidenceSource())
+                || com.startupvalidationbot.offering.ExplicitCampaignLinks.canonical(candidate.campaignUrl()) == null) {
+            return new IdentityDecision(IdentityStatus.REJECTED, 0,
+                    "Campaign URL lacks explicitly observed source lineage; names cannot establish a URL.");
+        }
         Set<String> names = new LinkedHashSet<>();
         add(names, identity.companyName());
         add(names, identity.issuerName());

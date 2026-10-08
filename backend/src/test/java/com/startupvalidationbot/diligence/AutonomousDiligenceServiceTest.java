@@ -15,6 +15,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.startupvalidationbot.diligence.DiligenceDomain.FinancialPeriod;
 import com.startupvalidationbot.diligence.DiligenceDomain.Packet;
@@ -39,8 +41,8 @@ class AutonomousDiligenceServiceTest {
                 null, null, null, null, null, null, "original", "https://www.sec.gov/original.xml");
         assertThat(AutonomousDiligenceService.mergeFinancials(List.of(retained), List.of())).containsExactly(retained);
     }
-    @Test
-    void platformFailureProducesPartialPacketWithoutFailingSecBackedJob() {
+    @ParameterizedTest @ValueSource(booleans = { true, false })
+    void onlyExplicitLineagePermitsRequestsAndFailuresPreserveSecPacket(boolean explicit) {
         DiligenceStore store = mock(DiligenceStore.class);
         OfferingStore offerings = mock(OfferingStore.class);
         RadarStore radar = mock(RadarStore.class);
@@ -58,11 +60,13 @@ class AutonomousDiligenceServiceTest {
         when(store.selectOfferings(org.mockito.ArgumentMatchers.eq(25), any())).thenReturn(
                 new DiligenceRefreshSelector.Selection(List.of(1L), Map.of()));
         when(offerings.find(1L)).thenReturn(Optional.of(offering));
-        when(offerings.facts(1L)).thenReturn(Map.of("REVENUEMOSTRECENTFISCALYEAR", "1000"));
+        when(offerings.facts(1L)).thenReturn(explicit ? Map.of("REVENUEMOSTRECENTFISCALYEAR", "1000",
+                "_secCampaign.state", "CONFIRMED", "_secCampaign.url", "https://wefunder.com/acme",
+                "_secCampaign.sourceUrl", "https://www.sec.gov/Archives/example.xml") : Map.of("REVENUEMOSTRECENTFISCALYEAR", "1000"));
         when(store.findCampaign(1L)).thenReturn(Optional.empty());
         when(platform.platform()).thenReturn("WEFUNDER");
         when(platform.supports(URI.create("https://wefunder.com/acme"))).thenReturn(true);
-        when(platform.enrich(any(), any())).thenThrow(new IllegalStateException("upstream unavailable"));
+        when(platform.enrich(any(), any())).thenThrow(new IllegalStateException("Platform returned HTTP 403"));
         when(financials.extract(any(), any())).thenReturn(List.of(new FinancialPeriod("2025",
                 new BigDecimal("1000"), null, null, null, null, null, null, null, null,
                 "accession", "https://www.sec.gov/example")));
@@ -75,9 +79,10 @@ class AutonomousDiligenceServiceTest {
                 notifications, List.of(platform), 25).run();
 
         assertThat(result.packetsPartial()).isEqualTo(1);
-        assertThat(result.platformErrors()).isEqualTo(1);
+        assertThat(result.platformErrors()).isEqualTo(explicit ? 1 : 0);
         assertThat(result.errors()).isEmpty();
-        verify(store).markPlatform("WEFUNDER", "DEGRADED", 1, 0, "upstream unavailable");
+        if (explicit) verify(store).markPlatform("WEFUNDER", "DEGRADED", 1, 0, "Platform returned HTTP 403");
+        else org.mockito.Mockito.verify(platform, org.mockito.Mockito.never()).enrich(any(), any());
     }
 
     @Test
@@ -107,6 +112,7 @@ class AutonomousDiligenceServiceTest {
         when(campaign.platform()).thenReturn("REPUBLIC");
         when(campaign.campaignUrl()).thenReturn("https://republic.com/acme");
         when(campaign.campaignUrlConfidence()).thenReturn(95);
+        when(campaign.campaignUrlSource()).thenReturn("PUBLIC_CAMPAIGN_URL");
         when(campaign.status()).thenReturn(DiligenceDomain.CampaignStatus.ACTIVE);
         when(campaign.securityType()).thenReturn("SAFE");
         when(campaign.facts()).thenReturn(Map.of("amountRaised", "640000"));

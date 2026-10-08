@@ -51,6 +51,61 @@ class RefreshPreservationIntegrationTest {
     @Autowired EvidenceReconciler reconciler;
     long companyId;
 
+    @ParameterizedTest @ValueSource(strings = { "extended", "completed", "terminated", "withdrawn" })
+    void filedLifecycleAmendmentsAreDistinctAndPreserveTerms(String action) {
+        Offering first = initial("SAFE", "100000", "1050000", "2027-08-17");
+        Candidate base = candidate("0001234567-26-000082", "C-U/A", RetrievalQuality.DETAIL_COMPLETE,
+                "SAFE", "100000", "1050000", "2027-11-30", "https://refresh.example");
+        Map<String, String> facts = new java.util.TreeMap<>(Map.of("PROGRESSUPDATE", "The offering was " + action + "."));
+        SecOfferingTermExtractor.extract(facts, "");
+        Candidate updated = new Candidate(base.issuerName(), base.issuerCik(), base.issuerWebsite(), base.platform(),
+                base.intermediaryName(), base.intermediaryCik(), base.offeringUrl(), base.secFilingUrl(), base.accessionNumber(),
+                base.fileNumber(), base.filingType(), base.filingDate(), base.securityType(), base.minimumInvestment(),
+                base.targetAmount(), base.maximumAmount(), base.valuationOrCap(), base.deadline(), base.amountRaised(),
+                base.source(), facts, base.retrievalQuality());
+        Offering saved = offerings.upsert(updated, confirmed()).offering();
+        Status expected = switch (action) { case "completed" -> Status.ENDED; case "terminated" -> Status.TERMINATED;
+            case "withdrawn" -> Status.WITHDRAWN; default -> Status.ACTIVE; };
+        assertThat(saved.id()).isEqualTo(first.id());
+        assertThat(saved.status()).isEqualTo(expected);
+        assertThat(saved.deadline()).isEqualTo(LocalDate.of(2027, 11, 30));
+        assertThat(saved.minimumInvestment()).isEqualByComparingTo("100");
+        assertThat(saved.targetAmount()).isEqualByComparingTo("100000");
+        assertThat(saved.matchStatus()).isEqualTo(MatchStatus.CONFIRMED);
+    }
+
+    @Test void finalCompletedRaisePersistsToPacketWithAccessionDocumentAndObservation() {
+        Candidate base = candidate(ACCESSION, "C-U", RetrievalQuality.DETAIL_COMPLETE, "SAFE", "100000", "1050000", "2027-08-17", "https://refresh.example");
+        Map<String, String> facts = new java.util.TreeMap<>(Map.of("PROGRESSUPDATE",
+                "The Offering closed early on September 28, 2026 with a final raise amount of $62,562.45.",
+                "_secForm", "C-U", "_secDocumentUrl", "https://www.sec.gov/Archives/primary_doc.xml"));
+        SecOfferingTermExtractor.extract(facts, "");
+        Candidate observed = new Candidate(base.issuerName(), base.issuerCik(), base.issuerWebsite(), base.platform(),
+                base.intermediaryName(), base.intermediaryCik(), base.offeringUrl(), base.secFilingUrl(), base.accessionNumber(),
+                base.fileNumber(), base.filingType(), base.filingDate(), base.securityType(), base.minimumInvestment(),
+                base.targetAmount(), base.maximumAmount(), base.valuationOrCap(), base.deadline(), new BigDecimal(facts.get("amountRaised")),
+                base.source(), facts, base.retrievalQuality());
+        Offering saved = offerings.upsert(observed, confirmed()).offering();
+        var terms = EffectiveOfferingTerms.resolve(saved, null, offerings.facts(saved.id()));
+        assertThat(terms.amountRaised()).isEqualByComparingTo("62562.45");
+        var provenance = terms.provenance().get("amountRaised");
+        assertThat(provenance.accession()).isEqualTo(ACCESSION);
+        assertThat(provenance.sourceUrl()).isEqualTo("https://www.sec.gov/Archives/primary_doc.xml");
+        assertThat(provenance.observedAt()).isNotBlank();
+        assertThat(provenance.semanticType()).isEqualTo("FINAL_COMPLETED_RAISE");
+        diligence.savePacket(packet(saved, List.of(evidence(saved, "amount_raised", "62562.45"))));
+        assertThat(diligence.findByOffering(saved.id()).orElseThrow().amountRaised()).isEqualByComparingTo("62562.45");
+        offerings.upsert(candidate(ACCESSION, "C-U", RetrievalQuality.INDEX_ONLY, null, null, null, null, null), weak());
+        assertThat(offerings.find(saved.id()).orElseThrow().amountRaised()).isEqualByComparingTo("62562.45");
+    }
+
+    @Test void suppressedNotificationHistoryIsRetainedButNeverSelectedForSending() {
+        diligence.queueNotification("NEW_CONFIRMED_OFFERING", "OFFERING", 42, "suppressed-fixture", "owner@example.com", "Fixture", "Research", "<p>Research</p>");
+        jdbc.update("UPDATE radar_notification_events SET status='SUPPRESSED' WHERE fingerprint='suppressed-fixture'");
+        assertThat(diligence.pendingNotifications(10)).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM radar_notification_events WHERE status='SUPPRESSED'", Integer.class)).isEqualTo(1);
+    }
+
     @BeforeEach
     void company() {
         var now = LocalDateTime.now();

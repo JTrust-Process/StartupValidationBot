@@ -347,6 +347,8 @@ public class OfferingStore {
         String form = candidate.filingType() == null ? "" : candidate.filingType().toUpperCase();
         if (form.equals("C-W")) return Status.WITHDRAWN;
         if (form.equals("C-TR")) return Status.TERMINATED;
+        if ("WITHDRAWN".equals(candidate.facts().get("_secTerm.lifecycle"))) return Status.WITHDRAWN;
+        if ("TERMINATED".equals(candidate.facts().get("_secTerm.lifecycle"))) return Status.TERMINATED;
         if ((form.equals("C-U") || form.equals("C-U/A")) && "true".equals(candidate.facts().get("_secTerm.completed"))) return Status.ENDED;
         if (candidate.deadline() != null) return candidate.deadline().isBefore(LocalDate.now()) ? Status.ENDED : Status.ACTIVE;
         if (form.equals("C") || form.equals("C/A")) return Status.POSSIBLY_ACTIVE;

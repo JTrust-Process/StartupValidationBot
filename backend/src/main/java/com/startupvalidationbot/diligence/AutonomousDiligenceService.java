@@ -93,6 +93,8 @@ public class AutonomousDiligenceService {
 
     private RunResult run(Long targetOfferingId) {
         List<String> errors = new ArrayList<>();
+        Map<Long, Offering> notificationBaseline = new HashMap<>();
+        offerings.list(null, null, null, null).forEach(value -> notificationBaseline.put(value.id(), value));
         NativeOfferingDomain.RunResult nativeResult = targetOfferingId == null && nativeIntake != null
                 ? nativeIntake.run() : NativeOfferingDomain.RunResult.empty();
         CampaignDiscoveryDomain.RunResult discovery = targetOfferingId == null && campaignDiscovery != null
@@ -164,6 +166,7 @@ public class AutonomousDiligenceService {
             String platform = normalizePlatform(offering.platform());
             PlatformOfferingEnricher enricher = enrichers.get(platform);
             if (enricher != null && offering.offeringUrl() != null && !"AMBIGUOUS".equals(storedFacts.get("_secCampaign.state"))
+                    && com.startupvalidationbot.diligence.discovery.CampaignUrlLineage.allowed(offering.offeringUrl(), storedFacts, previousCampaign, offering.provenance())
                     && !"AMBIGUOUS".equals(storedFacts.get("_issuerCampaign.state"))
                     && IntermediaryRegistry.fromFacts(storedFacts).state() != IntermediaryRegistry.State.AMBIGUOUS) {
                 try {
@@ -238,7 +241,7 @@ public class AutonomousDiligenceService {
                     sourcesChecked, missing, fingerprint, evidence, financials));
             if (packet.status() == PacketStatus.READY) {
                 if (notifications.queueReady(packet)) queued++;
-            } else if (notifications.queueNewConfirmed(offering, packet)) {
+            } else if (notifications.queueNewConfirmed(notificationBaseline.get(offering.id()), offering, packet)) {
                 queued++;
             }
             if (campaign != null && notifications.queueMaterialChange(previousCampaign, campaign, packet)) queued++;
@@ -345,7 +348,8 @@ public class AutonomousDiligenceService {
             evidence.add(new EvidenceDraft("SEC_EDGAR", facts.getOrDefault(prefix + ".sourceUrl", facts.getOrDefault("_sourceUrl." + field, offering.secFilingUrl())),
                     "SEC Form " + offering.filingType(), "filed_" + field + "_" + (semantic == null ? "UNKNOWN" : semantic), item.getValue(), null,
                     EvidenceClassification.SEC_FILED_FACT, 95, facts.getOrDefault(prefix + ".excerpt", "Explicit filed term"),
-                    Map.of("accessionNumber", offering.accessionNumber(), "semanticType", semantic == null ? "UNKNOWN" : semantic)));
+                    Map.of("accessionNumber", offering.accessionNumber(), "semanticType", semantic == null ? "UNKNOWN" : semantic,
+                            "units", facts.getOrDefault(prefix + ".units", "Not specified"))));
         }
         var identity = IntermediaryRegistry.fromFacts(facts);
         if (identity.family() != null) evidence.add(new EvidenceDraft("SEC_EDGAR", offering.secFilingUrl(), "SEC filed intermediary",

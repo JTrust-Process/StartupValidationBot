@@ -115,7 +115,7 @@ public final class EffectiveOfferingTerms {
             compare(issues, "valuation cap", secCap, platformCap);
             compare(issues, "security type", secSecurity, platformSecurity);
             compare(issues, "deadline", secFiled ? offering.deadline() : null, campaign.deadline());
-            if ("FINAL_SECURITIES_SOLD".equals(offering.facts().get("_secTerm.type.amountRaised"))
+            if (com.startupvalidationbot.offering.SecOfferingTermExtractor.finalAmountType(offering.facts().get("_secTerm.type.amountRaised"))
                     && "FINAL_SECURITIES_SOLD".equals(campaign.facts().get("_termType.amountRaised"))) compare(issues, "final amount raised", secRaised, platformRaised);
         }
 
@@ -163,6 +163,7 @@ public final class EffectiveOfferingTerms {
 
     private static boolean trusted(PlatformCampaign campaign) {
         if (campaign == null || campaign.campaignUrlConfidence() < 80
+                || !com.startupvalidationbot.diligence.discovery.CampaignUrlLineage.observedSource(campaign.campaignUrlSource())
                 || campaign.status() == CampaignStatus.UNAVAILABLE) return false;
         try {
             PlatformUrlPolicy.require(campaign.platform(), campaign.campaignUrl());

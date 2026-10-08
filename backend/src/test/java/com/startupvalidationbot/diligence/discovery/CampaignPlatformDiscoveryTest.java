@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.net.URI;
@@ -59,18 +60,16 @@ class CampaignPlatformDiscoveryTest {
     }
 
     @Test
-    void wefunderUsesBoundedCanonicalSlugsAndReportsBlockedAccess() {
+    void wefunderNeverRequestsNameDerivedCampaignSlugs() {
         PlatformHttpClient client = mock(PlatformHttpClient.class);
-        when(client.get("WEFUNDER", URI.create("https://wefunder.com/bloomy")))
-                .thenThrow(new IllegalStateException("Platform returned HTTP 403"));
         WefunderCampaignDiscovery discovery = new WefunderCampaignDiscovery();
-
-        assertThat(discovery.slugs(identity("Bloomy, Inc.", "joinbloomy.com"), 5)).containsExactly("bloomy");
         var result = discovery.discover(identity("Bloomy, Inc.", "joinbloomy.com"), 5,
                 new CampaignDiscoveryContext(client, 8));
 
         assertThat(result.candidates()).isEmpty();
-        assertThat(result.error()).contains("HTTP 403");
+        assertThat(result.error()).isNull();
+        assertThat(result.capability()).isEqualTo("EXPLICIT_LINK_REQUIRED");
+        verifyNoInteractions(client);
     }
 
     @Test

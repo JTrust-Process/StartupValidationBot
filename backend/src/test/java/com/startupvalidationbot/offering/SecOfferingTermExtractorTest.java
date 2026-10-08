@@ -13,6 +13,52 @@ class SecOfferingTermExtractorTest {
         SecOfferingTermExtractor.extract(facts, text);
         return facts;
     }
+    @ParameterizedTest @ValueSource(strings = {
+        "Offering extended", "Offering extended through November",
+        "Minimum offering target amount lowered to $50,000, offering close date extended to October 29, 2026",
+        "The offering has not been completed.", "The offering will be closed on November 30, 2026.",
+        "Final closing date: 2026-11-30.", "No final escrow closing occurred.",
+        "If the offering closed, the issuer would report the final amount."
+    }) void extensionsAndFutureOrNegatedClosingsNeverMeanCompleted(String text) {
+        assertThat(extract(text)).doesNotContainEntry("_secTerm.completed", "true");
+    }
+    @Test void withdrawalAndTerminationHaveSeparateLifecycleStates() {
+        assertThat(extract("The offering has been withdrawn.")).containsEntry("_secTerm.lifecycle", "WITHDRAWN");
+        assertThat(extract("The campaign was terminated.")).containsEntry("_secTerm.lifecycle", "TERMINATED");
+        assertThat(extract("The offering completed.")).containsEntry("_secTerm.lifecycle", "COMPLETED");
+        Map<String, String> prior = new TreeMap<>(Map.of("_secTerm.completed", "true"));
+        SecOfferingTermExtractor.extract(prior, "Offering close date extended to October 29, 2026.");
+        assertThat(prior).containsEntry("_secTerm.completed", "false").containsEntry("_secTerm.lifecycle", "EXTENDED");
+    }
+    @Test void edisonRealFiledProgressSentenceExtractsGenericFinalRaiseAndUnits() {
+        String sentence = "The Offering closed early on September 28, 2026 with a final raise amount of $62,562.45.";
+        Map<String, String> facts = new TreeMap<>(Map.of("PROGRESSUPDATE", sentence));
+        SecOfferingTermExtractor.extract(facts, "");
+        assertThat(facts).containsEntry("amountRaised", "62562.45")
+                .containsEntry("_secTerm.type.amountRaised", "FINAL_COMPLETED_RAISE")
+                .containsEntry("_secTerm.fact.amountRaised.0.units", "USD")
+                .containsEntry("_secTerm.excerpt.amountRaised", sentence)
+                .containsEntry("_secTerm.completed", "true");
+        assertThat(extract("The campaign completed with a final raise amount of $81,023.12."))
+                .containsEntry("amountRaised", "81023.12");
+    }
+    @Test void finalRaiseDoesNotConfuseCommitmentsTargetsMaximumsOrConditionalTotals() {
+        assertThat(extract("Offering target: $100,000. Maximum: $1,000,000. Investment commitments of $62,562.45."))
+                .doesNotContainKey("amountRaised");
+        assertThat(extract("Expected final raise amount of $62,562.45 if all commitments close."))
+                .doesNotContainKey("amountRaised");
+        assertThat(extract("No final raise amount of $62,562.45 was established."))
+                .doesNotContainKey("amountRaised");
+        assertThat(extract("Offering completed. Final raise amount $50,000. Final raise amount $60,000."))
+                .doesNotContainKey("amountRaised").containsKey("_secTerm.ambiguity.amountRaised");
+    }
+    @Test void americanRebelCurrentMinimumAndFutureIntentionStaySeparate() {
+        var facts = extract("This non-material amendment is being filed to (i) increase the minimum investment amount from $50 to $100, effective as of Sept. 17, 5pm EST; (ii) disclose the Company's current intention to increase the minimum investment to $500.00 during the Offering.");
+        assertThat(facts).containsEntry("minimumInvestment", "100")
+                .containsEntry("_secTerm.fact.minimumInvestment.1.value", "500")
+                .containsEntry("_secTerm.fact.minimumInvestment.1.type", "PROPOSED_MINIMUM_INVESTMENT")
+                .doesNotContainKey("_secTerm.ambiguity.minimumInvestment");
+    }
     @Test void extractsLabeledTermsWithoutDerivingValuationFromRaiseOrPrice() {
         var facts = extract("<table><tr><th>Minimum Investment</th><td>$100</td></tr>"
                 + "<tr><th>Valuation Cap</th><td>$16,000,000</td></tr></table>"

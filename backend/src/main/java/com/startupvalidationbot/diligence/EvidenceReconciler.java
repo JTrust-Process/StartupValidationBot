@@ -7,6 +7,7 @@ import java.util.Locale;
 import java.util.Map;
 
 import org.springframework.stereotype.Component;
+import com.startupvalidationbot.offering.OfferingTermNormalizer;
 
 @Component
 public class EvidenceReconciler {
@@ -36,8 +37,8 @@ public class EvidenceReconciler {
         compareMoney(discrepancies, "minimum investment", secFacts.get("MINIMUMINVESTMENT"), platformFacts.get("minimumInvestment"));
         compareMoney(discrepancies, "target amount", secFacts.get("OFFERINGAMOUNT"), platformFacts.get("targetAmount"));
         compareMoney(discrepancies, "maximum amount", secFacts.get("MAXIMUMOFFERINGAMOUNT"), platformFacts.get("maximumAmount"));
-        String secSecurity = value(secFacts, "SECURITYOFFEREDTYPE", "securityType");
-        String campaignSecurity = platformFacts.get("securityType");
+        String secSecurity = OfferingTermNormalizer.security(value(secFacts, "securityType", "SECURITYOFFEREDTYPE"));
+        String campaignSecurity = OfferingTermNormalizer.security(platformFacts.get("securityType"));
         if (secSecurity != null && campaignSecurity != null
                 && !secSecurity.equalsIgnoreCase(campaignSecurity)) {
             discrepancies.add("Security type differs between the SEC filing and campaign page.");

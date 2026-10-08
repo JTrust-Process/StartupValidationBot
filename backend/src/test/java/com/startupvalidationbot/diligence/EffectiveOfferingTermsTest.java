@@ -20,6 +20,27 @@ import com.startupvalidationbot.offering.OfferingDomain.Offering;
 import com.startupvalidationbot.offering.OfferingDomain.Status;
 
 class EffectiveOfferingTermsTest {
+    @Test void secIntermediaryIsConfirmedWithoutCampaignAndAmbiguousTermsCannotUsePlatformFallback() {
+        Offering filed = offering("SEC_EDGAR", "SEC_RECONCILED", MatchStatus.CONFIRMED, "SAFE",
+                new BigDecimal("100"), null, null, "$7M cap", null);
+        var facts = Map.of("intermediaryCik", "0001751525", "intermediaryName", "OpenDeal Portal LLC",
+                "_secTerm.ambiguity.valuationOrCap", "Multiple filed valuations require review");
+        var terms = EffectiveOfferingTerms.resolve(filed, null, facts);
+        assertThat(terms.platformIdentityStatus()).startsWith("SEC_CONFIRMED");
+        assertThat(terms.officialCampaignVerified()).isFalse();
+        assertThat(terms.campaignUrl()).isNull(); assertThat(terms.valuationCap()).isNull();
+        assertThat(AutonomousDiligenceService.status(filed, terms, List.of(), terms.issues())).isEqualTo(PacketStatus.NEEDS_REVIEW);
+        var withPlatform = EffectiveOfferingTerms.resolve(filed, usableCampaign(), facts);
+        assertThat(withPlatform.valuationCap()).isNull();
+    }
+
+    @Test void normalizedFormattingDoesNotCreateDiscrepancyAndRealTermsDo() {
+        Offering filed = offering("SEC_EDGAR", "SEC_RECONCILED", MatchStatus.CONFIRMED, "Crowd SAFE", new BigDecimal("100.00"),
+                null, null, "$7M cap", LocalDate.of(2026, 10, 1));
+        assertThat(EffectiveOfferingTerms.resolve(filed, usableCampaign()).issues()).isEmpty();
+        var changed = campaign("Preferred Stock", new BigDecimal("250"), null, null, null, new BigDecimal("9000000"), LocalDate.of(2026, 11, 1));
+        assertThat(EffectiveOfferingTerms.resolve(filed, changed).issues()).hasSize(4);
+    }
     @Test
     void secTermsOverridePlatformWhilePlatformFillsSecNullFieldsWithHonestProvenance() {
         Offering offering = offering("SEC_EDGAR", "SEC_RECONCILED", MatchStatus.CONFIRMED,

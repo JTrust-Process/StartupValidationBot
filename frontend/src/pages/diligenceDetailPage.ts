@@ -24,7 +24,9 @@ function termSource(packet: DiligencePacket, key: string): string {
   if (!source) return '<small class="radar-muted">Source not established</small>';
   const classification = source.classification === 'SEC_FILED_FACT' ? 'SEC-filed fact' : 'Platform issuer claim';
   const observed = source.observedAt ? ` · Last observed ${escapeHtml(formatRadarDate(source.observedAt))}` : '';
-  return `<small class="radar-muted">Source: ${escapeHtml(source.sourceType)} · ${classification}${observed}</small>`;
+  const semantic = source.semanticType ? ` · ${escapeHtml(source.semanticType.replaceAll('_', ' '))}` : '';
+  const accession = source.accession ? ` · Filing ${escapeHtml(source.accession)}` : '';
+  return `<small class="radar-muted">Source: ${escapeHtml(source.sourceType)} · ${classification}${semantic}${accession}${observed}</small>`;
 }
 
 function evidenceTable(items: DiligenceEvidence[]): string {
@@ -35,6 +37,8 @@ function evidenceTable(items: DiligenceEvidence[]): string {
       <td>${escapeHtml(item.period || 'Current')}</td><td>${url ? `<a href="${escapeAttribute(url)}" target="_blank" rel="noreferrer">${escapeHtml(item.sourceTitle)}</a>` : escapeHtml(item.sourceTitle)}
         ${item.metadata.filedLabel ? `<small class="radar-muted">Filed label: ${escapeHtml(String(item.metadata.filedLabel))}; units: ${escapeHtml(String(item.metadata.units || 'Not established'))}</small>` : ''}
         ${item.metadata.periodEndingDate ? `<small class="radar-muted">Period ending: ${escapeHtml(String(item.metadata.periodEndingDate))}</small>` : ''}
+        ${item.metadata.semanticType ? `<small class="radar-muted">Filed meaning: ${escapeHtml(String(item.metadata.semanticType).replaceAll('_', ' '))}</small>` : ''}
+        ${item.rawExcerpt ? `<details><summary>Filed excerpt</summary><p>${escapeHtml(item.rawExcerpt)}</p></details>` : ''}
         <small class="radar-muted">Observed: ${escapeHtml(formatRadarDate(item.observedAt))}</small></td>
     </tr>`; }).join('')}</tbody></table></div>`;
 }
@@ -52,6 +56,7 @@ function packetView(packet: DiligencePacket, availability: CompanyInvestmentAvai
   const campaign = safeExternalUrl(packet.campaignUrl);
   const secEvidence = packet.evidence.filter((item) => item.classification === 'SEC_FILED_FACT');
   const claims = packet.evidence.filter((item) => item.classification !== 'SEC_FILED_FACT');
+  const fetchStatus = packet.evidence.find((item) => item.factKey === 'campaign_fetch_status')?.factValue;
   return `<div class="page-header page-header--row"><div><p class="page-eyebrow">Diligence ${escapeHtml(packet.status.replaceAll('_', ' '))}</p>
     <h2>${escapeHtml(packet.companyName)}</h2><p>${escapeHtml(packet.summary)}</p></div>
     <div><strong>${packet.completeness}% complete</strong><p class="radar-muted">Identity Confidence ${packet.confidence}/100</p></div></div>
@@ -59,13 +64,14 @@ function packetView(packet: DiligencePacket, availability: CompanyInvestmentAvai
     <section class="radar-panel"><h3>Offering Terms</h3><dl class="offering-facts">
       <div><dt>Platform</dt><dd>${escapeHtml(packet.platform || 'Could not establish')}</dd></div>
       <div><dt>Security</dt><dd>${escapeHtml(packet.securityType || 'Could not establish')}${termSource(packet, 'securityType')}</dd></div>
-      <div><dt>Valuation / cap</dt><dd>${escapeHtml(packet.valuationOrCap || 'Could not establish')}${termSource(packet, packet.valuationCap !== null ? 'valuationCap' : 'valuation')}</dd></div>
+      <div><dt>Valuation / cap</dt><dd>${escapeHtml(packet.valuationOrCap || (packet.materialDiscrepancies.some((item) => item.includes('valuationOrCap')) ? 'Multiple filed terms — review required' : 'Could not establish'))}${termSource(packet, packet.valuationCap !== null ? 'valuationCap' : 'valuation')}</dd></div>
       <div><dt>Minimum</dt><dd>${money(packet.minimumInvestment)}${termSource(packet, 'minimumInvestment')}</dd></div>
       <div><dt>Target / maximum</dt><dd>${money(packet.targetAmount)} / ${money(packet.maximumAmount)}${termSource(packet, packet.targetAmount !== null ? 'targetAmount' : 'maximumAmount')}</dd></div>
       <div><dt>Raised</dt><dd>${money(packet.amountRaised)}${termSource(packet, 'amountRaised')}</dd></div>
       <div><dt>Deadline</dt><dd>${escapeHtml(packet.deadline ? formatRadarDate(packet.deadline) : 'Could not establish')}${termSource(packet, 'deadline')}</dd></div>
       <div><dt>Platform status</dt><dd>${escapeHtml(packet.platformStatus?.replaceAll('_', ' ') || 'Could not establish')}${termSource(packet, 'platformStatus')}</dd></div>
       <div><dt>Platform identity</dt><dd>${escapeHtml(packet.platformIdentityStatus)}</dd></div>
+      <div><dt>Campaign page</dt><dd>${campaign ? 'Public campaign previously verified' : 'Not verified; intermediary identity does not prove campaign availability'}${fetchStatus ? `<small class="radar-muted">Last fetch: ${escapeHtml(fetchStatus.replaceAll('_', ' '))}</small>` : ''}</dd></div>
       <div><dt>SEC reconciliation</dt><dd>${escapeHtml(packet.secReconciliationStatus)}</dd></div>
       <div><dt>Radar match</dt><dd>${escapeHtml(packet.identityStatus)}</dd></div></dl></section>
     <section class="radar-panel"><h3>Financial Snapshot</h3>${packet.financials.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Period</th><th>Revenue</th><th>COGS</th><th>Net income</th><th>Cash</th><th>Assets</th><th>Liabilities</th><th>Debt</th></tr></thead><tbody>

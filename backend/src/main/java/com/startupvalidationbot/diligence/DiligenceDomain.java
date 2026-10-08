@@ -22,7 +22,10 @@ public final class DiligenceDomain {
     }
 
     public record TermProvenance(String sourceType, String sourceUrl,
-            EvidenceClassification classification, String observedAt) {
+            EvidenceClassification classification, String observedAt, String semanticType, String accession) {
+        public TermProvenance(String sourceType, String sourceUrl, EvidenceClassification classification, String observedAt) {
+            this(sourceType, sourceUrl, classification, observedAt, null, null);
+        }
         public TermProvenance(String sourceType, String sourceUrl, EvidenceClassification classification) {
             this(sourceType, sourceUrl, classification, null);
         }

@@ -151,6 +151,10 @@ public class CampaignDiscoveryService {
                         run.status = "OK";
                         if (identity.offeringId() != null) {
                             offerings.attachCampaignUrl(identity.offeringId(), platform, match.candidate().campaignUrl());
+                            offerings.recordCampaignResolution(identity.offeringId(), Map.of(
+                                    "_issuerCampaign.state", "CONFIRMED", "_issuerCampaign.url", match.candidate().campaignUrl(),
+                                    "_issuerCampaign.source", "PUBLIC_DIRECTORY", "_issuerCampaign.sourceUrl", match.candidate().evidenceSource(),
+                                    "_issuerCampaign.observedAt", now.toString(), "_issuerCampaign.reason", match.decision().reason()));
                         }
                         saveCheck(identity, platform, "FOUND", requests, decisions.size(),
                                 "One corroborated public campaign was found.", null, now.plusHours(successCacheHours));

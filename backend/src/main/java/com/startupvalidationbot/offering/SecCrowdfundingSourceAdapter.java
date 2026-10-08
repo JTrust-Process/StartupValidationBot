@@ -81,6 +81,7 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
         int attempts = 0, skipped = 0, requestFailures = 0, parseFailures = 0;
         ExtractionStatus status = ExtractionStatus.UNSUPPORTED_STRUCTURE;
         List<FilingDocument> documents;
+        Candidate successful = null;
         try {
             documents = filingDocuments(indexUrl, client.getText(indexUrl, 1_000_000));
         } catch (RuntimeException error) {
@@ -92,18 +93,31 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
             if (document.size() > DOCUMENT_MAX_BYTES) { skipped++; status = ExtractionStatus.DOCUMENT_TOO_LARGE; continue; }
             if (attempts == DOCUMENT_ATTEMPTS) break;
             attempts++;
-            diagnostics.put("_secDocumentUrl", document.url());
+            if (successful != null && document.rank() < 2) { attempts--; continue; }
+            if (successful == null) diagnostics.put("_secDocumentUrl", document.url());
             try {
-                Candidate parsed = parseSubmission(record, client.getText(document.url(), DOCUMENT_MAX_BYTES));
+                String body = client.getText(document.url(), DOCUMENT_MAX_BYTES);
+                if (successful != null) {
+                    Map<String, String> combined = new TreeMap<>(successful.facts());
+                    SecOfferingTermExtractor.extract(combined, body);
+                    stampTermSources(combined, successful.facts(), document.url());
+                    stampCampaign(combined, body, candidate.accessionNumber(), document.url());
+                    for (String key : List.of("minimumInvestment", "valuationOrCap", "amountRaised", "securityType")) {
+                        if (!java.util.Objects.equals(combined.get("_secTerm.excerpt." + key), successful.facts().get("_secTerm.excerpt." + key))) combined.put("_sourceUrl." + key, document.url());
+                    }
+                    diagnostics.put("_secTermsDocumentUrl", document.url());
+                    successful = withFacts(successful, combined);
+                    continue;
+                }
+                Candidate parsed = parseSubmission(record, body);
                 status = ExtractionStatus.valueOf(parsed.facts().getOrDefault("_secStatus", "UNSUPPORTED_STRUCTURE"));
                 if (status == ExtractionStatus.SUCCESS || status == ExtractionStatus.NO_FACT_PRESENT) {
-                    diagnostics.put("_secDocumentsAttempted", Integer.toString(attempts));
-                    diagnostics.put("_secPrimaryDocumentsAttempted", "1");
-                    diagnostics.put("_secAlternateDocumentsAttempted", Integer.toString(attempts - 1));
-                    diagnostics.put("_secOversizedSkipped", Integer.toString(skipped));
-                    diagnostics.put("_secRequestFailures", Integer.toString(requestFailures));
-                    diagnostics.put("_secParseFailures", Integer.toString(parseFailures));
-                    return extractionResult(candidate, parsed, diagnostics, status);
+                    Map<String, String> sourced = new TreeMap<>(parsed.facts());
+                    stampTermSources(sourced, Map.of(), document.url());
+                    for (String key : List.copyOf(sourced.keySet())) if (!key.startsWith("_")) sourced.put("_sourceUrl." + key, document.url());
+                    stampCampaign(sourced, body, candidate.accessionNumber(), document.url());
+                    successful = withFacts(parsed, sourced);
+                    continue;
                 }
                 if (status == ExtractionStatus.PARSE_FAILED) parseFailures++;
             } catch (SecFilingClient.DocumentTooLarge error) { skipped++; status = ExtractionStatus.DOCUMENT_TOO_LARGE; }
@@ -115,7 +129,8 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
         diagnostics.put("_secOversizedSkipped", Integer.toString(skipped));
         diagnostics.put("_secRequestFailures", Integer.toString(requestFailures));
         diagnostics.put("_secParseFailures", Integer.toString(parseFailures));
-        return extractionResult(candidate, candidate, diagnostics, status);
+        return extractionResult(candidate, successful == null ? candidate : successful, diagnostics,
+                successful == null ? status : ExtractionStatus.SUCCESS);
     }
 
     private static Candidate extractionResult(Candidate original, Candidate parsed, Map<String, String> diagnostics,
@@ -125,7 +140,7 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
         if (original.facts().get("submissionPath") != null) facts.put("submissionPath", original.facts().get("submissionPath"));
         String document = diagnostics.get("_secDocumentUrl");
         if (status == ExtractionStatus.SUCCESS && document != null) {
-            for (String key : List.copyOf(facts.keySet())) if (!key.startsWith("_")) facts.put("_sourceUrl." + key, document);
+            for (String key : List.copyOf(facts.keySet())) if (!key.startsWith("_")) facts.putIfAbsent("_sourceUrl." + key, document);
         }
         return new Candidate(parsed.issuerName(), parsed.issuerCik(), parsed.issuerWebsite(), parsed.platform(),
                 parsed.intermediaryName(), parsed.intermediaryCik(), parsed.offeringUrl(), parsed.secFilingUrl(),
@@ -149,7 +164,8 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
             if (!link.find()) continue;
             String type = plain(cells.get(3)).toUpperCase(Locale.ROOT);
             String description = plain(cells.get(1)).toLowerCase(Locale.ROOT);
-            if (!isOfferingForm(type) && !(type.equals("XML") && description.matches(".*(form c|submission|offering|financial).*"))) continue;
+            boolean termsExhibit = type.startsWith("EX-") && description.matches(".*(offering statement|security instrument|safe agreement|subscription agreement|convertible note|offering terms).*" );
+            if (!isOfferingForm(type) && !termsExhibit && !(type.equals("XML") && description.matches(".*(form c|submission|offering|financial).*"))) continue;
             try {
                 URI url = SecFilingClient.requireOfficialUrl(index.resolve(link.group(1).replace("&amp;", "&")).toString());
                 // A filing cannot nominate unrelated official-host paths or a different accession.
@@ -160,7 +176,7 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
                 if (!xml && !htmlDocument) continue;
                 String sizeText = plain(cells.get(4)).replace(",", "");
                 long size = sizeText.matches("\\d+") ? Long.parseLong(sizeText) : -1;
-                documents.add(new FilingDocument(url.toString(), size, xml ? isOfferingForm(type) ? 0 : 1 : 2));
+                documents.add(new FilingDocument(url.toString(), size, termsExhibit ? 3 : xml ? isOfferingForm(type) ? 0 : 1 : 2));
             } catch (IllegalArgumentException ignored) { /* Unsafe index entries are not fetched. */ }
         }
         return documents.stream().distinct().sorted(java.util.Comparator.comparingInt(FilingDocument::rank)
@@ -216,16 +232,20 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
         put(facts, "targetAmount", tag(xml, "offeringAmount"));
         put(facts, "maximumAmount", tag(xml, "maximumOfferingAmount"));
         put(facts, "deadline", tag(xml, "deadlineDate"));
-        put(facts, "amountRaised", tag(xml, "totalOfferingAmount"));
         put(facts, "minimumInvestment", tag(xml, "minimumInvestment"));
         String cap = tag(xml, "valuationCap");
         put(facts, "valuationOrCap", cap == null ? tag(xml, "valuation") : cap + " cap");
         put(facts, "offeringUrl", tag(xml, "offeringUrl", "campaignUrl"));
         put(facts, "intermediaryWebsite", tag(xml, "intermediaryWebsite"));
+        facts.put("_secForm", record.form());
+        SecOfferingTermExtractor.extract(facts, submission.matches("(?is).*<(?:html|table)\\b.*") ? submission : "");
+        if (submission.matches("(?is).*<(?:html|table)\\b.*") && facts.keySet().stream().anyMatch(key -> key.startsWith("_secTerm.fact."))) facts.put("_secStatus", "SUCCESS");
+        var identity = IntermediaryRegistry.stamp(facts, record.accession());
+        stampCampaign(facts, submission, record.accession(), filingIndexUrl(record.cik(), record.accession()));
         String filingUrl = filingIndexUrl(record.cik(), record.accession());
         String intermediary = facts.get("intermediaryName");
         return new Candidate(value(tag(xml, "nameOfIssuer"), record.issuerName()), padCik(record.cik()),
-                facts.get("issuerWebsite"), PlatformNormalizer.normalize(intermediary), intermediary,
+                facts.get("issuerWebsite"), identity.family() == null ? "UNKNOWN" : identity.family(), intermediary,
                 facts.get("intermediaryCik"), publicOfferingUrl(facts), filingUrl, record.accession(),
                 facts.get("fileNumber"), record.form(), record.filingDate(), facts.get("securityType"),
                 decimal(facts.get("minimumInvestment")), decimal(facts.get("targetAmount")),
@@ -252,14 +272,18 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
             String intermediary = issuer.get("COMPANYNAME");
             Map<String, String> facts = new TreeMap<>();
             facts.putAll(nonBlank(submission)); facts.putAll(nonBlank(issuer)); facts.putAll(nonBlank(disclosure));
+            facts.put("_secForm", form);
+            SecOfferingTermExtractor.extract(facts, "");
+            var identity = IntermediaryRegistry.stamp(facts, accession);
+            stampCampaign(facts, String.join("\n", facts.values()), accession, filingIndexUrl(cik, accession));
             candidates.add(new Candidate(issuerName, padCik(cik), issuer.get("ISSUERWEBSITE"),
-                    PlatformNormalizer.normalize(intermediary), intermediary, issuer.get("COMMISSIONCIK"),
+                    identity.family() == null ? "UNKNOWN" : identity.family(), intermediary, issuer.get("COMMISSIONCIK"),
                     publicOfferingUrl(facts), filingIndexUrl(cik, accession), accession,
                     value(submission.get("FILE_NUMBER"), issuer.get("COMMISSIONFILENUMBER")), form,
-                    compactDate(submission.get("FILING_DATE")), disclosure.get("SECURITYOFFEREDTYPE"), null,
+                    compactDate(submission.get("FILING_DATE")), facts.getOrDefault("securityType", disclosure.get("SECURITYOFFEREDTYPE")), decimal(facts.get("minimumInvestment")),
                     decimal(disclosure.get("OFFERINGAMOUNT")), decimal(disclosure.get("MAXIMUMOFFERINGAMOUNT")),
-                    null, compactDate(disclosure.get("DEADLINEDATE")),
-                    decimal(disclosure.get("TOTALOFFERINGAMOUNT")), "SEC_CF_DATASET", Map.copyOf(facts),
+                    facts.get("valuationOrCap"), compactDate(disclosure.get("DEADLINEDATE")),
+                    decimal(facts.get("amountRaised")), "SEC_CF_DATASET", Map.copyOf(facts),
                     disclosure.isEmpty() ? RetrievalQuality.PARTIAL_DETAIL : RetrievalQuality.DETAIL_COMPLETE));
         });
         return candidates;
@@ -388,6 +412,7 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
     }
 
     private static String publicOfferingUrl(Map<String, String> facts) {
+        if ("CONFIRMED".equals(facts.get("_secCampaign.state"))) return facts.get("_secCampaign.url");
         for (String key : List.of("OFFERINGURL", "offeringUrl")) {
             String value = facts.get(key);
             if (value != null) {
@@ -396,6 +421,35 @@ public class SecCrowdfundingSourceAdapter implements OfferingSourceAdapter {
             }
         }
         return null;
+    }
+
+    private static void stampCampaign(Map<String, String> facts, String text, String accession, String sourceUrl) {
+        java.util.Set<String> urls = ExplicitCampaignLinks.find(text);
+        String explicit = IntermediaryRegistry.value(facts, "offeringUrl", "CAMPAIGNURL");
+        if (explicit != null && ExplicitCampaignLinks.canonical(explicit) != null) urls.add(ExplicitCampaignLinks.canonical(explicit));
+        if (urls.isEmpty()) return;
+        facts.put("_secCampaign.state", urls.size() == 1 ? "CONFIRMED" : "AMBIGUOUS");
+        facts.put("_secCampaign.reason", urls.size() == 1 ? "Exact campaign URL explicitly present in issuer SEC filing" : "Multiple explicit campaign URLs require issuer review");
+        facts.put("_secCampaign.candidates", String.join("\n", urls));
+        facts.put("_secCampaign.sourceUrl", sourceUrl);
+        facts.put("_secCampaign.accession", accession);
+        facts.put("_secCampaign.observedAt", java.time.LocalDateTime.now().toString());
+        if (urls.size() == 1) facts.put("_secCampaign.url", urls.iterator().next());
+    }
+
+    private static Candidate withFacts(Candidate c, Map<String, String> facts) {
+        return new Candidate(c.issuerName(), c.issuerCik(), c.issuerWebsite(), c.platform(), c.intermediaryName(), c.intermediaryCik(),
+                publicOfferingUrl(facts), c.secFilingUrl(), c.accessionNumber(), c.fileNumber(), c.filingType(), c.filingDate(),
+                facts.get("securityType"), decimal(facts.get("minimumInvestment")), c.targetAmount(), c.maximumAmount(),
+                facts.get("valuationOrCap"), c.deadline(), decimal(facts.get("amountRaised")), c.source(), Map.copyOf(facts), c.retrievalQuality());
+    }
+
+    private static void stampTermSources(Map<String, String> facts, Map<String, String> previous, String documentUrl) {
+        for (String key : List.copyOf(facts.keySet())) {
+            if (key.startsWith("_secTerm.fact.") && key.endsWith(".excerpt") && !java.util.Objects.equals(facts.get(key), previous.get(key))) {
+                facts.put(key.substring(0, key.length() - 8) + ".sourceUrl", documentUrl);
+            }
+        }
     }
 
     private static boolean isOfferingForm(String value) {

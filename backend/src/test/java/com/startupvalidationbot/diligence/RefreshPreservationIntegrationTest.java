@@ -51,6 +51,61 @@ class RefreshPreservationIntegrationTest {
     @Autowired EvidenceReconciler reconciler;
     long companyId;
 
+    @ParameterizedTest @ValueSource(strings = { "extended", "completed", "terminated", "withdrawn" })
+    void filedLifecycleAmendmentsAreDistinctAndPreserveTerms(String action) {
+        Offering first = initial("SAFE", "100000", "1050000", "2027-08-17");
+        Candidate base = candidate("0001234567-26-000082", "C-U/A", RetrievalQuality.DETAIL_COMPLETE,
+                "SAFE", "100000", "1050000", "2027-11-30", "https://refresh.example");
+        Map<String, String> facts = new java.util.TreeMap<>(Map.of("PROGRESSUPDATE", "The offering was " + action + "."));
+        SecOfferingTermExtractor.extract(facts, "");
+        Candidate updated = new Candidate(base.issuerName(), base.issuerCik(), base.issuerWebsite(), base.platform(),
+                base.intermediaryName(), base.intermediaryCik(), base.offeringUrl(), base.secFilingUrl(), base.accessionNumber(),
+                base.fileNumber(), base.filingType(), base.filingDate(), base.securityType(), base.minimumInvestment(),
+                base.targetAmount(), base.maximumAmount(), base.valuationOrCap(), base.deadline(), base.amountRaised(),
+                base.source(), facts, base.retrievalQuality());
+        Offering saved = offerings.upsert(updated, confirmed()).offering();
+        Status expected = switch (action) { case "completed" -> Status.ENDED; case "terminated" -> Status.TERMINATED;
+            case "withdrawn" -> Status.WITHDRAWN; default -> Status.ACTIVE; };
+        assertThat(saved.id()).isEqualTo(first.id());
+        assertThat(saved.status()).isEqualTo(expected);
+        assertThat(saved.deadline()).isEqualTo(LocalDate.of(2027, 11, 30));
+        assertThat(saved.minimumInvestment()).isEqualByComparingTo("100");
+        assertThat(saved.targetAmount()).isEqualByComparingTo("100000");
+        assertThat(saved.matchStatus()).isEqualTo(MatchStatus.CONFIRMED);
+    }
+
+    @Test void finalCompletedRaisePersistsToPacketWithAccessionDocumentAndObservation() {
+        Candidate base = candidate(ACCESSION, "C-U", RetrievalQuality.DETAIL_COMPLETE, "SAFE", "100000", "1050000", "2027-08-17", "https://refresh.example");
+        Map<String, String> facts = new java.util.TreeMap<>(Map.of("PROGRESSUPDATE",
+                "The Offering closed early on September 28, 2026 with a final raise amount of $62,562.45.",
+                "_secForm", "C-U", "_secDocumentUrl", "https://www.sec.gov/Archives/primary_doc.xml"));
+        SecOfferingTermExtractor.extract(facts, "");
+        Candidate observed = new Candidate(base.issuerName(), base.issuerCik(), base.issuerWebsite(), base.platform(),
+                base.intermediaryName(), base.intermediaryCik(), base.offeringUrl(), base.secFilingUrl(), base.accessionNumber(),
+                base.fileNumber(), base.filingType(), base.filingDate(), base.securityType(), base.minimumInvestment(),
+                base.targetAmount(), base.maximumAmount(), base.valuationOrCap(), base.deadline(), new BigDecimal(facts.get("amountRaised")),
+                base.source(), facts, base.retrievalQuality());
+        Offering saved = offerings.upsert(observed, confirmed()).offering();
+        var terms = EffectiveOfferingTerms.resolve(saved, null, offerings.facts(saved.id()));
+        assertThat(terms.amountRaised()).isEqualByComparingTo("62562.45");
+        var provenance = terms.provenance().get("amountRaised");
+        assertThat(provenance.accession()).isEqualTo(ACCESSION);
+        assertThat(provenance.sourceUrl()).isEqualTo("https://www.sec.gov/Archives/primary_doc.xml");
+        assertThat(provenance.observedAt()).isNotBlank();
+        assertThat(provenance.semanticType()).isEqualTo("FINAL_COMPLETED_RAISE");
+        diligence.savePacket(packet(saved, List.of(evidence(saved, "amount_raised", "62562.45"))));
+        assertThat(diligence.findByOffering(saved.id()).orElseThrow().amountRaised()).isEqualByComparingTo("62562.45");
+        offerings.upsert(candidate(ACCESSION, "C-U", RetrievalQuality.INDEX_ONLY, null, null, null, null, null), weak());
+        assertThat(offerings.find(saved.id()).orElseThrow().amountRaised()).isEqualByComparingTo("62562.45");
+    }
+
+    @Test void suppressedNotificationHistoryIsRetainedButNeverSelectedForSending() {
+        diligence.queueNotification("NEW_CONFIRMED_OFFERING", "OFFERING", 42, "suppressed-fixture", "owner@example.com", "Fixture", "Research", "<p>Research</p>");
+        jdbc.update("UPDATE radar_notification_events SET status='SUPPRESSED' WHERE fingerprint='suppressed-fixture'");
+        assertThat(diligence.pendingNotifications(10)).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM radar_notification_events WHERE status='SUPPRESSED'", Integer.class)).isEqualTo(1);
+    }
+
     @BeforeEach
     void company() {
         var now = LocalDateTime.now();
@@ -96,6 +151,52 @@ class RefreshPreservationIntegrationTest {
         assertThat(next.maximumAmount()).isEqualByComparingTo("4989800");
         assertThat(next.deadline()).isEqualTo("2027-08-11");
         assertThat(next.id()).isEqualTo(first.id());
+    }
+
+    @Test void v12bTypedTermsPersistWithoutMigrationAndAmbiguityOnlyBlocksEffectiveProjection() {
+        Offering first = initial("Other", "100000", "1050000", "2027-08-17");
+        Map<String, String> facts = new java.util.TreeMap<>(offerings.facts(first.id()));
+        facts.put("SECURITYOFFEREDTYPE", "Other"); facts.put("SECURITYOFFEREDOTHERDESC", "Simple Agreement for Future Equity (SAFE)");
+        facts.put("intermediaryCik", "0001751525"); facts.put("intermediaryName", "OpenDeal Portal LLC");
+        SecOfferingTermExtractor.extract(facts, "Minimum Investment: $250. Post-Money Valuation Cap: $16M.");
+        Candidate original = offerings.storedCandidate(first.id());
+        Candidate updated = new Candidate(original.issuerName(), original.issuerCik(), original.issuerWebsite(), "Republic",
+                original.intermediaryName(), "0001751525", original.offeringUrl(), original.secFilingUrl(), original.accessionNumber(),
+                original.fileNumber(), original.filingType(), original.filingDate(), "SAFE", new BigDecimal("250"), original.targetAmount(),
+                original.maximumAmount(), "16000000 cap", original.deadline(), original.amountRaised(), original.source(), facts, RetrievalQuality.DETAIL_COMPLETE);
+        Offering saved = offerings.upsert(updated, confirmed()).offering();
+        assertThat(saved.minimumInvestment()).isEqualByComparingTo("250");
+        assertThat(saved.securityType()).isEqualTo("SAFE");
+        var projected = EffectiveOfferingTerms.resolve(saved, null, offerings.facts(saved.id()));
+        assertThat(projected.platformIdentityStatus()).startsWith("SEC_CONFIRMED");
+        assertThat(projected.provenance().get("valuationCap").semanticType()).isEqualTo("POST_MONEY_VALUATION_CAP");
+        facts.put("_secTerm.ambiguity.valuationOrCap", "Multiple conditional caps");
+        Candidate ambiguous = new Candidate(updated.issuerName(), updated.issuerCik(), updated.issuerWebsite(), updated.platform(),
+                updated.intermediaryName(), updated.intermediaryCik(), updated.offeringUrl(), updated.secFilingUrl(), updated.accessionNumber(),
+                updated.fileNumber(), updated.filingType(), updated.filingDate(), null, null, null, null, null, null, null, updated.source(), facts, RetrievalQuality.PARTIAL_DETAIL);
+        saved = offerings.upsert(ambiguous, weak()).offering();
+        assertThat(saved.valuationOrCap()).isEqualTo("16000000 cap");
+        assertThat(EffectiveOfferingTerms.resolve(saved, null, offerings.facts(saved.id())).valuationCap()).isNull();
+        assertThat(saved.matchStatus()).isEqualTo(MatchStatus.CONFIRMED);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_notification_events", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM deal_workspaces", Integer.class)).isZero();
+    }
+
+    @Test void explicitCUCompletionSurvivesMissingRefreshAndCampaignFailureDoesNotEraseTerms() {
+        Offering first = initial("SAFE", "100000", "1050000", "2027-08-17");
+        Candidate prior = offerings.storedCandidate(first.id());
+        Map<String, String> facts = new java.util.TreeMap<>();
+        SecOfferingTermExtractor.extract(facts, "The offering completed. Total amount of securities sold: $2,999,063.75");
+        Candidate closed = new Candidate(prior.issuerName(), prior.issuerCik(), prior.issuerWebsite(), prior.platform(), prior.intermediaryName(),
+                prior.intermediaryCik(), null, prior.secFilingUrl(), "0001234567-26-000082", prior.fileNumber(), "C-U", LocalDate.of(2026, 8, 2),
+                null, null, null, null, null, null, new BigDecimal("2999063.75"), prior.source(), facts, RetrievalQuality.DETAIL_COMPLETE);
+        Offering saved = offerings.upsert(closed, confirmed()).offering();
+        assertThat(saved.status()).isEqualTo(Status.ENDED);
+        offerings.recordCampaignResolution(saved.id(), Map.of("_issuerCampaign.fetchStatus", "HTTP_403"));
+        var retained = offerings.upsert(candidate(closed.accessionNumber(), "C-U", RetrievalQuality.INDEX_ONLY, null, null, null, null, null), weak()).offering();
+        assertThat(retained.amountRaised()).isEqualByComparingTo("2999063.75"); assertThat(retained.status()).isEqualTo(Status.ENDED);
+        assertThat(retained.minimumInvestment()).isEqualByComparingTo("100"); assertThat(retained.matchStatus()).isEqualTo(MatchStatus.CONFIRMED);
+        assertThat(retained.offeringUrl()).isEqualTo(first.offeringUrl());
     }
 
     @Test
@@ -325,7 +426,7 @@ class RefreshPreservationIntegrationTest {
                 EvidenceClassification.SEC_FILED_FACT, 95, "Retained filed value", Map.of("accessionNumber", offering.accessionNumber()));
     }
     private PacketDraft packet(Offering offering, List<EvidenceDraft> facts) {
-        var terms = EffectiveOfferingTerms.resolve(offering, null);
+        var terms = EffectiveOfferingTerms.resolve(offering, null, offerings.facts(offering.id()));
         return new PacketDraft(companyId, offering.id(), PacketStatus.PARTIAL, "CONFIRMED",
                 AutonomousDiligenceService.completeness(offering, terms, List.of()), 95, "Public fixture",
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of("SEC_EDGAR"), List.of(),

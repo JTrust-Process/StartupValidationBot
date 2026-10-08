@@ -14,6 +14,14 @@ import com.startupvalidationbot.diligence.discovery.CampaignDiscoveryDomain.Iden
 class CampaignIdentityVerifierTest {
     private final CampaignIdentityVerifier verifier = new CampaignIdentityVerifier();
 
+    @Test void exactIdentityCannotConfirmUnknownOrGuessedUrlLineage() {
+        for (String source : List.of("UNKNOWN", "TARGETED_CANONICAL_PROBE", "NAME_DERIVED")) {
+            var guessed = new CampaignCandidate("STARTENGINE", "https://www.startengine.com/offering/bloomy", "Bloomy",
+                    "joinbloomy.com", "ACTIVE", "bloomy", source, 99, Map.of());
+            assertThat(verifier.verify(identity(true), guessed).status()).isEqualTo(IdentityStatus.REJECTED);
+        }
+    }
+
     @Test
     void confirmsOnlyWithCorroboratingDomainOrSecIntermediary() {
         assertThat(verifier.verify(identity(true), candidate("Bloomy", "joinbloomy.com")).status())
@@ -52,6 +60,6 @@ class CampaignIdentityVerifierTest {
 
     private static CampaignCandidate candidate(String name, String domain) {
         return new CampaignCandidate("STARTENGINE", "https://www.startengine.com/offering/bloomy", name,
-                domain, "ACTIVE", "bloomy", "PUBLIC_DIRECTORY", 80, Map.of());
+                domain, "ACTIVE", "bloomy", "https://www.startengine.com/explore", 80, Map.of());
     }
 }

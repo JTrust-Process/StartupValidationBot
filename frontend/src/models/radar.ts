@@ -314,6 +314,8 @@ export interface DiligenceTermProvenance {
   sourceUrl: string | null;
   classification: 'SEC_FILED_FACT' | 'PLATFORM_ISSUER_CLAIM';
   observedAt?: string | null;
+  semanticType?: string | null;
+  accession?: string | null;
 }
 
 export interface DiligencePacket {

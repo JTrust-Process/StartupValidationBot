@@ -104,7 +104,7 @@ class CampaignDiscoveryServiceTest {
         when(discoverer.capability()).thenReturn("PUBLIC_DIRECTORY");
         when(discoverer.discover(any(), anyInt(), any())).thenReturn(DiscoveryAttempt.success(
                 List.of(new CampaignCandidate("STARTENGINE", "https://www.startengine.com/offering/company-1",
-                        "Company 1", "company1.example", "ACTIVE", "company-1", "PUBLIC_DIRECTORY", 85,
+                        "Company 1", "company1.example", "ACTIVE", "company-1", "https://www.startengine.com/explore", 85,
                         Map.of())), "PUBLIC_DIRECTORY"));
         when(radar.listCompanies()).thenReturn(List.of(company(1)));
         when(offerings.list(null, null, null, null)).thenReturn(List.of());
@@ -120,7 +120,7 @@ class CampaignDiscoveryServiceTest {
     }
 
     @Test
-    void resolvesBloomyStyleLikelySecOfferingWhenIntermediaryAndNameAgree() {
+    void rejectsLegacyGuessedCandidateEvenWhenIntermediaryAndNameAgree() {
         CampaignDiscoveryStore store = mock(CampaignDiscoveryStore.class);
         OfferingStore offerings = mock(OfferingStore.class);
         RadarStore radar = mock(RadarStore.class);
@@ -150,10 +150,9 @@ class CampaignDiscoveryServiceTest {
         var result = service.discover();
 
         assertThat(result.wefunderSearches()).isEqualTo(1);
-        assertThat(result.campaignsConfirmed()).isEqualTo(1);
-        verify(offerings).attachCampaignUrl(2L, "WEFUNDER", "https://wefunder.com/bloomy");
-        verify(diligence).availability(1L, "WEFUNDER", "FOUND",
-                "A corroborated public campaign URL was discovered and saved.", null);
+        assertThat(result.campaignsConfirmed()).isZero();
+        assertThat(result.campaignsRejected()).isEqualTo(1);
+        verify(offerings, never()).attachCampaignUrl(anyLong(), any(), any());
     }
 
     @Test
@@ -223,7 +222,7 @@ class CampaignDiscoveryServiceTest {
 
     private static CampaignCandidate candidate(String url) {
         return new CampaignCandidate("STARTENGINE", url, "Bloomy", "joinbloomy.com", "ACTIVE", "bloomy",
-                "PUBLIC_DIRECTORY", 85, Map.of());
+                "https://www.startengine.com/explore", 85, Map.of());
     }
 
     private record Fixture(CampaignDiscoveryService service, CampaignDiscoveryStore store,

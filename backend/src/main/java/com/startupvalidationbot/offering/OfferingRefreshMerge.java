@@ -56,7 +56,9 @@ public final class OfferingRefreshMerge {
                 previous == null ? null : previous.intermediaryCik());
         String url = values.field("offeringUrl", detail ? known(incoming.offeringUrl()) : null,
                 previous == null ? null : previous.offeringUrl());
-        String security = values.field("securityType", detail ? security(incoming.securityType()) : null,
+        String incomingSecurity = detail ? security(incoming.securityType()) : null;
+        if ("Other".equals(incomingSecurity) && previous != null && previous.securityType() != null && !"Other".equals(previous.securityType())) incomingSecurity = null;
+        String security = values.field("securityType", incomingSecurity,
                 previous == null ? null : previous.securityType());
         BigDecimal minimum = values.field("minimumInvestment", detail ? positive(incoming.minimumInvestment()) : null,
                 previous == null ? null : previous.minimumInvestment());
@@ -137,18 +139,29 @@ public final class OfferingRefreshMerge {
         public String sourceUrl;
         public String accession;
         private final LocalDateTime now;
+        private final Map<String, String> incomingMetadata;
         public Values(Map<String, String> previous, Map<String, String> incoming, LocalDateTime now) {
             this.now = now;
+            this.incomingMetadata = incoming;
             facts.putAll(previous);
+            if ("true".equals(incoming.get("_secTerm.parsed"))) {
+                facts.keySet().removeIf(key -> key.startsWith("_secTerm.ambiguity.") || key.startsWith("_secTerm.fact."));
+            }
             incoming.forEach((key, value) -> { if (!key.startsWith("_") && known(value) != null) facts.put(key, value); });
-            incoming.forEach((key, value) -> { if (key.startsWith("_sec") && value != null) facts.put(key, value); });
+            incoming.forEach((key, value) -> {
+                if (key.startsWith("_sec") && value != null && !(key.startsWith("_secPlatform.")
+                        && "UNKNOWN".equals(incoming.get("_secPlatform.state"))
+                        && previous.containsKey("_secPlatform.family"))) facts.put(key, value);
+                if (key.startsWith("_sourceUrl.") && value != null) facts.put(key, value);
+            });
         }
         public <T> T field(String key, T incoming, T previous) {
             if (incoming != null) {
                 facts.put(key, incoming.toString());
                 if (now != null) facts.put("_observedAt." + key, now.toString());
-                if (sourceUrl != null) facts.put("_sourceUrl." + key, sourceUrl);
+                if (sourceUrl != null) facts.put("_sourceUrl." + key, incomingMetadata.getOrDefault("_sourceUrl." + key, sourceUrl));
                 if (accession != null) facts.put("_accession." + key, accession);
+                if (incomingMetadata.get("_secForm") != null) facts.put("_form." + key, incomingMetadata.get("_secForm"));
             } else if (previous != null) {
                 facts.put(key, previous.toString());
             }

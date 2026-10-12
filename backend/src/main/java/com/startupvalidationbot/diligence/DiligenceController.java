@@ -22,11 +22,18 @@ import jakarta.servlet.http.HttpServletRequest;
 public class DiligenceController {
     private final DiligenceStore store;
     private final AutonomousDiligenceService service;
+    private final ResearchTriageService triage;
     private final com.startupvalidationbot.diligence.notification.DiligenceNotificationService notifications;
 
     public DiligenceController(DiligenceStore store, AutonomousDiligenceService service,
-            com.startupvalidationbot.diligence.notification.DiligenceNotificationService notifications) {
-        this.store = store; this.service = service; this.notifications = notifications;
+            com.startupvalidationbot.diligence.notification.DiligenceNotificationService notifications, ResearchTriageService triage) {
+        this.store = store; this.service = service; this.notifications = notifications; this.triage = triage;
+    }
+
+    @GetMapping("/diligence/triage")
+    public ResearchTriage.Queue triage(HttpServletRequest request) {
+        browserOnly(request);
+        return triage.queue();
     }
 
     @GetMapping("/diligence")

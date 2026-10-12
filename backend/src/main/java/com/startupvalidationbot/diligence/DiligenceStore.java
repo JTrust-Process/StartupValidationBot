@@ -300,6 +300,21 @@ public class DiligenceStore {
                 .findFirst().map(this::packet);
     }
 
+    public List<ResearchTriage.Input> researchInputs() {
+        var filings = new java.util.HashMap<Long, List<ResearchTriage.Filing>>();
+        jdbc.query("""
+                SELECT f.offering_id,f.accession_number,f.filing_type,f.filing_date,f.filing_url
+                FROM radar_offering_filings f JOIN radar_diligence_packets p ON p.offering_id=f.offering_id
+                ORDER BY f.filing_date,f.id
+                """, (org.springframework.jdbc.core.RowCallbackHandler) rs -> filings.computeIfAbsent(rs.getLong(1), ignored -> new ArrayList<>())
+                .add(new ResearchTriage.Filing(rs.getString(2), rs.getString(3), rs.getObject(4, LocalDate.class), rs.getString(5))));
+        return jdbc.query(packetSelect() + " ORDER BY p.id", packetRowMapper()).stream().map(row ->
+                new ResearchTriage.Input(packet(row), row.offeringStatus, row.matchStatus, row.matchConfidence,
+                        row.offeringTerms.facts().get("_secTerm.lifecycle"), "true".equals(row.offeringTerms.facts().get("_secTerm.completed")),
+                        row.offeringTerms.facts().get("_issuerCampaign.fetchStatus"), row.lastAttemptAt,
+                        List.copyOf(filings.getOrDefault(row.offeringId, List.of())))).toList();
+    }
+
     @Transactional
     public synchronized void availability(long companyId, String sourceType, String status, String summary, String question) {
         int updated = jdbc.update("""
@@ -524,6 +539,8 @@ public class DiligenceStore {
 
     private String packetSelect() { return """
             SELECT p.*,c.name company_name,o.platform,o.offering_url,o.sec_filing_url,
+              o.status offering_status,o.match_status offering_match_status,o.match_confidence offering_match_confidence,
+              o.last_diligence_attempt_at,
               o.provenance offering_provenance,o.platform_status offering_platform_status,
               o.security_type offering_security_type,o.minimum_investment offering_minimum_investment,
               o.target_amount offering_target_amount,o.maximum_amount offering_maximum_amount,
@@ -574,7 +591,9 @@ public class DiligenceStore {
                 rs.getString("bear_case"), rs.getString("key_risks"), rs.getString("unanswered_questions"),
                 rs.getString("material_discrepancies"), rs.getString("next_monitoring_milestones"),
                 rs.getString("sources_checked"), rs.getString("data_not_found"), time(rs.getTimestamp("generated_at")),
-                time(rs.getTimestamp("last_refreshed_at")), time(rs.getTimestamp("reviewed_at")));
+                time(rs.getTimestamp("last_refreshed_at")), time(rs.getTimestamp("reviewed_at")),
+                rs.getString("offering_status"), rs.getString("offering_match_status"), rs.getInt("offering_match_confidence"),
+                time(rs.getTimestamp("last_diligence_attempt_at")));
         };
     }
 
@@ -623,5 +642,5 @@ public class DiligenceStore {
             String status,String identityStatus,int completeness,int confidence,String summary,
             String bullCase,String bearCase,String keyRisks,String questions,String discrepancies,String milestones,
             String sources,String dataNotFound,LocalDateTime generatedAt,LocalDateTime refreshedAt,
-            LocalDateTime reviewedAt) { }
+            LocalDateTime reviewedAt,String offeringStatus,String matchStatus,int matchConfidence,LocalDateTime lastAttemptAt) { }
 }

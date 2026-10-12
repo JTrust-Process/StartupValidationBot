@@ -23,6 +23,7 @@ import type {
   RadarOffering,
   OfferingDiagnostics,
   DiligencePacket,
+  ResearchQueue,
   CompanyInvestmentAvailability,
   AutonomousDiligenceDiagnostics
 } from '../models/radar';
@@ -211,6 +212,10 @@ export function getOfferingDiagnostics(): Promise<OfferingDiagnostics> {
 export function listDiligencePackets(status?: string): Promise<DiligencePacket[]> {
   const query = status ? `?status=${encodeURIComponent(status)}` : '';
   return request<DiligencePacket[]>(`/diligence${query}`);
+}
+
+export function getResearchQueue(): Promise<ResearchQueue> {
+  return request<ResearchQueue>('/diligence/triage');
 }
 
 export function getDiligencePacket(packetId: number): Promise<DiligencePacket> {

@@ -86,6 +86,7 @@ class RadarStoreIntegrationTest {
         mockMvc.perform(get("/api/radar/sources")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/radar/trends")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/radar/diligence")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/radar/diligence/triage")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/radar/companies/{id}/investment-availability", company.id()))
                 .andExpect(status().isUnauthorized());
 
@@ -99,6 +100,8 @@ class RadarStoreIntegrationTest {
         mockMvc.perform(get("/api/radar/admin/companies").header("Authorization", "Bearer test-token"))
                 .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/radar/diligence").header("Authorization", "Bearer test-token"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/radar/diligence/triage").header("Authorization", "Bearer test-token"))
                 .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/radar/jobs/discovery").contentType("application/json").content("{}"))
                 .andExpect(status().isUnauthorized());

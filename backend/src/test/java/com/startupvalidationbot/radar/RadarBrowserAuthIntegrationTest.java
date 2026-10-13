@@ -177,6 +177,24 @@ class RadarBrowserAuthIntegrationTest {
     }
 
     @Test
+    void researchTriageRequiresValidBrowserSessionAndLosesAccessOnLogout() throws Exception {
+        mockMvc.perform(get("/api/radar/diligence/triage")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/radar/diligence/triage")
+                .cookie(new MockCookie(RadarBrowserAuthService.COOKIE_NAME, "invalid-session")))
+                .andExpect(status().isUnauthorized());
+        var expired = sessions.issue(Duration.ofSeconds(-1));
+        mockMvc.perform(get("/api/radar/diligence/triage")
+                .cookie(new MockCookie(RadarBrowserAuthService.COOKIE_NAME, expired.token())))
+                .andExpect(status().isUnauthorized());
+        MockCookie cookie = loginCookie("198.51.100.80");
+        mockMvc.perform(get("/api/radar/diligence/triage").cookie(cookie))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value("research-triage-v1"));
+        mockMvc.perform(post("/api/radar/auth/logout").cookie(cookie).header("Origin", "https://radar.example"))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/radar/diligence/triage").cookie(cookie)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void throttlesRepeatedInvalidPasswordsAndKeepsWorkerAuthSeparate() throws Exception {
         for (int attempt = 0; attempt < 5; attempt++) {
             mockMvc.perform(post("/api/radar/auth/login")

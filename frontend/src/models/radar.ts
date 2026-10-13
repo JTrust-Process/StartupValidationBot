@@ -367,6 +367,43 @@ export interface InvestmentAvailabilityCheck {
   checkedAt: string;
 }
 
+export type ResearchCategory = 'TIME_SENSITIVE' | 'SUBSTANTIVE_RESEARCH' | 'INVESTIGATE' | 'BLOCKED' | 'ENDED';
+export type ResearchLifecycle = 'ACTIVE' | 'POSSIBLY_ACTIVE' | 'UNKNOWN' | 'ENDED' | 'WITHDRAWN' | 'TERMINATED';
+export interface ResearchSupport {
+  field: string;
+  value: string;
+  sourceUrl: string | null;
+  evidenceId: number | null;
+  classification: string;
+  observedAt: string | null;
+  reference: string | null;
+}
+export interface ResearchReason {
+  code: string;
+  explanation: string;
+  weight: number;
+  supports: ResearchSupport[];
+}
+export interface ResearchEntry {
+  packet: DiligencePacket;
+  lifecycle: ResearchLifecycle;
+  category: ResearchCategory;
+  researchPriority: number;
+  currentIdentityStatus: string;
+  currentIdentityConfidence: number;
+  latestEvidenceAt: string | null;
+  reasons: ResearchReason[];
+  questions: string[];
+}
+export interface ResearchQueue {
+  version: string;
+  evaluatedAt: string;
+  deadlineDate: string;
+  timeZone: string;
+  attention: ResearchEntry[];
+  entries: ResearchEntry[];
+}
+
 export interface CompanyInvestmentAvailability {
   companyId: number;
   lastFullCheck: string | null;

@@ -32,6 +32,7 @@ class DiligenceStoreIntegrationTest {
     @Autowired DiligenceStore store;
     @Autowired OfferingStore offerings;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.fasterxml.jackson.databind.ObjectMapper json;
 
     @Test
     void campaignPacketEvidenceFinancialAndNotificationWritesAreIdempotent() {
@@ -146,6 +147,79 @@ class DiligenceStoreIntegrationTest {
 
     private PlatformCampaign campaign(long offeringId, String fingerprint) {
         return campaign(offeringId, "SEC_OFFERING_URL", fingerprint);
+    }
+
+    @Test
+    void researchQueueUsesCanonicalLifecycleAndIdentityWithoutMutatingOrChangingRefreshSelection() {
+        long companyId = company();
+        long offeringId = offerings.upsert(candidate(), new Match(companyId, MatchStatus.CONFIRMED, 100, "matched")).offering().id();
+        PacketDraft base = packet(companyId, offeringId, "triage");
+        long packetId = store.savePacket(base).id();
+        LocalDateTime now = LocalDateTime.now();
+        var beforeSelection = store.selectOfferings(25, now);
+        var beforePacket = store.find(packetId).orElseThrow();
+        int evidenceCount = jdbc.queryForObject("SELECT COUNT(*) FROM radar_diligence_evidence", Integer.class);
+        int jobs = jdbc.queryForObject("SELECT COUNT(*) FROM radar_job_runs", Integer.class);
+        int notices = jdbc.queryForObject("SELECT COUNT(*) FROM radar_notification_events", Integer.class);
+        for (int i = 0; i < 2; i++) {
+            var queue = ResearchTriage.queue(store.researchInputs(), now, now.toLocalDate(), "America/New_York");
+            assertThat(queue.entries()).hasSize(1);
+            assertThat(queue.entries().get(0).packet()).isEqualTo(beforePacket);
+            assertThat(queue.attention()).hasSize(1);
+        }
+        assertThat(store.selectOfferings(25, now)).isEqualTo(beforeSelection);
+        assertThat(store.find(packetId).orElseThrow()).isEqualTo(beforePacket);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_diligence_evidence", Integer.class)).isEqualTo(evidenceCount);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_job_runs", Integer.class)).isEqualTo(jobs);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM radar_notification_events", Integer.class)).isEqualTo(notices);
+        jdbc.update("UPDATE radar_offerings SET status='ENDED',match_status='AMBIGUOUS',match_confidence=40 WHERE id=?", offeringId);
+        var historical = ResearchTriage.queue(store.researchInputs(), now, now.toLocalDate(), "America/New_York");
+        assertThat(historical.attention()).isEmpty();
+        assertThat(historical.entries().get(0).lifecycle()).isEqualTo(ResearchTriage.Lifecycle.ENDED);
+        assertThat(historical.entries().get(0).currentIdentityStatus()).isEqualTo("AMBIGUOUS");
+        assertThat(historical.entries().get(0).packet().identityStatus()).isEqualTo("CONFIRMED");
+        assertThat(historical.entries().get(0).packet().status()).isEqualTo(base.status());
+    }
+
+    @Test
+    void researchQueueLoadsSourceBlockingAmendmentDatesAndDeadlineProvenance() {
+        long companyId = company();
+        long offeringId = offerings.upsert(candidate(), new Match(companyId, MatchStatus.LIKELY, 60, "investigate")).offering().id();
+        store.savePacket(packet(companyId, offeringId, "triage-blocked"));
+        LocalDateTime now = LocalDateTime.of(2026, 10, 8, 16, 0);
+        jdbc.update("UPDATE radar_offerings SET provenance='SEC_EDGAR',deadline=?,raw_facts_json=?,last_diligence_attempt_at=? WHERE id=?",
+                now.plusDays(2).toLocalDate(), "{\"_issuerCampaign.fetchStatus\":\"HTTP_403\"}", now.minusDays(20), offeringId);
+        jdbc.update("UPDATE radar_offering_filings SET filing_type='C/A',filing_date=? WHERE offering_id=?", now.minusDays(1).toLocalDate(), offeringId);
+        var entry = ResearchTriage.queue(store.researchInputs(), now, now.toLocalDate(), "America/New_York").entries().get(0);
+        assertThat(entry.category()).isEqualTo(ResearchTriage.Category.TIME_SENSITIVE);
+        assertThat(entry.currentIdentityStatus()).isEqualTo("LIKELY");
+        assertThat(entry.reasons()).anyMatch(r -> r.code().equals("RECENT_SEC_AMENDMENT"));
+        assertThat(entry.reasons()).filteredOn(r -> r.code().equals("SOURCE_ACCESS_BLOCKED"))
+                .singleElement().satisfies(r -> assertThat(r.weight()).isZero());
+        assertThat(entry.reasons()).filteredOn(r -> r.code().equals("APPROACHING_SOURCE_DEADLINE"))
+                .singleElement().satisfies(r -> assertThat(r.supports().get(0).classification()).isEqualTo("SEC_FILED_FACT"));
+        jdbc.update("UPDATE radar_offerings SET deadline=? WHERE id=?", now.minusDays(1).toLocalDate(), offeringId);
+        assertThat(ResearchTriage.queue(store.researchInputs(), now, now.toLocalDate(), "America/New_York").attention()).isEmpty();
+    }
+
+    @Test
+    void researchQueueRespectsExplicitCompletionButNotAnExtensionWithoutChangingProjection() throws Exception {
+        long companyId = company();
+        long offeringId = offerings.upsert(candidate(), new Match(companyId, MatchStatus.CONFIRMED, 95, "matched")).offering().id();
+        long packetId = store.savePacket(packet(companyId, offeringId, "triage-lifecycle")).id();
+        LocalDateTime now = LocalDateTime.of(2026, 10, 8, 16, 0);
+        var before = store.find(packetId).orElseThrow();
+        var facts = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(jdbc.queryForObject(
+                "SELECT raw_facts_json FROM radar_offerings WHERE id=?", String.class, offeringId));
+        facts.put("_secTerm.completed", "true").put("_secTerm.lifecycle", "COMPLETED");
+        jdbc.update("UPDATE radar_offerings SET raw_facts_json=? WHERE id=?", json.writeValueAsString(facts), offeringId);
+        var completed = ResearchTriage.queue(store.researchInputs(), now, now.toLocalDate(), "America/New_York");
+        assertThat(completed.attention()).isEmpty();
+        assertThat(completed.entries().get(0).category()).isEqualTo(ResearchTriage.Category.ENDED);
+        facts.put("_secTerm.completed", "false").put("_secTerm.lifecycle", "EXTENDED");
+        jdbc.update("UPDATE radar_offerings SET raw_facts_json=? WHERE id=?", json.writeValueAsString(facts), offeringId);
+        assertThat(ResearchTriage.queue(store.researchInputs(), now, now.toLocalDate(), "America/New_York").attention()).hasSize(1);
+        assertThat(store.find(packetId).orElseThrow()).isEqualTo(before);
     }
 
     private PlatformCampaign campaign(long offeringId, String source, String fingerprint) {

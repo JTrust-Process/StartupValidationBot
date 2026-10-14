@@ -140,7 +140,7 @@ public final class EffectiveOfferingTerms {
         String platformIdentity = intermediary != null && intermediary.family() != null
                 ? intermediary.state().name() + ": " + intermediary.reason()
                 : intermediary != null && intermediary.state() == IntermediaryRegistry.State.AMBIGUOUS ? "AMBIGUOUS: " + intermediary.reason() : trustedCampaign
-                ? "Verified from official " + displayPlatform(campaign.platform()) + " campaign"
+                ? "Established from retained " + displayPlatform(campaign.platform()) + " campaign/listing evidence (page verification is separate)"
                 : "Not established";
         String secReconciliation = secFiled ? "Established from SEC-filed offering" : "Not established";
         provenance.replaceAll((key, value) -> {

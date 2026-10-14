@@ -41,7 +41,9 @@ class LegacySchemaMigrationPostgresIntegrationTest {
             assertThat(singleInt(statement, "SELECT COUNT(*) FROM decisions WHERE deal_id=1")).isEqualTo(1);
             assertThat(singleInt(statement, "SELECT COUNT(*) FROM deep_diligence WHERE deal_id=1")).isEqualTo(1);
             assertThat(singleInt(statement, "SELECT COUNT(*) FROM reviews WHERE deal_id=1")).isEqualTo(1);
-            assertThat(singleInt(statement, "SELECT COUNT(*) FROM flyway_schema_history WHERE success")).isEqualTo(16);
+            assertThat(singleInt(statement, "SELECT COUNT(*) FROM flyway_schema_history WHERE success AND type='SQL'")).isEqualTo(16);
+            assertThat(singleInt(statement, "SELECT COUNT(*) FROM flyway_schema_history WHERE success AND type='BASELINE'")).isEqualTo(1);
+            assertThat(singleInt(statement, "SELECT COUNT(*) FROM radar_campaign_verification_attempts")).isZero();
             assertThat(singleInt(statement, """
                     SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public'
                     AND ((table_name='radar_offerings' AND column_name='last_diligence_attempt_at')

@@ -318,6 +318,44 @@ export interface DiligenceTermProvenance {
   accession?: string | null;
 }
 
+export interface CampaignUrlEvidence {
+  url: string | null;
+  state: 'EXPLICIT_OBSERVED' | 'CONFLICTING' | 'UNVERIFIED' | 'HISTORICAL' | 'REJECTED';
+  classification: string;
+  sourceUrl: string | null;
+  observedAt: string | null;
+  explanation: string;
+}
+export interface CampaignObservation {
+  offeringId: number;
+  campaignUrl: string | null;
+  sourceClassification: string;
+  sourceUrl: string | null;
+  observedAt: string;
+  pageState: string;
+  publicStatus: string;
+  sourceOutcome: string;
+  issuerEvidence: string;
+  statusExcerpt: string;
+  verificationMethod: string;
+  explanation: string;
+  httpRequests: number;
+}
+export interface CampaignVerification {
+  offeringId: number;
+  urlEvidence: CampaignUrlEvidence;
+  pageState: string;
+  publicStatus: string;
+  fresh: boolean;
+  lastSuccessfulVerification: string | null;
+  latestAttempt: string | null;
+  latestObservation: CampaignObservation | null;
+  successfulObservation: CampaignObservation | null;
+  historicalStatus: string | null;
+  limitations: string[];
+  questions: string[];
+  discrepancies: string[];
+}
 export interface DiligencePacket {
   id: number;
   radarCompanyId: number;
@@ -357,6 +395,7 @@ export interface DiligencePacket {
   platformIdentityStatus: string;
   secReconciliationStatus: string;
   termProvenance: Record<string, DiligenceTermProvenance>;
+  campaignVerification?: CampaignVerification | null;
 }
 
 export interface InvestmentAvailabilityCheck {

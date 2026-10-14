@@ -19,6 +19,7 @@ This is a research organization tool. It is not financial, legal, or tax advice.
 - Persistent PostgreSQL Startup Radar with Flyway migrations
 - Separate SEC-backed Offering Discovery for tracked Radar companies, with conservative Form C matching, lifecycle history, and explicit Deal Scout handoff
 - Autonomous public diligence packets with SEC financial history, evidence provenance, Wefunder/Republic/StartEngine campaign enrichment, discrepancy checks, and a Review Queue
+- Campaign Verification separates exact URL provenance, independently issuer-matched public pages, and fresh public offering status; reservations and inaccessible history are not live investing availability ([V1.2D details](docs/v1-2d-campaign-availability.md)).
 - Automated investment-availability coverage on every Radar profile, including honest `COULD NOT ESTABLISH` results and exact unresolved questions
 - Durable high-signal Resend events for newly confirmed offerings, first READY packets, and material offering changes
 - Modular discovery adapters for configurable RSS/Atom feeds, the official Product Hunt API, and manual sources

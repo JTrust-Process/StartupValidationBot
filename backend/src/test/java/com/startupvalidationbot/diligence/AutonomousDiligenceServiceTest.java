@@ -115,7 +115,8 @@ class AutonomousDiligenceServiceTest {
         when(campaign.campaignUrlSource()).thenReturn("PUBLIC_CAMPAIGN_URL");
         when(campaign.status()).thenReturn(DiligenceDomain.CampaignStatus.ACTIVE);
         when(campaign.securityType()).thenReturn("SAFE");
-        when(campaign.facts()).thenReturn(Map.of("amountRaised", "640000"));
+        when(campaign.facts()).thenReturn(Map.of("amountRaised", "640000", "_independentPageVerified", "true"));
+        when(campaign.lastVerifiedAt()).thenReturn(LocalDateTime.now());
         when(campaign.sourceFingerprint()).thenReturn("native-campaign");
         when(financials.extract(any(), any())).thenReturn(List.of(new FinancialPeriod("2025",
                 new BigDecimal("1000"), null, null, null, null, null, null, null, null,

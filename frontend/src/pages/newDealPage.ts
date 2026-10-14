@@ -2,6 +2,7 @@ import type { DealInput } from '../models/deal';
 import { createDeal, loadDeals } from '../services/dealService';
 import { getDeals } from '../services/dealService';
 import { getDiligencePacket, getRadarCompany, getRadarOffering } from '../services/radarService';
+import { campaignHeadline, publicOfferingStatus } from '../components/campaignVerification';
 import { escapeAttribute, escapeHtml } from '../utils/html';
 import { navigateTo } from '../utils/router';
 import { safeExternalUrl } from '../utils/urls';
@@ -289,7 +290,9 @@ async function prefillFromDiligence(root: HTMLElement, form: HTMLFormElement, pa
       <a href="#/review/${packet.id}">diligence packet ${packet.id}</a>. Review every field before explicitly creating a Deal Scout workspace.
       Filed facts and issuer claims remain separate in the source packet. Effective terms retain their source classification;
       platform identity is ${escapeHtml(packet.platformIdentityStatus.toLowerCase())}, while SEC reconciliation is
-      ${escapeHtml(packet.secReconciliationStatus.toLowerCase())}.</div>`;
+      ${escapeHtml(packet.secReconciliationStatus.toLowerCase())}.
+      ${escapeHtml(campaignHeadline(packet.campaignVerification))}. ${escapeHtml(publicOfferingStatus(packet.campaignVerification))}.
+      Public advertising does not establish your eligibility or the ability to complete an investment transaction.</div>`;
   } catch (error) {
     if (status) status.innerHTML = `<div class="notice notice--warning">Could not load the diligence packet. ${escapeHtml(error instanceof Error ? error.message : '')}</div>`;
   }

@@ -18,7 +18,7 @@ public final class DiligenceDomain {
         PUBLIC_REPORTING, DETERMINISTIC_INFERENCE, AI_SYNTHESIS
     }
     public enum CampaignStatus {
-        ACTIVE, RESERVATION, CLOSING_SOON, FUNDED, CLOSED, WITHDRAWN, TERMINATED, UNKNOWN, UNAVAILABLE
+        ACTIVE, RESERVATION, COMING_SOON, CLOSING_SOON, FUNDED, CLOSED, WITHDRAWN, TERMINATED, UNKNOWN, UNAVAILABLE
     }
 
     public record TermProvenance(String sourceType, String sourceUrl,
@@ -70,7 +70,27 @@ public final class DiligenceDomain {
             String valuationOrCap, LocalDate deadline, List<Evidence> evidence,
             List<FinancialPeriod> financials, BigDecimal valuation, BigDecimal valuationCap,
             String platformStatus, String platformIdentityStatus, String secReconciliationStatus,
-            Map<String, TermProvenance> termProvenance) { }
+            Map<String, TermProvenance> termProvenance, CampaignVerification.View campaignVerification) {
+        public Packet(long id, long radarCompanyId, String companyName, long offeringId,
+                String platform, String campaignUrl, String secFilingUrl, PacketStatus status,
+                String identityStatus, int completeness, int confidence, String summary,
+                List<String> bullCase, List<String> bearCase, List<String> keyRisks,
+                List<String> unansweredQuestions, List<String> materialDiscrepancies,
+                List<String> nextMonitoringMilestones, List<String> sourcesChecked, List<String> dataNotFound,
+                LocalDateTime generatedAt, LocalDateTime lastRefreshedAt, LocalDateTime reviewedAt,
+                String securityType, BigDecimal minimumInvestment, BigDecimal targetAmount,
+                BigDecimal maximumAmount, BigDecimal amountRaised, String valuationOrCap, LocalDate deadline,
+                List<Evidence> evidence, List<FinancialPeriod> financials, BigDecimal valuation, BigDecimal valuationCap,
+                String platformStatus, String platformIdentityStatus, String secReconciliationStatus,
+                Map<String, TermProvenance> termProvenance) {
+            this(id, radarCompanyId, companyName, offeringId, platform, campaignUrl, secFilingUrl, status,
+                    identityStatus, completeness, confidence, summary, bullCase, bearCase, keyRisks, unansweredQuestions,
+                    materialDiscrepancies, nextMonitoringMilestones, sourcesChecked, dataNotFound, generatedAt,
+                    lastRefreshedAt, reviewedAt, securityType, minimumInvestment, targetAmount, maximumAmount,
+                    amountRaised, valuationOrCap, deadline, evidence, financials, valuation, valuationCap,
+                    platformStatus, platformIdentityStatus, secReconciliationStatus, termProvenance, null);
+        }
+    }
 
     public record AvailabilityCheck(String sourceType, String status, String resultSummary,
             String unresolvedQuestion, LocalDateTime checkedAt) { }

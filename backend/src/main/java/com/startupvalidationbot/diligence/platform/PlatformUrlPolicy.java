@@ -18,18 +18,26 @@ public final class PlatformUrlPolicy {
 
     public static URI require(String platform, String value) {
         try {
-            URI uri = PublicSourceUrlPolicy.requirePublicHttpUrl(value);
+            URI uri = URI.create(value);
             String normalized = platform.toUpperCase(Locale.ROOT);
             if (!"https".equalsIgnoreCase(uri.getScheme())
-                    || !HOSTS.getOrDefault(normalized, Set.of()).contains(uri.getHost().toLowerCase(Locale.ROOT))) {
+                    || uri.getHost() == null || !HOSTS.getOrDefault(normalized, Set.of()).contains(uri.getHost().toLowerCase(Locale.ROOT))) {
                 throw new IllegalArgumentException("Unexpected " + platform + " campaign host");
             }
-            if (uri.getUserInfo() != null || uri.getFragment() != null) {
-                throw new IllegalArgumentException("Campaign URL cannot contain credentials or fragments");
+            if (uri.getUserInfo() != null || uri.getFragment() != null || uri.getPort() != -1 || uri.getQuery() != null
+                    || uri.getPath().matches("(?i).*(?:^|/)(?:login|signin|signup|register|checkout|invest|subscribe|payment|purchase|api|graphql)(?:/.*|$)")) {
+                throw new IllegalArgumentException("Platform URL cannot contain credentials, ports, queries, or transaction/login paths");
+            }
+            PublicSourceUrlPolicy.requirePublicHttpUrl(value);
+            for (var address : java.net.InetAddress.getAllByName(uri.getHost())) {
+                byte[] bytes = address.getAddress();
+                if (bytes.length == 16 && (bytes[0] & 0xfe) == 0xfc || bytes.length == 4
+                        && ((bytes[0] & 255) == 0 || (bytes[0] & 255) == 100 && (bytes[1] & 255) >= 64 && (bytes[1] & 255) <= 127))
+                    throw new IllegalArgumentException("Platform address is not public");
             }
             return new URI("https", null, uri.getHost().toLowerCase(Locale.ROOT), -1,
                     uri.getPath(), uri.getQuery(), null);
-        } catch (SourceFetchException | java.net.URISyntaxException error) {
+        } catch (SourceFetchException | java.net.URISyntaxException | java.net.UnknownHostException error) {
             throw new IllegalArgumentException("Campaign URL is not a permitted public platform URL", error);
         }
     }

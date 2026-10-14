@@ -3,6 +3,7 @@ import type { CompanyInvestmentAvailability, DiligenceEvidence, DiligencePacket 
 import { getDiligencePacket, getInvestmentAvailability, refreshDiligencePacket } from '../services/radarService';
 import { escapeAttribute, escapeHtml } from '../utils/html';
 import { safeExternalUrl } from '../utils/urls';
+import { campaignHeadline, campaignVerificationView, publicOfferingStatus } from '../components/campaignVerification';
 
 function money(value: number | null): string {
   return value === null ? 'Could not establish' : new Intl.NumberFormat('en-US', {
@@ -53,10 +54,8 @@ function availabilityView(value: CompanyInvestmentAvailability): string {
 
 function packetView(packet: DiligencePacket, availability: CompanyInvestmentAvailability): string {
   const sec = safeExternalUrl(packet.secFilingUrl);
-  const campaign = safeExternalUrl(packet.campaignUrl);
   const secEvidence = packet.evidence.filter((item) => item.classification === 'SEC_FILED_FACT');
   const claims = packet.evidence.filter((item) => item.classification !== 'SEC_FILED_FACT');
-  const fetchStatus = packet.evidence.find((item) => item.factKey === 'campaign_fetch_status')?.factValue;
   return `<div class="page-header page-header--row"><div><p class="page-eyebrow">Diligence ${escapeHtml(packet.status.replaceAll('_', ' '))}</p>
     <h2>${escapeHtml(packet.companyName)}</h2><p>${escapeHtml(packet.summary)}</p></div>
     <div><strong>${packet.completeness}% complete</strong><p class="radar-muted">Identity Confidence ${packet.confidence}/100</p></div></div>
@@ -69,11 +68,14 @@ function packetView(packet: DiligencePacket, availability: CompanyInvestmentAvai
       <div><dt>Target / maximum</dt><dd>${money(packet.targetAmount)} / ${money(packet.maximumAmount)}${termSource(packet, packet.targetAmount !== null ? 'targetAmount' : 'maximumAmount')}</dd></div>
       <div><dt>Raised</dt><dd>${money(packet.amountRaised)}${termSource(packet, 'amountRaised')}</dd></div>
       <div><dt>Deadline</dt><dd>${escapeHtml(packet.deadline ? formatRadarDate(packet.deadline) : 'Could not establish')}${termSource(packet, 'deadline')}</dd></div>
-      <div><dt>Platform status</dt><dd>${escapeHtml(packet.platformStatus?.replaceAll('_', ' ') || 'Could not establish')}${termSource(packet, 'platformStatus')}</dd></div>
+      <div><dt>Platform status</dt><dd>${escapeHtml(publicOfferingStatus(packet.campaignVerification))}
+        ${packet.platformStatus ? `<small>Retained platform/listing claim: ${escapeHtml(packet.platformStatus.replaceAll('_', ' '))} (may be historical)</small>${termSource(packet, 'platformStatus')}` : ''}</dd></div>
       <div><dt>Platform identity</dt><dd>${escapeHtml(packet.platformIdentityStatus)}</dd></div>
-      <div><dt>Campaign page</dt><dd>${campaign ? 'Public campaign previously verified' : 'Not verified; intermediary identity does not prove campaign availability'}${fetchStatus ? `<small class="radar-muted">Last fetch: ${escapeHtml(fetchStatus.replaceAll('_', ' '))}</small>` : ''}</dd></div>
+      <div><dt>Campaign page</dt><dd>${escapeHtml(campaignHeadline(packet.campaignVerification))}</dd></div>
       <div><dt>SEC reconciliation</dt><dd>${escapeHtml(packet.secReconciliationStatus)}</dd></div>
       <div><dt>Radar match</dt><dd>${escapeHtml(packet.identityStatus)}</dd></div></dl></section>
+    ${campaignVerificationView(packet.campaignVerification, packet.platformIdentityStatus)}
+    <p class="radar-muted">SEC intermediary identity does not prove campaign availability or personal investor eligibility.</p>
     <section class="radar-panel"><h3>Financial Snapshot</h3>${packet.financials.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Period</th><th>Revenue</th><th>COGS</th><th>Net income</th><th>Cash</th><th>Assets</th><th>Liabilities</th><th>Debt</th></tr></thead><tbody>
       ${packet.financials.map((period) => `<tr><td>${escapeHtml(period.period)}</td><td>${money(period.revenue)}</td><td>${money(period.costOfGoods)}</td><td>${money(period.netIncome)}</td><td>${money(period.cash)}</td><td>${money(period.assets)}</td><td>${money(period.liabilities)}</td><td>${money(totalDebt(period.shortTermDebt, period.longTermDebt))}</td></tr>`).join('')}</tbody></table></div>` : '<p class="radar-muted">Could not establish structured multi-period financials.</p>'}</section>
     <section class="radar-panel"><h3>SEC-Filed Facts</h3>${evidenceTable(secEvidence)}</section>
@@ -89,7 +91,6 @@ function packetView(packet: DiligencePacket, availability: CompanyInvestmentAvai
     ${availabilityView(availability)}
     <div class="form-actions form-actions--start">
       ${sec ? `<a class="button button--secondary" href="${escapeAttribute(sec)}" target="_blank" rel="noreferrer">Open SEC Filing</a>` : ''}
-      ${campaign ? `<a class="button button--secondary" href="${escapeAttribute(campaign)}" target="_blank" rel="noreferrer">Open Campaign</a>` : ''}
       <a class="button button--secondary" href="#/radar/company/${packet.radarCompanyId}">Open Radar Profile</a>
       <button class="button button--secondary" id="refresh-diligence" type="button">Refresh Diligence</button>
       <a class="button button--primary" href="#/deals/new?radarCompanyId=${packet.radarCompanyId}&offeringDiscoveryId=${packet.offeringId}&diligencePacketId=${packet.id}">Evaluate in Deal Scout</a>

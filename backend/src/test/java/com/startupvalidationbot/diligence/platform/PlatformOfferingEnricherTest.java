@@ -79,7 +79,8 @@ class PlatformOfferingEnricherTest {
         assertThat(value.status()).isEqualTo(CampaignStatus.UNKNOWN);
         assertThat(value.issuerName()).isNull();
         assertThat(value.securityType()).isNull();
-        assertThat(value.facts()).containsOnlyKeys("_retrievalQuality");
+        assertThat(value.facts()).doesNotContainKeys("minimumInvestment", "valuationCap", "securityType");
+        assertThat(value.facts()).containsEntry("_page.kind", "UNESTABLISHED");
         assertThat(value.facts().get("_retrievalQuality")).isEqualTo("PARTIAL_DETAIL");
     }
 
@@ -104,21 +105,24 @@ class PlatformOfferingEnricherTest {
         @SuppressWarnings("unchecked") HttpResponse<InputStream> unavailable = mock(HttpResponse.class);
         when(unavailable.statusCode()).thenReturn(503);
         when(unavailable.body()).thenAnswer(ignored -> new ByteArrayInputStream(new byte[0]));
-        when(http.<InputStream>send(org.mockito.ArgumentMatchers.any(HttpRequest.class),
-                org.mockito.ArgumentMatchers.any())).thenReturn(unavailable);
+        @SuppressWarnings("unchecked") HttpResponse<InputStream> robots = mock(HttpResponse.class);
+        when(robots.statusCode()).thenReturn(404);
+        when(robots.body()).thenAnswer(ignored -> new ByteArrayInputStream(new byte[0]));
+        when(http.<InputStream>send(org.mockito.ArgumentMatchers.any(HttpRequest.class), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> ((HttpRequest) invocation.getArgument(0)).uri().getPath().equals("/robots.txt") ? robots : unavailable);
         PlatformHttpClient client = new PlatformHttpClient(50_000, 1, http);
 
         assertThatThrownBy(() -> client.get("WEFUNDER", URI.create("https://wefunder.com/acme")))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("temporarily unavailable");
-        verify(http, times(2)).send(org.mockito.ArgumentMatchers.any(HttpRequest.class),
+        verify(http, times(3)).send(org.mockito.ArgumentMatchers.any(HttpRequest.class),
                 org.mockito.ArgumentMatchers.any());
 
         HttpClient oversizedHttp = mock(HttpClient.class);
         @SuppressWarnings("unchecked") HttpResponse<InputStream> oversized = mock(HttpResponse.class);
         when(oversized.statusCode()).thenReturn(200);
         when(oversized.body()).thenReturn(new ByteArrayInputStream(new byte[50_001]));
-        when(oversizedHttp.<InputStream>send(org.mockito.ArgumentMatchers.any(HttpRequest.class),
-                org.mockito.ArgumentMatchers.any())).thenReturn(oversized);
+        when(oversizedHttp.<InputStream>send(org.mockito.ArgumentMatchers.any(HttpRequest.class), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> ((HttpRequest) invocation.getArgument(0)).uri().getPath().equals("/robots.txt") ? robots : oversized);
 
         assertThatThrownBy(() -> new PlatformHttpClient(50_000, 1, oversizedHttp)
                 .get("WEFUNDER", URI.create("https://wefunder.com/acme")))

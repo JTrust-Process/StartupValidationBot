@@ -5,6 +5,7 @@ import { escapeHtml } from '../utils/html';
 import { safeExternalUrl } from '../utils/urls';
 import { defaultResearchFilters, filterResearchEntries, researchAttention, sortResearchEntries } from '../utils/researchTriage';
 import type { ResearchFilters } from '../utils/researchTriage';
+import { campaignVerificationView } from '../components/campaignVerification';
 
 const categories = {
   TIME_SENSITIVE: 'Time-sensitive review', SUBSTANTIVE_RESEARCH: 'Substantive research',
@@ -55,6 +56,7 @@ function card(entry: ResearchEntry, compact = false): string {
       <p>${escapeHtml(reason.explanation)}</p><ul>${reason.supports.map(supportHtml).join('')}</ul></div>`).join('')}
       ${entry.questions.length > 3 ? `<h4>Other research questions</h4><ul>${entry.questions.slice(3).map((q) => `<li>${escapeHtml(q)}</li>`).join('')}</ul>` : ''}
     </details>
+    ${campaignVerificationView(packet.campaignVerification, packet.platformIdentityStatus, true)}
     <a class="button button--secondary button--compact" href="#/review/${packet.id}">Review packet</a>
   </article>`;
 }

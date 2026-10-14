@@ -21,7 +21,7 @@ class LegacySchemaMigrationPostgresIntegrationTest {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @Test
-    void migratesLegacyDiligenceSchemaThroughV15WithoutLosingRows() throws Exception {
+    void migratesLegacyDiligenceSchemaThroughV16WithoutLosingRows() throws Exception {
         createLegacySchemaAndRows();
 
         var result = Flyway.configure()
@@ -33,7 +33,7 @@ class LegacySchemaMigrationPostgresIntegrationTest {
                 .load()
                 .migrate();
 
-        assertThat(result.targetSchemaVersion).isEqualTo("15");
+        assertThat(result.targetSchemaVersion).isEqualTo("16");
         try (Connection connection = connection(); Statement statement = connection.createStatement()) {
             assertThat(singleInt(statement, "SELECT COUNT(*) FROM deals WHERE company_name='Legacy Grid'"))
                     .isEqualTo(1);

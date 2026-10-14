@@ -124,6 +124,32 @@ class DiligenceNotificationServiceTest {
                 eq(fingerprint), anyString(), anyString(), anyString(), anyString());
     }
 
+    @Test void parserUpgradeDoesNotBackfillMaterialChangeNotifications() {
+        DiligenceStore store = mock(DiligenceStore.class);
+        var sender = mock(DiligenceEmailSender.class);
+        var service = new DiligenceNotificationService(store, sender, "owner@example.com", "https://radar.example/#/radar");
+        var before = campaign("PUBLIC_CAMPAIGN_URL", "raw:before", new BigDecimal("100000"));
+        var parsed = campaign("PUBLIC_CAMPAIGN_URL", "raw:after", new BigDecimal("200000"));
+        var current = new PlatformCampaign(parsed.id(), parsed.offeringId(), parsed.platform(), parsed.campaignUrl(),
+                parsed.campaignUrlSource(), parsed.campaignUrlConfidence(), parsed.status(), parsed.issuerName(),
+                parsed.securityType(), parsed.minimumInvestment(), parsed.pricePerShare(), parsed.valuation(),
+                parsed.valuationCap(), parsed.discountPercent(), parsed.targetAmount(), parsed.maximumAmount(),
+                parsed.amountRaised(), parsed.investorCount(), parsed.deadline(), parsed.headline(),
+                Map.of("_campaignParserVersion", "V1.2D"), parsed.sourceFingerprint(), parsed.lastCheckedAt(), parsed.lastVerifiedAt());
+        assertThat(service.queueMaterialChange(before, current, packet())).isFalse();
+        verifyNoInteractions(store, sender);
+    }
+
+    @Test void failedAccessAndFreshnessMetadataCannotCreateMaterialNotifications() {
+        DiligenceStore store = mock(DiligenceStore.class);
+        var sender = mock(DiligenceEmailSender.class);
+        var service = new DiligenceNotificationService(store, sender, "owner@example.com", "https://radar.example/#/radar");
+        var retained = campaign("PUBLIC_CAMPAIGN_URL", "raw:same", new BigDecimal("100000"));
+        assertThat(service.queueMaterialChange(retained, retained, packet())).isFalse();
+        assertThat(service.queueMaterialChange(retained, null, packet())).isFalse();
+        verifyNoInteractions(store, sender);
+    }
+
     private static Offering offering(Status status, MatchStatus matchStatus) {
         LocalDateTime now = LocalDateTime.now();
         return new Offering(42, 7L, "Acme", "Acme, Inc.", "0001234567", "Wefunder", "Wefunder Portal LLC",

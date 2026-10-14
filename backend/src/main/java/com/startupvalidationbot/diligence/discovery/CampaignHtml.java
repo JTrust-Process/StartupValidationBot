@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 
 import com.startupvalidationbot.radar.CompanyIdentity;
 
-final class CampaignHtml {
+public final class CampaignHtml {
     private static final Pattern ANCHOR = Pattern.compile(
             "(?is)<a\\b[^>]*?href=[\\\"']([^\\\"']+)[\\\"'][^>]*>(.*?)</a>");
     private static final Pattern HEADING = Pattern.compile("(?is)<h[1-4][^>]*>(.*?)</h[1-4]>");
@@ -44,7 +44,7 @@ final class CampaignHtml {
                 .trim(), 300);
     }
 
-    static String issuerDomain(String platform, String html) {
+    public static String issuerDomain(String platform, String html) {
         Set<String> candidates = new LinkedHashSet<>();
         for (Link link : links(html)) {
             if (!link.href().matches("(?i)^https://.*")) continue;
@@ -60,14 +60,7 @@ final class CampaignHtml {
     }
 
     static String status(String text) {
-        String lower = text(text).toLowerCase(Locale.ROOT);
-        if (lower.contains("successfully funded") || lower.contains("funded badge")) return "FUNDED";
-        if (lower.contains("offering closed") || lower.contains("campaign ended")) return "CLOSED";
-        if (lower.contains("accepting reservations") || lower.contains("reserve")) return "RESERVATION";
-        if (lower.contains("invest now") || lower.contains("days left") || lower.contains("left to invest")) {
-            return "ACTIVE";
-        }
-        return "UNKNOWN";
+        return com.startupvalidationbot.diligence.platform.PublicCampaignStatus.inspect(text).status().name();
     }
 
     static boolean plausibleName(String name, CampaignDiscoveryDomain.CampaignIdentity identity) {

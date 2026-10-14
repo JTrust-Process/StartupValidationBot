@@ -158,7 +158,8 @@ public final class EffectiveOfferingTerms {
         });
         return new Projection(security, minimum, target, maximum, raised, valuation, cap, deadline,
                 campaignUrl, platformStatus, platformIdentity, secReconciliation,
-                Map.copyOf(provenance), List.copyOf(issues), trustedCampaign);
+                Map.copyOf(provenance), List.copyOf(issues), trustedCampaign && campaign.lastVerifiedAt() != null
+                        && "true".equals(campaign.facts().get("_independentPageVerified")));
     }
 
     private static boolean trusted(PlatformCampaign campaign) {

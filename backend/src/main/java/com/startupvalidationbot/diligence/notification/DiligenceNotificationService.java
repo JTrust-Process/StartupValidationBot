@@ -99,6 +99,7 @@ public class DiligenceNotificationService {
                 && java.util.Objects.equals(previous.platform(), current.platform())
                 && java.util.Objects.equals(previous.campaignUrl(), current.campaignUrl())
                 && java.util.Objects.equals(previous.campaignUrlSource(), current.campaignUrlSource())
+                && java.util.Objects.equals(previous.facts().get("_campaignParserVersion"), current.facts().get("_campaignParserVersion"))
                 && rawFingerprint(previous.sourceFingerprint()) && rawFingerprint(current.sourceFingerprint())
                 && !java.util.Objects.equals(previous.sourceFingerprint(), current.sourceFingerprint());
     }

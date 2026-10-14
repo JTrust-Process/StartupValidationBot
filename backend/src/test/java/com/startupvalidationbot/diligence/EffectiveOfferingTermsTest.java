@@ -155,7 +155,7 @@ class EffectiveOfferingTermsTest {
         return new PlatformCampaign(1L, 1L, "REPUBLIC", "https://republic.com/example",
                 "PUBLIC_CAMPAIGN_URL", confidence, CampaignStatus.ACTIVE, "Example", security, minimum,
                 null, null, cap, null, target, maximum, raised, 20, deadline, "Example",
-                Map.of(), "raw:source", now, now);
+                Map.of("_independentPageVerified", "true"), "raw:source", now, now);
     }
 
     private static Offering offering(String provenance, String reconciliation, MatchStatus match,

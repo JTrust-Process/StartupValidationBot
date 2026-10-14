@@ -27,9 +27,9 @@ public class IssuerWebsiteClient {
                 if (robots.statusCode() != 200 && robots.statusCode() != 404) throw new IllegalStateException("Issuer robots policy unavailable");
                 rules = body(input, 64_000);
             }
-            if (robots.statusCode() == 200 && disallowed(rules, uri.getPath())) throw new IllegalStateException("Issuer robots policy disallows homepage inspection");
+            if (robots.statusCode() == 200 && disallowed(rules, uri.getRawPath())) throw new IllegalStateException("Issuer robots policy disallows homepage inspection");
             for (int redirects = 0; redirects <= 2; redirects++) {
-                if (robots.statusCode() == 200 && disallowed(rules, uri.getPath())) throw new IllegalStateException("Issuer robots policy disallows redirected path");
+                if (robots.statusCode() == 200 && disallowed(rules, uri.getRawPath())) throw new IllegalStateException("Issuer robots policy disallows redirected path");
                 HttpResponse<InputStream> response = request(uri);
                 try (InputStream input = response.body()) {
                     if (response.statusCode() >= 300 && response.statusCode() < 400) {
@@ -53,22 +53,8 @@ public class IssuerWebsiteClient {
         }
     }
 
-    static boolean disallowed(String robots, String path) {
-        boolean applies = false;
-        boolean directives = false;
-        for (String line : robots.split("\\R")) {
-            String rule = line.replaceFirst("#.*$", "").trim();
-            if (rule.toLowerCase(java.util.Locale.ROOT).startsWith("user-agent:")) {
-                String agent = rule.substring(rule.indexOf(':') + 1).trim();
-                if (directives) { applies = false; directives = false; }
-                applies |= agent.equals("*") || agent.equalsIgnoreCase("StartupIntelligence");
-            } else if (applies && rule.toLowerCase(java.util.Locale.ROOT).startsWith("disallow:")) {
-                directives = true;
-                String prefix = rule.substring(rule.indexOf(':') + 1).trim().replace("$", "");
-                if (!prefix.isBlank() && (prefix.contains("*") || (path.isBlank() ? "/" : path).startsWith(prefix))) return true;
-            } else if (rule.contains(":")) directives = true;
-        }
-        return false;
+    public static boolean disallowed(String robots, String path) {
+        return RobotsRules.disallowed(robots, path);
     }
     private synchronized HttpResponse<InputStream> request(URI uri) throws java.io.IOException, InterruptedException, SourceFetchException {
         require(uri.toString());

@@ -20,6 +20,25 @@ import com.startupvalidationbot.offering.OfferingDomain.Offering;
 import com.startupvalidationbot.offering.OfferingDomain.Status;
 
 class EffectiveOfferingTermsTest {
+    @Test void retainedListingEstablishesPlatformFamilyButNeverClaimsPageVerification() {
+        var original = usableCampaign();
+        var legacy = new PlatformCampaign(original.id(), original.offeringId(), original.platform(), original.campaignUrl(),
+                "PUBLIC_LIVE_DIRECTORY", original.campaignUrlConfidence(), CampaignStatus.RESERVATION, original.issuerName(),
+                original.securityType(), original.minimumInvestment(), original.pricePerShare(), original.valuation(),
+                original.valuationCap(), original.discountPercent(), original.targetAmount(), original.maximumAmount(),
+                original.amountRaised(), original.investorCount(), original.deadline(), original.headline(), Map.of(),
+                original.sourceFingerprint(), original.lastCheckedAt(), original.lastVerifiedAt());
+        var nativeOffering = offering("PLATFORM_OFFERING", "PLATFORM_CONFIRMED", MatchStatus.LIKELY,
+                null, null, null, null, null, null);
+        var terms = EffectiveOfferingTerms.resolve(nativeOffering, legacy);
+        assertThat(terms.platformIdentityStatus()).isEqualTo("Established from retained Republic campaign/listing evidence (page verification is separate)");
+        assertThat(terms.officialCampaignVerified()).isFalse();
+        assertThat(terms.minimumInvestment()).isEqualByComparingTo("100");
+        assertThat(terms.valuationCap()).isEqualByComparingTo("7000000");
+        assertThat(terms.platformStatus()).isEqualTo("RESERVATION");
+        assertThat(terms.campaignUrl()).isEqualTo(original.campaignUrl());
+    }
+
     @Test void secIntermediaryIsConfirmedWithoutCampaignAndAmbiguousTermsCannotUsePlatformFallback() {
         Offering filed = offering("SEC_EDGAR", "SEC_RECONCILED", MatchStatus.CONFIRMED, "SAFE",
                 new BigDecimal("100"), null, null, "$7M cap", null);
@@ -155,7 +174,7 @@ class EffectiveOfferingTermsTest {
         return new PlatformCampaign(1L, 1L, "REPUBLIC", "https://republic.com/example",
                 "PUBLIC_CAMPAIGN_URL", confidence, CampaignStatus.ACTIVE, "Example", security, minimum,
                 null, null, cap, null, target, maximum, raised, 20, deadline, "Example",
-                Map.of(), "raw:source", now, now);
+                Map.of("_independentPageVerified", "true"), "raw:source", now, now);
     }
 
     private static Offering offering(String provenance, String reconciliation, MatchStatus match,

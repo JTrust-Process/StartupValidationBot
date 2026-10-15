@@ -140,7 +140,7 @@ public final class EffectiveOfferingTerms {
         String platformIdentity = intermediary != null && intermediary.family() != null
                 ? intermediary.state().name() + ": " + intermediary.reason()
                 : intermediary != null && intermediary.state() == IntermediaryRegistry.State.AMBIGUOUS ? "AMBIGUOUS: " + intermediary.reason() : trustedCampaign
-                ? "Verified from official " + displayPlatform(campaign.platform()) + " campaign"
+                ? "Established from retained " + displayPlatform(campaign.platform()) + " campaign/listing evidence (page verification is separate)"
                 : "Not established";
         String secReconciliation = secFiled ? "Established from SEC-filed offering" : "Not established";
         provenance.replaceAll((key, value) -> {
@@ -158,7 +158,8 @@ public final class EffectiveOfferingTerms {
         });
         return new Projection(security, minimum, target, maximum, raised, valuation, cap, deadline,
                 campaignUrl, platformStatus, platformIdentity, secReconciliation,
-                Map.copyOf(provenance), List.copyOf(issues), trustedCampaign);
+                Map.copyOf(provenance), List.copyOf(issues), trustedCampaign && campaign.lastVerifiedAt() != null
+                        && "true".equals(campaign.facts().get("_independentPageVerified")));
     }
 
     private static boolean trusted(PlatformCampaign campaign) {

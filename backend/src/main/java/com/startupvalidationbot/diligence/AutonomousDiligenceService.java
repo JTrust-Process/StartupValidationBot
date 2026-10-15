@@ -165,7 +165,11 @@ public class AutonomousDiligenceService {
             if (campaign != null) sourcesChecked.add(campaign.platform());
             String platform = normalizePlatform(offering.platform());
             PlatformOfferingEnricher enricher = enrichers.get(platform);
-            if (enricher != null && offering.offeringUrl() != null && !"AMBIGUOUS".equals(storedFacts.get("_secCampaign.state"))
+            var campaignLink = com.startupvalidationbot.diligence.discovery.CampaignUrlLineage.evidence(
+                    offering.offeringUrl(), storedFacts, previousCampaign, offering.provenance());
+            CampaignVerification.Observation pageObservation = null;
+            int requestsBefore = enricher == null ? 0 : enricher.requestCount();
+            if (enricher != null && offering.offeringUrl() != null && List.of("EXPLICIT_OBSERVED", "HISTORICAL").contains(campaignLink.state()) && !"AMBIGUOUS".equals(storedFacts.get("_secCampaign.state"))
                     && com.startupvalidationbot.diligence.discovery.CampaignUrlLineage.allowed(offering.offeringUrl(), storedFacts, previousCampaign, offering.provenance())
                     && !"AMBIGUOUS".equals(storedFacts.get("_issuerCampaign.state"))
                     && IntermediaryRegistry.fromFacts(storedFacts).state() != IntermediaryRegistry.State.AMBIGUOUS) {
@@ -173,19 +177,29 @@ public class AutonomousDiligenceService {
                     URI url = URI.create(offering.offeringUrl());
                     if (enricher.supports(url)) {
                         PlatformCampaign observed = enricher.enrich(offering, url);
-                        if (observed.issuerName() == null || !CompanyIdentity.normalizeName(offering.issuerName()).equals(CompanyIdentity.normalizeName(observed.issuerName()))) {
-                            offerings.recordCampaignResolution(offering.id(), Map.of("_issuerCampaign.fetchStatus", "ISSUER_MISMATCH"));
-                            throw new IllegalStateException("Public campaign issuer does not exactly match the filed issuer; review required");
-                        }
-                        campaign = store.upsertCampaign(observed);
-                        offerings.recordCampaignResolution(offering.id(), Map.of("_issuerCampaign.fetchStatus", "SUCCESS"));
                         platformRequests.merge(platform, 1, Integer::sum);
-                        campaigns++;
+                        pageObservation = com.startupvalidationbot.diligence.platform.CampaignPageVerifier.assess(
+                                offering, storedFacts, campaignLink, observed, Math.max(0, enricher.requestCount() - requestsBefore));
+                        if (pageObservation.pageState() == CampaignVerification.PageState.VERIFIED) {
+                            Map<String, String> verifiedFacts = new LinkedHashMap<>(observed.facts());
+                            verifiedFacts.put("_independentPageVerified", "true");
+                            verifiedFacts.put("_urlSource", campaignLink.sourceUrl() == null ? observed.campaignUrl() : campaignLink.sourceUrl());
+                            observed = new PlatformCampaign(observed.id(), observed.offeringId(), observed.platform(), observed.campaignUrl(),
+                                    observed.campaignUrlSource(), observed.campaignUrlConfidence(), observed.status(), observed.issuerName(),
+                                    observed.securityType(), observed.minimumInvestment(), observed.pricePerShare(), observed.valuation(), observed.valuationCap(),
+                                    observed.discountPercent(), observed.targetAmount(), observed.maximumAmount(), observed.amountRaised(), observed.investorCount(),
+                                    observed.deadline(), observed.headline(), Map.copyOf(verifiedFacts), observed.sourceFingerprint(), observed.lastCheckedAt(), observed.lastVerifiedAt());
+                            campaign = store.upsertCampaign(observed);
+                            campaigns++;
+                            platformCampaigns.merge(platform, 1, Integer::sum);
+                            successfulCoverage.add(offering.radarCompanyId() + "|" + platform);
+                            offerings.recordCampaignResolution(offering.id(), Map.of("_issuerCampaign.fetchStatus", "SUCCESS"));
+                            store.availability(offering.radarCompanyId(), platform, "FOUND", "Issuer-matched public campaign page accessed; personal eligibility is not established.", null);
+                        } else {
+                            offerings.recordCampaignResolution(offering.id(), Map.of("_issuerCampaign.fetchStatus", pageObservation.pageState().name()));
+                            store.availability(offering.radarCompanyId(), platform, "COULD_NOT_ESTABLISH", pageObservation.explanation(), "Can the expected legal issuer be independently established?");
+                        }
                         if (!sourcesChecked.contains(platform)) sourcesChecked.add(platform);
-                        platformCampaigns.merge(platform, 1, Integer::sum);
-                        successfulCoverage.add(offering.radarCompanyId() + "|" + platform);
-                        store.availability(offering.radarCompanyId(), platform, "FOUND",
-                                "Public campaign resolved and checked.", null);
                     } else {
                         store.availability(offering.radarCompanyId(), platform, "COULD_NOT_ESTABLISH",
                                 "The known URL is not a permitted canonical " + platform + " campaign URL.",
@@ -194,6 +208,11 @@ public class AutonomousDiligenceService {
                 } catch (RuntimeException error) {
                     platformErrors++;
                     String message = safe(error);
+                    String outcome = error instanceof com.startupvalidationbot.diligence.platform.PlatformHttpClient.FetchFailure failure
+                            ? failure.outcome() : message.contains("403") ? "HTTP_403" : message.contains("404") ? "HTTP_404"
+                            : message.contains("429") ? "HTTP_429" : "UNAVAILABLE";
+                    pageObservation = com.startupvalidationbot.diligence.platform.CampaignPageVerifier.failure(
+                            offering, campaignLink, outcome, message, Math.max(0, enricher.requestCount() - requestsBefore));
                     offerings.recordCampaignResolution(offering.id(), Map.of("_issuerCampaign.fetchStatus",
                             message.contains("does not exactly match") ? "ISSUER_MISMATCH" : message.contains("403") ? "HTTP_403" : message.contains("404") ? "HTTP_404" : message.toLowerCase(Locale.ROOT).contains("verification") ? "BROWSER_VERIFICATION" : "UNAVAILABLE"));
                     platformRequests.merge(platform, 1, Integer::sum);
@@ -205,6 +224,16 @@ public class AutonomousDiligenceService {
                     }
                 }
             }
+
+            if (pageObservation == null) {
+                String outcome = "CONFLICTING".equals(campaignLink.state()) ? "AMBIGUOUS_URL"
+                        : campaignLink.url() == null ? "NO_CANONICAL_URL" : enricher == null ? "UNSUPPORTED_PLATFORM" : "NO_LINEAGE";
+                pageObservation = com.startupvalidationbot.diligence.platform.CampaignPageVerifier.failure(
+                        offering, campaignLink, outcome, "No independently verified public page: " + campaignLink.explanation(), 0);
+            }
+            store.recordCampaignObservation(pageObservation);
+            secCounts.merge("verificationHttpRequests", pageObservation.httpRequests(), Integer::sum);
+            secCounts.merge("verification" + pageObservation.pageState().name(), 1, Integer::sum);
 
             storedFacts = offerings.facts(offering.id());
             secFacts = "SEC_EDGAR".equals(offering.provenance()) ? storedFacts : Map.of();
@@ -445,7 +474,7 @@ public class AutonomousDiligenceService {
     }
 
     private static boolean nativePlatformLinked(Offering offering, EffectiveOfferingTerms.Projection terms) {
-        return "PLATFORM_OFFERING".equals(offering.provenance()) && terms.officialCampaignVerified()
+        return "PLATFORM_OFFERING".equals(offering.provenance()) && terms.campaignUrl() != null
                 && List.of("PLATFORM_CONFIRMED", "SEC_RECONCILED").contains(offering.reconciliationStatus());
     }
 

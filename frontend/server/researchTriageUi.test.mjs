@@ -12,11 +12,15 @@ const utility = await loadModule('utils/researchTriage.ts');
 const { defaultResearchFilters: defaults, filterResearchEntries, researchAttention, sortResearchEntries } = await import(utility);
 const html = await loadModule('utils/html.ts');
 const urls = await loadModule('utils/urls.ts');
+let verification = ts.transpileModule(await readFile(new URL('../src/components/campaignVerification.ts', import.meta.url), 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.ES2022 }
+}).outputText.replaceAll("from '../utils/html'", `from '${html}'`).replaceAll("from '../utils/urls'", `from '${urls}'`);
 let page = ts.transpileModule(await readFile(new URL('../src/pages/reviewQueuePage.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.ES2022 }
 }).outputText;
 const stubs = {
   '../utils/researchTriage': utility, '../utils/html': html, '../utils/urls': urls,
+  '../components/campaignVerification': dataUrl(verification),
   '../components/radarUi': dataUrl('export const formatRadarDate = v => v || "Never"; export const guardRadarView = async (target, load) => load();'),
   '../services/radarService': dataUrl('export const getResearchQueue = async () => { throw new Error("Network forbidden in render tests"); };')
 };

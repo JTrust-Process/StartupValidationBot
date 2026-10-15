@@ -171,6 +171,28 @@ public class DiligenceStore {
         return find(id).orElseThrow();
     }
 
+    @Transactional
+    public synchronized void recordCampaignObservation(CampaignVerification.Observation observation) {
+        lockOffering(observation.offeringId());
+        String payload = write(observation);
+        String key = ContentHash.sha256(payload);
+        if (jdbc.queryForObject("SELECT COUNT(*) FROM radar_campaign_verification_attempts WHERE offering_id=? AND attempt_key=?",
+                Integer.class, observation.offeringId(), key) != 0) return;
+        jdbc.update("INSERT INTO radar_campaign_verification_attempts (offering_id,campaign_url,observed_at,page_state,attempt_key,payload_json) VALUES (?,?,?,?,?,?)",
+                observation.offeringId(), observation.campaignUrl(), observation.observedAt(), observation.pageState().name(), key, payload);
+    }
+
+    public Optional<CampaignVerification.Observation> latestCampaignObservation(long offeringId) {
+        return jdbc.query("SELECT payload_json FROM radar_campaign_verification_attempts WHERE offering_id=? ORDER BY observed_at DESC,id DESC LIMIT 1",
+                (rs, row) -> readObservation(rs.getString("payload_json")), offeringId).stream().findFirst();
+    }
+
+    private CampaignVerification.Observation readObservation(String value) {
+        if (value == null) return null;
+        try { return json.readValue(value, CampaignVerification.Observation.class); }
+        catch (JsonProcessingException error) { throw new IllegalStateException("Stored campaign observation is invalid", error); }
+    }
+
     private void lockOffering(long offeringId) {
         jdbc.queryForObject("SELECT id FROM radar_offerings WHERE id=? FOR UPDATE", Long.class, offeringId);
     }
@@ -512,7 +534,10 @@ public class DiligenceStore {
                 terms.securityType(), terms.minimumInvestment(), terms.targetAmount(), terms.maximumAmount(),
                 terms.amountRaised(), terms.valuationOrCap(), terms.deadline(), evidence(row.id), financials(row.id),
                 terms.valuation(), terms.valuationCap(), terms.platformStatus(), terms.platformIdentityStatus(),
-                terms.secReconciliationStatus(), terms.provenance());
+                terms.secReconciliationStatus(), terms.provenance(),
+                CampaignVerification.project(row.offeringId, row.offeringTerms.offeringUrl(), row.offeringTerms.provenance(),
+                        row.offeringTerms.facts(), row.campaign, row.offeringStatus, terms.deadline(), row.verification,
+                        row.successfulVerification, LocalDateTime.now()));
     }
 
     private List<Evidence> evidence(long packetId) {
@@ -555,7 +580,12 @@ public class DiligenceStore {
               pc.amount_raised campaign_amount_raised,pc.investor_count campaign_investor_count,
               pc.deadline campaign_deadline,pc.headline campaign_headline,pc.facts_json campaign_facts_json,
               pc.source_fingerprint campaign_source_fingerprint,pc.last_checked_at campaign_last_checked_at,
-              pc.last_verified_at campaign_last_verified_at
+              pc.last_verified_at campaign_last_verified_at,
+              (SELECT v.payload_json FROM radar_campaign_verification_attempts v WHERE v.offering_id=o.id
+                ORDER BY v.observed_at DESC,v.id DESC LIMIT 1) verification_json,
+              (SELECT v.payload_json FROM radar_campaign_verification_attempts v WHERE v.offering_id=o.id AND v.page_state='VERIFIED'
+                AND v.campaign_url=COALESCE(o.offering_url,pc.campaign_url)
+                ORDER BY v.observed_at DESC,v.id DESC LIMIT 1) successful_verification_json
             FROM radar_diligence_packets p JOIN radar_companies c ON c.id=p.radar_company_id
             JOIN radar_offerings o ON o.id=p.offering_id LEFT JOIN radar_platform_campaigns pc ON pc.id=(
               SELECT x.id FROM radar_platform_campaigns x WHERE x.offering_id=o.id
@@ -593,7 +623,8 @@ public class DiligenceStore {
                 rs.getString("sources_checked"), rs.getString("data_not_found"), time(rs.getTimestamp("generated_at")),
                 time(rs.getTimestamp("last_refreshed_at")), time(rs.getTimestamp("reviewed_at")),
                 rs.getString("offering_status"), rs.getString("offering_match_status"), rs.getInt("offering_match_confidence"),
-                time(rs.getTimestamp("last_diligence_attempt_at")));
+                time(rs.getTimestamp("last_diligence_attempt_at")), readObservation(rs.getString("verification_json")),
+                readObservation(rs.getString("successful_verification_json")));
         };
     }
 
@@ -642,5 +673,6 @@ public class DiligenceStore {
             String status,String identityStatus,int completeness,int confidence,String summary,
             String bullCase,String bearCase,String keyRisks,String questions,String discrepancies,String milestones,
             String sources,String dataNotFound,LocalDateTime generatedAt,LocalDateTime refreshedAt,
-            LocalDateTime reviewedAt,String offeringStatus,String matchStatus,int matchConfidence,LocalDateTime lastAttemptAt) { }
+            LocalDateTime reviewedAt,String offeringStatus,String matchStatus,int matchConfidence,LocalDateTime lastAttemptAt,
+            CampaignVerification.Observation verification,CampaignVerification.Observation successfulVerification) { }
 }

@@ -9,4 +9,5 @@ public interface PlatformOfferingEnricher {
     String platform();
     boolean supports(URI uri);
     PlatformCampaign enrich(Offering offering, URI campaignUrl);
+    default int requestCount() { return 0; }
 }

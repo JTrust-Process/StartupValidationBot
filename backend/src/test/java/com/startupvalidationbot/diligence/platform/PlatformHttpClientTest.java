@@ -23,6 +23,7 @@ class PlatformHttpClientTest {
         HttpResponse<InputStream> response = mock(HttpResponse.class);
         when(response.statusCode()).thenReturn(200);
         when(response.body()).thenAnswer(ignored -> new ByteArrayInputStream("ok".getBytes(StandardCharsets.UTF_8)));
+        when(response.headers()).thenReturn(java.net.http.HttpHeaders.of(java.util.Map.of("Content-Type", java.util.List.of("text/html")), (a,b) -> true));
         when(transport.<InputStream>send(any(HttpRequest.class), any())).thenReturn(response);
         PlatformHttpClient client = new PlatformHttpClient(50_000, 10, transport);
 

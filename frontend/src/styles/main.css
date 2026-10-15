@@ -2143,6 +2143,20 @@ body::after {
   color: var(--accent-strong);
 }
 
+.campaign-verification {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.campaign-verification > summary {
+  cursor: pointer;
+  padding-block: 8px;
+}
+.campaign-verification blockquote {
+  margin-inline: 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--accent);
+}
+
 .radar-home-card__scores {
   display: flex;
   gap: 0.5rem;

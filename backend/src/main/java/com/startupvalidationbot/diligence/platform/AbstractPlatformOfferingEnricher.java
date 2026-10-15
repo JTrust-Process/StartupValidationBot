@@ -24,6 +24,8 @@ abstract class AbstractPlatformOfferingEnricher implements PlatformOfferingEnric
 
     AbstractPlatformOfferingEnricher(PlatformHttpClient client) { this.client = client; }
 
+    @Override public int requestCount() { return client.requests(platform()); }
+
     @Override
     public boolean supports(URI uri) {
         try { PlatformUrlPolicy.require(platform(), uri.toString()); return true; }
@@ -37,9 +39,10 @@ abstract class AbstractPlatformOfferingEnricher implements PlatformOfferingEnric
     }
 
     PlatformCampaign parse(Offering offering, URI campaignUrl, String html) {
-        String text = visibleText(html);
+        String campaignBody = PublicCampaignStatus.body(html);
+        String text = visibleText(campaignBody);
         Map<String, String> facts = new LinkedHashMap<>();
-        String issuer = first(html, H1);
+        String issuer = first(campaignBody, H1);
         if (issuer == null) issuer = firstNonGenericJsonName(html);
         if (issuer == null) issuer = first(html, TITLE);
         issuer = cleanTitle(issuer);
@@ -63,7 +66,17 @@ abstract class AbstractPlatformOfferingEnricher implements PlatformOfferingEnric
         put(facts, "valuation", valuation); put(facts, "valuationCap", cap); put(facts, "discountPercent", discount);
         put(facts, "targetAmount", target); put(facts, "maximumAmount", maximum);
         put(facts, "amountRaised", raised); put(facts, "investorCount", investors); put(facts, "deadline", deadline);
-        CampaignStatus status = status(text);
+        PublicCampaignStatus.Evidence publicStatus = PublicCampaignStatus.inspect(html);
+        CampaignStatus status = publicStatus.status();
+        facts.put("_campaignParserVersion", "V1.2D");
+        facts.put("_page.status", status.name());
+        facts.put("_page.statusExcerpt", publicStatus.excerpt());
+        facts.put("_page.statusExplanation", publicStatus.explanation());
+        facts.put("_page.kind", PublicCampaignStatus.campaignBody(html) ? "CAMPAIGN" : "UNESTABLISHED");
+        String wall = PublicCampaignStatus.wall(html);
+        if (wall != null) facts.put("_page.wall", wall);
+        put(facts, "_page.issuerDomain", com.startupvalidationbot.diligence.discovery.CampaignHtml.issuerDomain(platform(), html));
+        put(facts, "_page.legalIssuer", field(text, "(?:legal issuer|legal company name)", "([^.;]{2,160})"));
         if (raised != null) facts.put("_termType.amountRaised", text.matches("(?is).*investment commitments.*") ? "INVESTMENT_COMMITMENTS"
                 : (status == CampaignStatus.CLOSED || status == CampaignStatus.FUNDED) && !text.matches("(?is).*(estimated|subject to final accounting).*" ) ? "FINAL_SECURITIES_SOLD" : "INTERIM_RAISED");
         facts.put("_retrievalQuality", issuer != null && security != null && minimum != null
@@ -74,19 +87,6 @@ abstract class AbstractPlatformOfferingEnricher implements PlatformOfferingEnric
                 "PUBLIC_CAMPAIGN_URL", 95, status, issuer, security, minimum, price, valuation, cap,
                 discount, target, maximum, raised, investors, deadline, facts.get("headline"),
                 Map.copyOf(facts), fingerprint, now, now);
-    }
-
-    private static CampaignStatus status(String text) {
-        String lower = text.toLowerCase(Locale.ROOT);
-        if (lower.contains("offering withdrawn") || lower.contains("has been withdrawn")) return CampaignStatus.WITHDRAWN;
-        if (lower.contains("offering terminated") || lower.contains("has been terminated")) return CampaignStatus.TERMINATED;
-        if (lower.contains("successfully funded") || lower.contains("funded and closed")) return CampaignStatus.FUNDED;
-        if (lower.contains("campaign ended") || lower.contains("offering closed") || lower.contains("closed offering")) return CampaignStatus.CLOSED;
-        if (lower.contains("accepting reservations") || lower.contains("reservation")
-                || lower.contains("reserve your investment")) return CampaignStatus.RESERVATION;
-        if (lower.matches(".*\\b(?:hours?|days?) (?:left|remaining)\\b.*")) return CampaignStatus.CLOSING_SOON;
-        if (lower.contains("invest now") || lower.contains("open for investment")) return CampaignStatus.ACTIVE;
-        return CampaignStatus.UNKNOWN;
     }
 
     private static String visibleText(String html) {
